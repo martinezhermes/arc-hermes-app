@@ -4,8 +4,8 @@ Maintainer-only release procedures. Uploads, tester invitations, and App Store
 Connect changes require an explicit owner request. Contributors only need
 [DEVELOPMENT.md](DEVELOPMENT.md).
 
-These procedures target the production app, `com.uzairansar.hermesmobile`.
-For the side-by-side **Hermex Branch** app, use the
+These procedures target the production app, `com.martinezhermes.archermes`.
+For the side-by-side **ARC Hermes Branch** app, use the
 [branch upload commands](DEVELOPMENT.md#branch-testflight-upload-cli--the-push-to-branch-testflight-command).
 
 ## Release gates
@@ -160,7 +160,7 @@ and quiet-stream disconnections remain part of connection testing.
 Feedback exported by Xcode lands on the maintainer's Mac at:
 
 ```
-~/Library/Developer/Xcode/Products/com.uzairansar.hermesmobile/Feedback/Points/
+~/Library/Developer/Xcode/Products/com.martinezhermes.archermes/Feedback/Points/
 ```
 
 One `<id>.xcfeedbackpoint/` bundle per submission, each containing

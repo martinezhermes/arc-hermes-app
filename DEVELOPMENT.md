@@ -107,18 +107,18 @@ live in [`TESTFLIGHT.md`](TESTFLIGHT.md). The separate branch-app upload is belo
 ### Branch TestFlight upload (CLI) — the "push to branch testflight" command
 
 When the owner says **"push to branch testflight"**, upload the current *feature branch*
-to the side-by-side **Hermex Branch** internal TestFlight app. This is a TestFlight
+to the side-by-side **ARC Hermes Branch** internal TestFlight app. This is a TestFlight
 upload, **not** a Git push. Never merge, Git push, or upload the production
-`com.uzairansar.hermesmobile` TestFlight app unless the owner explicitly asks.
+`com.martinezhermes.archermes` TestFlight app unless the owner explicitly asks.
 
 Branch TestFlight app identity:
 
-- App Store Connect app name: `Hermex Branch`
-- Main bundle ID: `com.uzairansar.hermesmobile.branch`
-- Share extension bundle ID: `com.uzairansar.hermesmobile.branch.shareextension`
-- Live Activity widget bundle ID: `com.uzairansar.hermesmobile.branch.liveactivitywidget`
-- Display name: `Hermex Branch`
-- App group: `group.com.uzairansar.hermesmobile.branch`
+- App Store Connect app name: `ARC Hermes Branch`
+- Main bundle ID: `com.martinezhermes.archermes.branch`
+- Share extension bundle ID: `com.martinezhermes.archermes.branch.shareextension`
+- Live Activity widget bundle ID: `com.martinezhermes.archermes.branch.liveactivitywidget`
+- Display name: `ARC Hermes Branch`
+- App group: `group.com.martinezhermes.archermes.branch`
 - URL scheme: `hermes-agent-branch`
 - SKU: `hermes-mobile-ios-branch`
 
