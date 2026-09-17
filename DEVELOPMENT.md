@@ -94,7 +94,7 @@ xcrun simctl list devices available
 Build for an available iPhone simulator:
 
 ```zsh
-xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17' build
+xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17' build
 ```
 
 If `iPhone 17` is not installed, choose a nearby available iPhone simulator.
@@ -131,7 +131,7 @@ Steps:
 3. Archive with the reusable branch build config `Config/BranchTestFlight.xcconfig`:
 
    ```zsh
-   xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release \
+   xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermes -configuration Release \
      -destination 'generic/platform=iOS' -archivePath build/HermesAgentBranch.xcarchive \
      -xcconfig Config/BranchTestFlight.xcconfig CURRENT_PROJECT_VERSION=<unique-build-number> \
      archive -allowProvisioningUpdates

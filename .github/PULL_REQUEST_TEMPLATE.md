@@ -16,7 +16,7 @@ Fixes #
 
 ## Checklist
 
-- [ ] The full test suite passes locally (`xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'`)
+- [ ] The full test suite passes locally (`xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'`)
 - [ ] New/changed `Codable` models decode tolerantly (optionals for fields the server might add or rename)
 - [ ] No new third-party dependencies (the list in `AGENTS.md` is locked)
 - [ ] No invented API endpoints or JSON shapes (verified against upstream source or a running server)
