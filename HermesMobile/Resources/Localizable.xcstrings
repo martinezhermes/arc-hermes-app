@@ -122914,7 +122914,7 @@
         }
       }
     },
-    "across %@" : {
+    "insights.totals.messagesAcrossSessions" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
