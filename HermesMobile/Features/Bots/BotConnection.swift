@@ -10,7 +10,7 @@ struct BotConnection: Codable, Equatable, Identifiable {
     /// records saved before the pin existed or when the host omits `version`.
     var hermesVersion: String?
 
-    /// The hermes-agent release Hermex was validated against. Mirrors line 2 of
+    /// The hermes-agent release ARC Hermes was validated against. Mirrors line 2 of
     /// `HERMES_AGENT_TESTED_SHA`; `BotConnectionVersionTests` fails when they drift.
     static let testedHermesVersion = "0.21.1"
 
@@ -19,7 +19,7 @@ struct BotConnection: Codable, Equatable, Identifiable {
     /// time by each RPC, so a mismatch informs the user and never blocks login.
     var untestedVersionNote: String? {
         guard let hermesVersion, hermesVersion != Self.testedHermesVersion else { return nil }
-        return String(localized: "Untested Hermes version \(hermesVersion). Hermex was tested with \(Self.testedHermesVersion); some features may not work.")
+        return String(localized: "Untested Hermes version \(hermesVersion). ARC Hermes was tested with \(Self.testedHermesVersion); some features may not work.")
     }
 
     static func address(_ text: String) throws -> URL {

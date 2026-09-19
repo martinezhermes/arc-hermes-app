@@ -1418,34 +1418,23 @@ enum SessionListDestinationReturn {
 struct HermesHeaderLogo: View {
     let selectedColor: Color
 
-    private static let aspectRatio = 643.0 / 185.0
-
     var body: some View {
-        ZStack {
-            Image("hermes-fill-mask")
-                .renderingMode(.template)
+        HStack(alignment: .center, spacing: 9) {
+            Image("HermesAppIcon")
                 .resizable()
                 .scaledToFit()
+                .frame(width: 30, height: 30)
+                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+            Text("ARC HERMES")
+                .font(.system(size: 19, weight: .heavy))
+                .tracking(1.5)
                 .foregroundStyle(selectedColor)
-
-            Image("hermes-shading-overlay")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.multiply)
-
-            Image("hermes-highlight")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.screen)
-
-            Image("hermes-outline-shadow")
-                .resizable()
-                .scaledToFit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-        .aspectRatio(Self.aspectRatio, contentMode: .fit)
-        .compositingGroup()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("HERMEX")
+        .accessibilityLabel("ARC HERMES")
     }
 }
 
@@ -1640,7 +1629,7 @@ private struct PendingNewChatView: View {
 
     private var pendingComposer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message Hermex", text: persistedDraftBinding, axis: .vertical)
+            TextField("Message ARC Hermes", text: persistedDraftBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($composerIsFocused)

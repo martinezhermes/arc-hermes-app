@@ -288,16 +288,16 @@ struct BotCredentialRequest: Equatable {
 
     /// Where the value ends up, stated before it is typed. `sudo` is used for the
     /// one command and never written down; `secret` is saved on the host under
-    /// `envVar`. Neither is ever stored by Hermex.
+    /// `envVar`. Neither is ever stored by ARC Hermes.
     var handling: String {
         switch kind {
         case .sudo:
-            return String(localized: "Sent to this bot's Mac to run this command. Hermex never saves it.")
+            return String(localized: "Sent to this bot's Mac to run this command. ARC Hermes never saves it.")
         case .secret:
             guard let envVar else {
-                return String(localized: "Saved on this bot's Mac. Hermex never saves it.")
+                return String(localized: "Saved on this bot's Mac. ARC Hermes never saves it.")
             }
-            return String(localized: "Saved on this bot's Mac as \(envVar). Hermex never saves it.")
+            return String(localized: "Saved on this bot's Mac as \(envVar). ARC Hermes never saves it.")
         }
     }
 }

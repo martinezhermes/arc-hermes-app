@@ -3,14 +3,14 @@ import UIKit
 
 /// Static Bot Mode presentation shared with Hermes Desktop. The raw metadata
 /// dictionary remains the source of truth; this projection only edits the keys
-/// Hermex owns on the Profile screen.
+/// ARC Hermes owns on the Profile screen.
 struct BotProfileAppearance: Equatable, Sendable {
     var title: String
     var shape: String?
     var color: String?
     var custom: Bool
     var imageKind: String?
-    /// A `BotAvatarExpression` raw value. Hermex-owned: Desktop keeps the key but renders its own eyes.
+    /// A `BotAvatarExpression` raw value. ARC Hermes-owned: Desktop keeps the key but renders its own eyes.
     var expression: String?
 
     init(profile: BotProfile) { self.init(look: profile.look, fallbackTitle: profile.name) }

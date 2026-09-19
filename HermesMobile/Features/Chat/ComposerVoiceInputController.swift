@@ -860,7 +860,7 @@ enum ComposerVoiceInputError: LocalizedError {
         case .invalidInputFormat:
             return String(localized: "Voice input is not available because the microphone input format is invalid.")
         case .appNotActive:
-            return String(localized: "Voice input can start only while Hermex is active.")
+            return String(localized: "Voice input can start only while ARC Hermes is active.")
         case .audioEngineAlreadyRunning:
             return String(localized: "Voice input is already preparing the microphone. Try again in a moment.")
         case .audioRecorderStartFailed:
