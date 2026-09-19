@@ -365,10 +365,27 @@ final class AuthManager {
         initials: String,
         headerLogoColorHex: String
     ) {
-        var updated = account
+        guard var updated = servers.first(where: { $0.id == account.id }) else { return }
         updated.displayName = displayName
         updated.initials = initials
         updated.headerLogoColorHex = headerLogoColorHex
+        serverRegistry.update(updated)
+        refreshServers()
+    }
+
+    /// Mutate the latest record so an older detail-screen snapshot cannot undo
+    /// a newer avatar or header edit. Removed servers are never reinserted.
+    func updateServerHeader(id: String, text: String) {
+        guard var updated = servers.first(where: { $0.id == id }) else { return }
+        updated.headerLogoText = HeaderLogoText.normalized(text)
+        serverRegistry.update(updated)
+        refreshServers()
+    }
+
+    func updateServerAvatar(id: String, data: Data?) {
+        guard var updated = servers.first(where: { $0.id == id }) else { return }
+        guard (data?.count ?? 0) <= AvatarPhoto.maximumStoredBytes else { return }
+        updated.avatarImageData = data
         serverRegistry.update(updated)
         refreshServers()
     }

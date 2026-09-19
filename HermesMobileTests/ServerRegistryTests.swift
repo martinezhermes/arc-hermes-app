@@ -35,6 +35,23 @@ final class ServerRegistryTests: XCTestCase {
 
     // MARK: - Duplicate prevention
 
+    func testNewServerDoesNotInheritCustomHeaderOrPhoto() throws {
+        let registry = makeRegistry()
+        var first = registry.activate(url: try url("https://first.test"))
+        first.headerLogoText = "PRIVATE HEADER"
+        first.avatarImageData = Data([1, 2, 3])
+        registry.update(first)
+        let second = registry.activate(url: try url("https://second.test"))
+        XCTAssertEqual(second.headerLogoText, "")
+        XCTAssertNil(second.avatarImageData)
+    }
+
+    func testLegacyServerIdentityDecodesWithDefaultHeaderAndNoPhoto() throws {
+        let account = try JSONDecoder().decode(ServerAccount.self, from: Data(#"{"id":"https://legacy.test"}"#.utf8))
+        XCTAssertEqual(account.headerLogoText, "")
+        XCTAssertNil(account.avatarImageData)
+    }
+
     func testActivateDeduplicatesTheSameURL() throws {
         let registry = makeRegistry()
         let server = try url("https://example.test")

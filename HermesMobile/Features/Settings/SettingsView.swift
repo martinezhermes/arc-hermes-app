@@ -106,6 +106,7 @@ struct SettingsView: View {
                     SessionIdentitySettingsEditor(
                         displayName: $identityDisplayName,
                         initials: identityInitialsBinding,
+                        avatarImageData: activeAvatarBinding,
                         previewInitials: identityPreviewInitials,
                         previewColor: HeaderLogoColor.color(for: headerLogoColorHex),
                         previewForeground: HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
@@ -136,7 +137,8 @@ struct SettingsView: View {
 
                     HeaderLogoColorSettings(
                         selectedHex: $headerLogoColorHex,
-                        customColor: headerLogoColorBinding
+                        customColor: headerLogoColorBinding,
+                        headerText: activeHeaderTextBinding
                     )
 
                     SettingsDivider()
@@ -770,6 +772,22 @@ struct SettingsView: View {
         authManager.servers.first { $0.id == authManager.activeServerID }
     }
 
+    private var activeHeaderTextBinding: Binding<String> {
+        let id = server.absoluteString
+        return Binding(
+            get: { authManager.servers.first { $0.id == id }?.headerLogoText ?? "" },
+            set: { authManager.updateServerHeader(id: id, text: $0) }
+        )
+    }
+
+    private var activeAvatarBinding: Binding<Data?> {
+        let id = server.absoluteString
+        return Binding(
+            get: { authManager.servers.first { $0.id == id }?.avatarImageData },
+            set: { authManager.updateServerAvatar(id: id, data: $0) }
+        )
+    }
+
     /// Pushes the current global identity values (which the Identity + Header Logo
     /// Color controls edit) into the active server's registry entry, so per-server
     /// identity follows the active server (#17). Single-server users see no change.
@@ -1362,6 +1380,7 @@ private struct SessionIdentitySettingsEditor: View {
 
     @Binding var displayName: String
     @Binding var initials: String
+    @Binding var avatarImageData: Data?
     let previewInitials: String
     let previewColor: Color
     let previewForeground: Color
@@ -1369,13 +1388,8 @@ private struct SessionIdentitySettingsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Text(previewInitials)
-                    .font(AppFont.caption(weight: .semibold))
-                    .foregroundStyle(previewForeground)
-                    .frame(width: avatarPreviewSize, height: avatarPreviewSize)
-                    .background(previewColor, in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-                    .accessibilityHidden(true)
+                SessionAvatar(imageData: avatarImageData, initials: previewInitials,
+                              color: previewColor, foreground: previewForeground, size: avatarPreviewSize)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Sessions Avatar")
@@ -1386,6 +1400,8 @@ private struct SessionIdentitySettingsEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            AvatarPhotoPicker(imageData: $avatarImageData)
 
             SettingsTextFieldRow(title: String(localized: "Display Name"), text: $displayName, placeholder: NSFullUserName())
 
@@ -1457,6 +1473,7 @@ private struct SettingsTextFieldRow: View {
 private struct HeaderLogoColorSettings: View {
     @Binding var selectedHex: String
     let customColor: Binding<Color>
+    @Binding var headerText: String
 
     private var selectedColorName: String {
         HeaderLogoColor.displayName(for: selectedHex)
@@ -1476,7 +1493,20 @@ private struct HeaderLogoColorSettings: View {
             }
             .font(.subheadline)
 
-            HermesHeaderLogo(selectedColor: HeaderLogoColor.color(for: selectedHex))
+            SettingsTextFieldRow(
+                title: String(localized: "Header Text"),
+                text: Binding(get: { headerText }, set: { headerText = HeaderLogoText.normalized($0) }),
+                placeholder: HeaderLogoText.defaultValue,
+                autocapitalization: .characters
+            )
+            Text("A–Z, 0–9, spaces and hyphens; up to 16 characters.")
+                .font(.caption).foregroundStyle(.secondary)
+            if !headerText.isEmpty {
+                Button("Reset Header") { headerText = "" }
+                    .frame(minHeight: 44)
+            }
+
+            HermesHeaderLogo(selectedColor: HeaderLogoColor.color(for: selectedHex), text: headerText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .padding(.horizontal, 12)
@@ -1977,15 +2007,13 @@ private struct ServerAvatarBadge: View {
     let initials: String
     let colorHex: String
     var size: CGFloat = 32
+    var imageData: Data? = nil
 
     var body: some View {
-        Text(initials)
-            .font(AppFont.caption(weight: .semibold))
-            .foregroundStyle(HeaderLogoColor.prefersDarkForeground(for: colorHex) ? Color.black : Color.white)
-            .frame(width: size, height: size)
-            .background(HeaderLogoColor.color(for: colorHex), in: Circle())
-            .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-            .accessibilityHidden(true)
+        SessionAvatar(imageData: imageData, initials: initials,
+                      color: HeaderLogoColor.color(for: colorHex),
+                      foreground: HeaderLogoColor.prefersDarkForeground(for: colorHex) ? .black : .white,
+                      size: size)
     }
 }
 
@@ -2012,7 +2040,7 @@ private struct SettingsServerRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ServerAvatarBadge(initials: previewInitials, colorHex: account.headerLogoColorHex)
+            ServerAvatarBadge(initials: previewInitials, colorHex: account.headerLogoColorHex, imageData: account.avatarImageData)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
@@ -2052,6 +2080,8 @@ private struct ServerIdentityEditor: View {
     @Binding var displayName: String
     @Binding var initials: String
     @Binding var colorHex: String
+    @Binding var headerText: String
+    @Binding var avatarImageData: Data?
     /// Host-derived fallback used for the avatar preview when fields are empty.
     let fallbackName: String
 
@@ -2080,7 +2110,7 @@ private struct ServerIdentityEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                ServerAvatarBadge(initials: previewInitials, colorHex: colorHex, size: 36)
+                ServerAvatarBadge(initials: previewInitials, colorHex: colorHex, size: 36, imageData: avatarImageData)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Server Avatar")
@@ -2091,6 +2121,8 @@ private struct ServerIdentityEditor: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            AvatarPhotoPicker(imageData: $avatarImageData)
 
             SettingsTextFieldRow(
                 title: String(localized: "Display Name"),
@@ -2104,7 +2136,7 @@ private struct ServerIdentityEditor: View {
 
             SettingsDivider()
 
-            HeaderLogoColorSettings(selectedHex: $colorHex, customColor: colorBinding)
+            HeaderLogoColorSettings(selectedHex: $colorHex, customColor: colorBinding, headerText: $headerText)
         }
     }
 }
@@ -2158,6 +2190,14 @@ private struct ServerDetailView: View {
                         displayName: $displayName,
                         initials: $initials,
                         colorHex: $colorHex,
+                        headerText: Binding(
+                            get: { authManager.servers.first { $0.id == account.id }?.headerLogoText ?? "" },
+                            set: { authManager.updateServerHeader(id: account.id, text: $0) }
+                        ),
+                        avatarImageData: Binding(
+                            get: { authManager.servers.first { $0.id == account.id }?.avatarImageData },
+                            set: { authManager.updateServerAvatar(id: account.id, data: $0) }
+                        ),
                         fallbackName: hostFallback
                     )
                 }
@@ -2278,6 +2318,8 @@ struct AddServerView: View {
     @State private var displayName = ""
     @State private var initials = ""
     @State private var colorHex = HeaderLogoColor.defaultHex
+    @State private var headerText = ""
+    @State private var avatarImageData: Data?
 
     private var trimmedURL: String {
         serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2328,6 +2370,8 @@ struct AddServerView: View {
                             displayName: $displayName,
                             initials: $initials,
                             colorHex: $colorHex,
+                            headerText: $headerText,
+                            avatarImageData: $avatarImageData,
                             fallbackName: derivedHost
                         )
                     }
@@ -2411,6 +2455,8 @@ struct AddServerView: View {
             initials: finalInitials,
             headerLogoColorHex: colorHex
         )
+        authManager.updateServerHeader(id: account.id, text: headerText)
+        authManager.updateServerAvatar(id: account.id, data: avatarImageData)
     }
 }
 

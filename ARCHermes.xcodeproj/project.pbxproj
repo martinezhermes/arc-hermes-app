@@ -478,6 +478,7 @@
 		36E7B1036E154E238FADE161 /* BotAttachmentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D68A45E44464C838C2DD96D /* BotAttachmentPickerView.swift */; };
 		D7750E758B8A432EA96770E2 /* BotAttachmentUpload.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6923C3D8C6C4822BEF3C41C /* BotAttachmentUpload.swift */; };
 		127110E3C3924333B7967315 /* BotAttachmentSendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BBB8E5B895948939E22118C /* BotAttachmentSendingTests.swift */; };
+		DAA8A782541D426EB61FA597 /* AvatarPhoto.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C67A56E689447CB01E9866 /* AvatarPhoto.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -987,6 +988,7 @@
 		4D68A45E44464C838C2DD96D /* BotAttachmentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/BotAttachmentPickerView.swift"; sourceTree = "<group>"; };
 		B6923C3D8C6C4822BEF3C41C /* BotAttachmentUpload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Bots/BotAttachmentUpload.swift"; sourceTree = "<group>"; };
 		7BBB8E5B895948939E22118C /* BotAttachmentSendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BotAttachmentSendingTests.swift"; sourceTree = "<group>"; };
+		C0C67A56E689447CB01E9866 /* AvatarPhoto.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarPhoto.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1595,6 +1597,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000F6 /* SettingsView.swift */,
+				C0C67A56E689447CB01E9866 /* AvatarPhoto.swift */,
 				C012400000000000000003 /* AppIconSettingsSection.swift */,
 				1A2B3C4D5E6F70000000115 /* DefaultModelPickerView.swift */,
 				103200000000000000000001 /* DefaultProfilePickerView.swift */,
@@ -2058,6 +2061,7 @@
 				C28702000000000000000001 /* ChatDraftStore.swift in Sources */,
 				C28702000000000000000005 /* ChatDraftAttachmentStore.swift in Sources */,
 				1A2B3C4D5E6F7000000000F5 /* SettingsView.swift in Sources */,
+				DAA8A782541D426EB61FA597 /* AvatarPhoto.swift in Sources */,
 				C012400000000000000004 /* AppIconSettingsSection.swift in Sources */,
 				1A2B3C4D5E6F70000000114 /* DefaultModelPickerView.swift in Sources */,
 				103200000000000000000002 /* DefaultProfilePickerView.swift in Sources */,
@@ -2563,7 +2567,7 @@
 		1A2B3C4D5E6F700000000082 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus AppIconARCMonogramDark AppIconPixelCaduceusDark";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
@@ -2593,7 +2597,7 @@
 		1A2B3C4D5E6F700000000083 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus AppIconARCMonogramDark AppIconPixelCaduceusDark";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;

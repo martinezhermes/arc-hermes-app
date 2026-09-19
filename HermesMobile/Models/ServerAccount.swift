@@ -28,6 +28,9 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
     /// Per-server Header Logo Color (hex). Seeded from the global color on
     /// migration; editable per server in #17.
     var headerLogoColorHex: String
+    /// Empty text uses the app wordmark. The avatar is a bounded, local JPEG.
+    var headerLogoText: String = ""
+    var avatarImageData: Data? = nil
     /// Reference under which this server's custom request headers are scoped.
     /// Seeded to the server `id`; as of #16 headers are persisted per server under
     /// a Keychain key scoped by that id (`AuthManager` scopes by the equivalent
@@ -62,6 +65,8 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
         case displayName
         case initials
         case headerLogoColorHex
+        case headerLogoText
+        case avatarImageData
         case customHeadersRef
         case createdAt
         case updatedAt
@@ -86,6 +91,8 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
         initials = try container.decodeIfPresent(String.self, forKey: .initials) ?? ""
         headerLogoColorHex = try container.decodeIfPresent(String.self, forKey: .headerLogoColorHex)
             ?? HeaderLogoColor.defaultHex
+        headerLogoText = (try? container.decodeIfPresent(String.self, forKey: .headerLogoText)) ?? ""
+        avatarImageData = try? container.decodeIfPresent(Data.self, forKey: .avatarImageData)
         customHeadersRef = try container.decodeIfPresent(String.self, forKey: .customHeadersRef)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt

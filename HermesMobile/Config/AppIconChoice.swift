@@ -8,7 +8,9 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
     case classicCaduceus
     case wingedHelmet
     case arcMonogram
+    case arcMonogramDark
     case pixelCaduceus
+    case pixelCaduceusDark
     case light
     case dark
     case disco
@@ -21,7 +23,9 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
     static let classicCaduceusAlternateIconName = "AppIconClassicCaduceus"
     static let wingedHelmetAlternateIconName = "AppIconWingedHelmet"
     static let arcMonogramAlternateIconName = "AppIconARCMonogram"
+    static let arcMonogramDarkAlternateIconName = "AppIconARCMonogramDark"
     static let pixelCaduceusAlternateIconName = "AppIconPixelCaduceus"
+    static let pixelCaduceusDarkAlternateIconName = "AppIconPixelCaduceusDark"
     static let darkAlternateIconName = "AppIconDark"
     static let discoAlternateIconName = "AppIconDisco"
     static let monochromeLightAlternateIconName = "AppIconMonochromeLight"
@@ -41,8 +45,12 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
             String(localized: "Winged Helmet")
         case .arcMonogram:
             String(localized: "ARC Monogram")
+        case .arcMonogramDark:
+            String(localized: "ARC Monogram Dark")
         case .pixelCaduceus:
             String(localized: "Pixel Caduceus")
+        case .pixelCaduceusDark:
+            String(localized: "Pixel Caduceus Dark")
         case .light:
             String(localized: "Light")
         case .dark:
@@ -68,7 +76,7 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
             String(localized: "Original artwork")
         case .light:
             String(localized: "Always use the light icon")
-        case .dark:
+        case .dark, .arcMonogramDark, .pixelCaduceusDark:
             String(localized: "Always use the dark icon")
         case .disco:
             String(localized: "Always use the disco icon")
@@ -93,8 +101,12 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
             Self.wingedHelmetAlternateIconName
         case .arcMonogram:
             Self.arcMonogramAlternateIconName
+        case .arcMonogramDark:
+            Self.arcMonogramDarkAlternateIconName
         case .pixelCaduceus:
             Self.pixelCaduceusAlternateIconName
+        case .pixelCaduceusDark:
+            Self.pixelCaduceusDarkAlternateIconName
         case .light:
             Self.lightAlternateIconName
         case .dark:
@@ -122,8 +134,12 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
             "AppIconWingedHelmetPreview"
         case .arcMonogram:
             "AppIconARCMonogramPreview"
+        case .arcMonogramDark:
+            "AppIconARCMonogramDarkPreview"
         case .pixelCaduceus:
             "AppIconPixelCaduceusPreview"
+        case .pixelCaduceusDark:
+            "AppIconPixelCaduceusDarkPreview"
         case .light:
             "AppIconLightPreview"
         case .dark:
@@ -149,8 +165,12 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
             .wingedHelmet
         case Self.arcMonogramAlternateIconName:
             .arcMonogram
+        case Self.arcMonogramDarkAlternateIconName:
+            .arcMonogramDark
         case Self.pixelCaduceusAlternateIconName:
             .pixelCaduceus
+        case Self.pixelCaduceusDarkAlternateIconName:
+            .pixelCaduceusDark
         case Self.lightAlternateIconName:
             .light
         case Self.darkAlternateIconName:

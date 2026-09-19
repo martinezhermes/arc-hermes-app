@@ -577,9 +577,13 @@ struct SessionListView: View {
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
     }
 
+    private var serverIdentity: ServerAccount? {
+        authManager.servers.first { $0.id == server.absoluteString }
+    }
+
     private var header: some View {
         HStack(alignment: .center, spacing: searchChromeIsExpanded ? 0 : 16) {
-            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor)
+            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor, text: serverIdentity?.headerLogoText ?? "")
                 .frame(width: searchChromeIsExpanded ? 0 : 160, alignment: .leading)
                 .opacity(searchChromeIsExpanded ? 0 : 1)
                 .clipped()
@@ -677,12 +681,9 @@ struct SessionListView: View {
             }
         } label: {
             ZStack {
-                Text(settingsInitials)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(initialsAvatarForegroundColor)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .background(selectedHeaderLogoColor, in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
+                SessionAvatar(imageData: serverIdentity?.avatarImageData, initials: settingsInitials,
+                              color: selectedHeaderLogoColor, foreground: initialsAvatarForegroundColor,
+                              size: Self.searchChromeIconVisualSize)
                     .opacity(searchChromeIsExpanded ? 0 : 1)
                     .scaleEffect(searchChromeIsExpanded ? 0.72 : 1)
                     .rotationEffect(.degrees(searchChromeIsExpanded ? -18 : 0))

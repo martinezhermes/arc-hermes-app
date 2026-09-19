@@ -1,16 +1,35 @@
 import SwiftUI
 
+enum HeaderLogoText {
+    static let defaultValue = "ARC HERMES"
+    static let maximumLength = 16
+
+    static func normalized(_ text: String) -> String {
+        let latin = text.folding(options: .diacriticInsensitive, locale: Locale(identifier: "en_US_POSIX"))
+            .uppercased(with: Locale(identifier: "en_US_POSIX"))
+        let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -"
+        return String(latin.filter { allowed.contains($0) }.prefix(maximumLength))
+    }
+
+    static func resolved(_ text: String) -> String {
+        let value = normalized(text).trimmingCharacters(in: .whitespaces)
+        return value.isEmpty ? defaultValue : value
+    }
+}
+
 /// Pixel lettering shared by the sidebar and appearance previews. The paths are
 /// built once; tint changes repaint the mark without loading or resizing artwork.
 struct HermesHeaderLogo: View {
     let selectedColor: Color
 
-    private static let lettering = PixelLettering()
+    var text: String = HeaderLogoText.defaultValue
 
     var body: some View {
         Canvas { context, size in
-            let letters = Self.lettering
-            context.scaleBy(x: size.width / letters.width, y: size.height / 12)
+            let letters = PixelLettering.cached(for: HeaderLogoText.resolved(text))
+            let scale = min(size.width / letters.width, size.height / 12 * 0.76)
+            context.translateBy(x: 0, y: (size.height - 12 * scale / 0.76) / 2)
+            context.scaleBy(x: scale, y: scale / 0.76)
             context.translateBy(x: 0.6, y: 0.6)
 
             var depth = context
@@ -39,7 +58,7 @@ struct HermesHeaderLogo: View {
         }
         .aspectRatio(4.8, contentMode: .fit)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("ARC HERMES")
+        .accessibilityLabel(HeaderLogoText.resolved(text))
     }
 }
 
@@ -49,9 +68,56 @@ private struct PixelLettering {
     let highlight: Path
     let width: CGFloat
 
-    init() {
+    private final class Entry: NSObject {
+        let value: PixelLettering
+        init(_ value: PixelLettering) { self.value = value }
+    }
+    private static let cache: NSCache<NSString, Entry> = {
+        let cache = NSCache<NSString, Entry>()
+        cache.countLimit = 64
+        return cache
+    }()
+
+    static func cached(for text: String) -> PixelLettering {
+        if let entry = cache.object(forKey: text as NSString) { return entry.value }
+        let result = PixelLettering(text: text)
+        cache.setObject(Entry(result), forKey: text as NSString)
+        return result
+    }
+
+    init(text: String) {
         // Seven-column glyphs use two-cell stems and square, stepped corners.
         let glyphs: [Character: [UInt8]] = [
+            "B": [0b1111110, 0b1111111, 0b1100011, 0b1100011, 0b1111110, 0b1100011, 0b1100011, 0b1111111, 0b1111110],
+            "D": [0b1111100, 0b1111110, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1111110, 0b1111100],
+            "F": [0b1111111, 0b1111111, 0b1100000, 0b1100000, 0b1111110, 0b1111110, 0b1100000, 0b1100000, 0b1100000],
+            "G": [0b0011111, 0b0111111, 0b1100000, 0b1100000, 0b1101111, 0b1100011, 0b1100011, 0b0111111, 0b0011110],
+            "I": [0b1111111, 0b1111111, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b1111111, 0b1111111],
+            "J": [0b0011111, 0b0011111, 0b0000011, 0b0000011, 0b0000011, 0b1100011, 0b1100011, 0b0111110, 0b0011100],
+            "K": [0b1100011, 0b1100110, 0b1101100, 0b1111000, 0b1111000, 0b1111100, 0b1101100, 0b1100110, 0b1100011],
+            "L": [0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b1111111, 0b1111111],
+            "N": [0b1100011, 0b1110011, 0b1110011, 0b1111011, 0b1101111, 0b1100111, 0b1100111, 0b1100011, 0b1100011],
+            "O": [0b0011100, 0b0111110, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b0111110, 0b0011100],
+            "P": [0b1111110, 0b1111111, 0b1100011, 0b1100011, 0b1111111, 0b1111110, 0b1100000, 0b1100000, 0b1100000],
+            "Q": [0b0011100, 0b0111110, 0b1100011, 0b1100011, 0b1100011, 0b1101011, 0b1100110, 0b0111111, 0b0011011],
+            "T": [0b1111111, 0b1111111, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100],
+            "U": [0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b0111110, 0b0011100],
+            "V": [0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b0110110, 0b0110110, 0b0011100, 0b0001000],
+            "W": [0b1100011, 0b1100011, 0b1100011, 0b1100011, 0b1101011, 0b1101011, 0b1111111, 0b1110111, 0b1100011],
+            "X": [0b1100011, 0b1100011, 0b0110110, 0b0011100, 0b0011100, 0b0011100, 0b0110110, 0b1100011, 0b1100011],
+            "Y": [0b1100011, 0b1100011, 0b0110110, 0b0110110, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100],
+            "Z": [0b1111111, 0b1111111, 0b0000110, 0b0001100, 0b0011100, 0b0110000, 0b1100000, 0b1111111, 0b1111111],
+            "0": [0b0011100, 0b0111110, 0b1100011, 0b1100111, 0b1101011, 0b1110011, 0b1100011, 0b0111110, 0b0011100],
+            "1": [0b0011100, 0b0111100, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b0011100, 0b1111111, 0b1111111],
+            "2": [0b0111110, 0b1111111, 0b0000011, 0b0000011, 0b0011110, 0b0111000, 0b1100000, 0b1111111, 0b1111111],
+            "3": [0b1111110, 0b1111111, 0b0000011, 0b0000011, 0b0011110, 0b0000011, 0b0000011, 0b1111111, 0b1111110],
+            "4": [0b1100110, 0b1100110, 0b1100110, 0b1100110, 0b1111111, 0b1111111, 0b0000110, 0b0000110, 0b0000110],
+            "5": [0b1111111, 0b1111111, 0b1100000, 0b1100000, 0b1111110, 0b0000011, 0b0000011, 0b1111111, 0b1111110],
+            "6": [0b0011110, 0b0111110, 0b1100000, 0b1100000, 0b1111110, 0b1100011, 0b1100011, 0b0111110, 0b0011100],
+            "7": [0b1111111, 0b1111111, 0b0000011, 0b0000110, 0b0001100, 0b0011000, 0b0011000, 0b0011000, 0b0011000],
+            "8": [0b0111110, 0b1100011, 0b1100011, 0b0111110, 0b0111110, 0b1100011, 0b1100011, 0b1100011, 0b0111110],
+            "9": [0b0011100, 0b0111110, 0b1100011, 0b1100011, 0b0111111, 0b0000011, 0b0000011, 0b0111110, 0b0111100],
+            "-": [0b0000000, 0b0000000, 0b0000000, 0b0000000, 0b1111111, 0b1111111, 0b0000000, 0b0000000, 0b0000000],
             "A": [0b0011100, 0b0111110, 0b1100011, 0b1100011, 0b1111111, 0b1111111, 0b1100011, 0b1100011, 0b1100011],
             "R": [0b1111110, 0b1111111, 0b1100011, 0b1100011, 0b1111110, 0b1111100, 0b1101100, 0b1100110, 0b1100011],
             "C": [0b0011111, 0b0111111, 0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b1100000, 0b0111111, 0b0011111],
@@ -65,7 +131,7 @@ private struct PixelLettering {
         var highlight = Path()
         var origin: CGFloat = 0
 
-        for character in "ARC HERMES" {
+        for character in text {
             guard let rows = glyphs[character] else {
                 origin += 3
                 continue
