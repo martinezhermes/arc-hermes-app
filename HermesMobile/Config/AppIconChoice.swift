@@ -5,6 +5,10 @@ import UIKit
 
 enum AppIconChoice: String, CaseIterable, Identifiable {
     case system
+    case classicCaduceus
+    case wingedHelmet
+    case arcMonogram
+    case pixelCaduceus
     case light
     case dark
     case disco
@@ -14,6 +18,10 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
     case gradientDark
 
     static let lightAlternateIconName = "AppIconLight"
+    static let classicCaduceusAlternateIconName = "AppIconClassicCaduceus"
+    static let wingedHelmetAlternateIconName = "AppIconWingedHelmet"
+    static let arcMonogramAlternateIconName = "AppIconARCMonogram"
+    static let pixelCaduceusAlternateIconName = "AppIconPixelCaduceus"
     static let darkAlternateIconName = "AppIconDark"
     static let discoAlternateIconName = "AppIconDisco"
     static let monochromeLightAlternateIconName = "AppIconMonochromeLight"
@@ -27,6 +35,14 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system:
             String(localized: "System")
+        case .classicCaduceus:
+            String(localized: "Classic Caduceus")
+        case .wingedHelmet:
+            String(localized: "Winged Helmet")
+        case .arcMonogram:
+            String(localized: "ARC Monogram")
+        case .pixelCaduceus:
+            String(localized: "Pixel Caduceus")
         case .light:
             String(localized: "Light")
         case .dark:
@@ -48,6 +64,8 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system:
             String(localized: "Matches device appearance")
+        case .classicCaduceus, .wingedHelmet, .arcMonogram, .pixelCaduceus:
+            String(localized: "Original artwork")
         case .light:
             String(localized: "Always use the light icon")
         case .dark:
@@ -69,6 +87,14 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system:
             nil
+        case .classicCaduceus:
+            Self.classicCaduceusAlternateIconName
+        case .wingedHelmet:
+            Self.wingedHelmetAlternateIconName
+        case .arcMonogram:
+            Self.arcMonogramAlternateIconName
+        case .pixelCaduceus:
+            Self.pixelCaduceusAlternateIconName
         case .light:
             Self.lightAlternateIconName
         case .dark:
@@ -90,6 +116,14 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system:
             nil
+        case .classicCaduceus:
+            "AppIconClassicCaduceusPreview"
+        case .wingedHelmet:
+            "AppIconWingedHelmetPreview"
+        case .arcMonogram:
+            "AppIconARCMonogramPreview"
+        case .pixelCaduceus:
+            "AppIconPixelCaduceusPreview"
         case .light:
             "AppIconLightPreview"
         case .dark:
@@ -109,6 +143,14 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
 
     static func resolved(from alternateIconName: String?) -> AppIconChoice {
         switch alternateIconName {
+        case Self.classicCaduceusAlternateIconName:
+            .classicCaduceus
+        case Self.wingedHelmetAlternateIconName:
+            .wingedHelmet
+        case Self.arcMonogramAlternateIconName:
+            .arcMonogram
+        case Self.pixelCaduceusAlternateIconName:
+            .pixelCaduceus
         case Self.lightAlternateIconName:
             .light
         case Self.darkAlternateIconName:

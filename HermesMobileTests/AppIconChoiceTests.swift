@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import HermesMobile
 
 final class AppIconChoiceTests: XCTestCase {
@@ -39,7 +40,8 @@ final class AppIconChoiceTests: XCTestCase {
     func testAllCasesUseApprovedDisplayOrder() {
         XCTAssertEqual(
             AppIconChoice.allCases,
-            [.system, .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark]
+            [.system, .classicCaduceus, .wingedHelmet, .arcMonogram, .pixelCaduceus,
+             .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark]
         )
     }
 
@@ -71,5 +73,17 @@ final class AppIconChoiceTests: XCTestCase {
 
         XCTAssertEqual(Set(alternateIconNames).count, alternateIconNames.count)
         XCTAssertEqual(Set(previewImageNames).count, previewImageNames.count)
+    }
+
+    func testEverySelectableIconIsRegisteredAndHasABundledPreview() throws {
+        let icons = try XCTUnwrap(Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any])
+        let alternates = try XCTUnwrap(icons["CFBundleAlternateIcons"] as? [String: Any])
+        for choice in AppIconChoice.allCases where choice != .system {
+            let name = try XCTUnwrap(choice.alternateIconName)
+            XCTAssertNotNil(alternates[name], "\(name) must be registered for iOS icon switching")
+            XCTAssertEqual(AppIconChoice.resolved(from: name), choice)
+            let preview = try XCTUnwrap(choice.previewImageName)
+            XCTAssertNotNil(UIImage(named: preview), "\(preview) must be bundled for Settings")
+        }
     }
 }

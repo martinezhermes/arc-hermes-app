@@ -1415,29 +1415,6 @@ enum SessionListDestinationReturn {
     }
 }
 
-struct HermesHeaderLogo: View {
-    let selectedColor: Color
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 9) {
-            Image("HermesAppIcon")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 30, height: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-
-            Text("ARC HERMES")
-                .font(.system(size: 19, weight: .heavy))
-                .tracking(1.5)
-                .foregroundStyle(selectedColor)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("ARC HERMES")
-    }
-}
-
 /// A request from `ContentView` to open the New Chat composer. Carries whether voice
 /// dictation should auto-start (the "New Chat with Voice" App Intent, #338) and an optional
 /// profile name to pin the new session to (the "New Chat in <Profile>" App Intent, #339).
