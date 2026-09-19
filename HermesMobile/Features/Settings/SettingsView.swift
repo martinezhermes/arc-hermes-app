@@ -4,7 +4,7 @@ import UIKit
 import UserNotifications
 
 /// A Settings section a deep link can scroll to when the screen opens — the
-/// avatar long-press "Manage Servers" shortcut lands on the Servers card (#283).
+/// Settings long-press "Manage Servers" shortcut lands on the Servers card (#283).
 enum SettingsScrollAnchor: Hashable {
     case servers
 }
@@ -725,7 +725,7 @@ struct SettingsView: View {
         }
         .onAppear {
             // Land on the requested section once when opened via a deep link
-            // (the avatar's "Manage Servers" → Servers card), not on every
+            // (the Settings button's "Manage Servers" → Servers card), not on every
             // re-appear after popping back from a sub-screen (#283).
             guard let initialScrollTarget, !didScrollToInitialTarget else { return }
             didScrollToInitialTarget = true
@@ -1392,7 +1392,7 @@ private struct SessionIdentitySettingsEditor: View {
                               color: previewColor, foreground: previewForeground, size: avatarPreviewSize)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Sessions Avatar")
+                    Text("Server Avatar")
                         .font(AppFont.subheadline(weight: .medium))
 
                     Text("Stored on this device only.")

@@ -32,7 +32,7 @@ to `CacheStore`. Two consequences:
 | --- | --- | --- |
 | Auth cookies | `HTTPCookieStorage` (shared jar) | Cleared/queried per active server URL (#16). Same-host/different-port servers still share the jar — documented #16 limitation. |
 | Custom request headers | Keychain, per-server-scoped keys (#16) | `CustomHeaderStore` is hydrated for the active server; SSE + requests source headers from the active store. |
-| Display name / initials / **Header Logo Color** | `ServerAccount` in the Keychain registry blob (`Models/ServerAccount.swift`) | Per-server. The **active** server's identity is mirrored into the global `@AppStorage` keys (`SessionIdentitySettings.*`, `HeaderLogoColor.storageKey`) by `ServerRegistry.mirrorIdentityToDefaults`, on activate / set-active / identity-edit / remove — **never on first insert**, so first-run/single-server behavior is unchanged. Consumers (session-list avatar, header logo tint, New Chat / Send primary-action tint) read the mirrored global keys and therefore follow the active server automatically. |
+| Display name / initials / **Header Logo Color** | `ServerAccount` in the Keychain registry blob (`Models/ServerAccount.swift`) | Per-server. The **active** server's identity is mirrored into the global `@AppStorage` keys (`SessionIdentitySettings.*`, `HeaderLogoColor.storageKey`) by `ServerRegistry.mirrorIdentityToDefaults`, on activate / set-active / identity-edit / remove — **never on first insert**, so first-run/single-server behavior is unchanged. Consumers (header logo tint, New Chat / Send primary-action tint) read the mirrored global keys and therefore follow the active server automatically. |
 | Offline session/message cache | SwiftData (`CachedSession`, `CachedMessage`) | Keyed by `serverURLString` (the active server URL's `absoluteString`) on the unique `cacheKey` and on every read/write predicate. See below. |
 | Custom header text / avatar photo | `ServerAccount.headerLogoText` / `avatarImageData` in the Keychain registry | Per-server, read directly from the observable account snapshot rather than mirrored to global defaults. New servers start with the default wordmark and initials. Photo imports downsample to a 256-pixel JPEG capped at 48 KiB, discard source metadata, and stay on this device. Removing a photo or server removes its stored image data. Cancelled imports never write to a new server or a dismissed editor. |
 | Default model / profile | Server defaults are not persisted locally; unfinished new-chat choices can be | Settings re-fetches defaults from the **active** server. A non-empty new-chat draft may also retain that server's effective composer choices in `ChatDraftStore`, keyed by server URL plus `newChat`; removing the server discards those records. Without a saved draft, new sessions use the server's current defaults. |
@@ -76,8 +76,9 @@ per-server:
   on/off behavior is global; only the *color* it applies (Header Logo Color) is
   per-server.
 
-"Which server am I on" is surfaced only by the avatar + Settings (+ the #283
-long-press menu) — there is no separate on-screen server label.
+"Which server am I on" is shown in Settings and in the bottom Settings gear’s
+long-press server menu. The sidebar uses a gear rather than an identity avatar;
+photo avatars remain in the identity editor and server rows.
 
 ## Clear-cache behavior (issue #18 change)
 
