@@ -4,9 +4,6 @@ import UIKit
 
 @MainActor
 struct SessionListView: View {
-    private static let searchChromeIconVisualSize: CGFloat = 36
-    private static let searchChromeIconHitTarget: CGFloat = 44
-
     @Bindable var authManager: AuthManager
     let server: URL
     private let draftStore: ChatDraftStore
@@ -41,6 +38,9 @@ struct SessionListView: View {
     @State private var searchChromeIsExpanded = false
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
+    @State private var isSidebarPresented = false
+    @State private var usesCompactSidebar = true
+    @State private var searchChromeState = SessionListSearchChrome()
     @State private var didCompleteInitialLoad = false
     @State private var returnRefreshID: UUID?
     @FocusState private var searchFieldIsFocused: Bool
@@ -342,33 +342,53 @@ struct SessionListView: View {
             NavigationStack {
                 BotsInboxView(server: server) { showsBots = false }
             }
-        } else if horizontalSizeClass == .regular {
-            NavigationSplitView {
+        } else {
+            ChatNavigationShell(isPresented: $isSidebarPresented, isCompact: $usesCompactSidebar) {
                 sessionListSurface
-                    .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 420)
             } detail: {
                 NavigationStack {
                     regularWidthDetail
+                        .toolbar {
+                            ToolbarItem(placement: .topBarLeading) {
+                                Button {
+                                    isSidebarPresented.toggle()
+                                } label: {
+                                    Label(isSidebarPresented ? "Hide Sessions" : "Show Sessions", systemImage: "sidebar.leading")
+                                }
+                                .accessibilityIdentifier("detail-sidebar-toggle")
+                                .keyboardShortcut("s", modifiers: [.command, .control])
+                            }
+                        }
                 }
-            }
-            .navigationSplitViewStyle(.balanced)
-            .id(navigationState.rootRevision)
-        } else {
-            NavigationStack {
-                sessionListSurface
-                    .navigationDestination(item: navigationDestinationBinding) { destination in
-                        navigationDestination(destination)
-                    }
+                // Reset pushed detail routes only on an explicit destination
+                // change, never when the sidebar or available size changes.
+                .id(navigationState.rootRevision)
             }
         }
     }
 
+    /// Register the header as native scroll-edge chrome. SwiftUI owns its
+    /// content inset and backdrop, including size and accessibility changes.
     private var sessionListSurface: some View {
         ZStack {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
             content
+        }
+        .safeAreaBar(edge: .top, spacing: 0) {
+            SessionListTopChrome(
+                headerLogoColor: selectedHeaderLogoColor,
+                headerLogoText: serverIdentity?.headerLogoText ?? "",
+                searchText: $searchText,
+                searchChromeIsExpanded: $searchChromeIsExpanded,
+                searchFieldIsFocused: $searchFieldIsFocused,
+                showsSearchClearButton: showsSearchClearButton,
+                reduceMotion: reduceMotion,
+                onOpenSearch: openSearch,
+                onCloseSearch: closeSearch,
+                onSearchFocusChange: handleSearchFieldFocusChange
+            )
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if !isSearchingSessions {
@@ -386,18 +406,22 @@ struct SessionListView: View {
 
     @ViewBuilder
     private var regularWidthDetail: some View {
-        if let destination = navigationState.destination {
-            navigationDestination(destination)
-        } else {
-            ContentUnavailableView {
-                Label("Select a Chat", systemImage: "bubble.left.and.bubble.right")
-            } description: {
-                Text("Choose a session from the sidebar or start a new chat.")
-            } actions: {
-                Button("New Chat", action: openNewChat)
-                    .buttonStyle(.borderedProminent)
+        Group {
+            if let destination = navigationState.destination {
+                navigationDestination(destination)
+            } else if didCompleteInitialLoad {
+                PendingNewChatView(
+                    server: server,
+                    viewModel: viewModel,
+                    onAPIError: authManager.handleAPIError,
+                    onSessionCreated: rememberCreatedSession,
+                    draftStore: draftStore
+                )
+            } else {
+                ProgressView()
             }
         }
+        .navigationBarTitleDisplayMode(.inline)
     }
 
     @ViewBuilder
@@ -475,9 +499,6 @@ struct SessionListView: View {
 
     private var content: some View {
         List {
-            header
-                .sessionsTopChromeListRow()
-
             if isBotModeEnabled {
                 Picker("Screen", selection: $showsBots) {
                     Text("Sessions").tag(false)
@@ -565,7 +586,11 @@ struct SessionListView: View {
         // with the tightly-packed navigation rows.
         .environment(\.defaultMinListRowHeight, 0)
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
         .scrollPosition(id: $sidebarScrollPosition)
+        // Native scroll-edge treatment: rows fading under the pinned chrome
+        // get the system soft edge instead of a material slab (#21).
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
         // Disclosure subrows are real List rows; drive their fold from the List
@@ -577,112 +602,6 @@ struct SessionListView: View {
 
     private var serverIdentity: ServerAccount? {
         authManager.servers.first { $0.id == server.absoluteString }
-    }
-
-    private var header: some View {
-        HStack(alignment: .center, spacing: searchChromeIsExpanded ? 0 : 16) {
-            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor, text: serverIdentity?.headerLogoText ?? "")
-                .frame(width: searchChromeIsExpanded ? 0 : 160, alignment: .leading)
-                .opacity(searchChromeIsExpanded ? 0 : 1)
-                .clipped()
-                .accessibilityHidden(searchChromeIsExpanded)
-
-            searchChrome
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 28)
-        .animation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion), value: searchChromeIsExpanded)
-        .animation(SessionListMotion.searchFocusAnimation(reduceMotion: reduceMotion), value: showsSearchClearButton)
-        .onChange(of: searchFieldIsFocused) { _, newValue in
-            handleSearchFieldFocusChange(newValue)
-        }
-    }
-
-    private var searchChrome: some View {
-        HStack(spacing: searchChromeIsExpanded ? 8 : 0) {
-            HapticButton {
-                if searchChromeIsExpanded {
-                    searchFieldIsFocused = true
-                } else {
-                    openSearch()
-                }
-            } label: {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(searchChromeIsExpanded ? .secondary : .primary)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .frame(width: 48, height: 48)
-                    .contentShape(Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(searchChromeIsExpanded ? "Focus session search" : "Search sessions")
-            .accessibilityHint("Shows the session search field.")
-            .accessibilityHidden(searchChromeIsExpanded)
-
-            searchTextField
-
-            if showsSearchClearButton {
-                searchClearButton
-                    .transition(.scale.combined(with: .opacity))
-            }
-
-            if searchChromeIsExpanded {
-                searchCloseButton
-                    .transition(.opacity)
-            }
-        }
-        .frame(maxWidth: searchChromeIsExpanded ? .infinity : nil, alignment: .trailing)
-        .sessionsChromeGlass(
-            isInteractive: true,
-            in: Capsule()
-        )
-        .clipShape(Capsule())
-        .contentShape(Capsule())
-    }
-
-    private var searchTextField: some View {
-        TextField("Search sessions", text: $searchText)
-            .font(AppFont.subheadline())
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .focused($searchFieldIsFocused)
-            .submitLabel(.done)
-            .lineLimit(1)
-            .layoutPriority(1)
-            .frame(maxWidth: searchChromeIsExpanded ? .infinity : 0)
-            .opacity(searchChromeIsExpanded ? 1 : 0)
-            .clipped()
-            .accessibilityHidden(!searchChromeIsExpanded)
-    }
-
-    private var searchClearButton: some View {
-        Button {
-            searchText = ""
-            searchFieldIsFocused = true
-        } label: {
-            Image(systemName: "xmark.circle.fill")
-                .font(AppFont.subheadline())
-                .foregroundStyle(.secondary)
-                .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Clear search")
-    }
-
-    private var searchCloseButton: some View {
-        HapticButton(feedbackStyle: .medium, action: closeSearch) {
-            Image(systemName: "xmark")
-                .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Close search")
-        .accessibilityHint("Closes search and clears the current query.")
     }
 
     private var settingsButton: some View {
@@ -857,7 +776,10 @@ struct SessionListView: View {
     }
 
     private var showsSearchClearButton: Bool {
-        searchChromeIsExpanded && !searchText.isEmpty
+        SessionListSearchChrome.showsClearButton(
+            isExpanded: searchChromeIsExpanded,
+            query: searchText
+        )
     }
 
     private func isActiveProfile(_ profile: ProfileSummary) -> Bool {
@@ -984,20 +906,23 @@ struct SessionListView: View {
     }
 
     private func closeSearch() {
-        searchText = ""
+        SessionListSearchChrome.applyClose(to: &searchChromeState)
+        searchText = searchChromeState.query
         searchFieldIsFocused = false
         isSearchFocused = false
 
         withAnimation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion)) {
-            searchChromeIsExpanded = false
-            isSearchVisible = false
+            searchChromeIsExpanded = searchChromeState.isExpanded
+            isSearchVisible = searchChromeState.isVisible
         }
     }
 
     private func openSearch() {
+        SessionListSearchChrome.applyOpen(to: &searchChromeState, preserving: searchText)
+        searchText = searchChromeState.query
         withAnimation(SessionListMotion.searchChromeAnimation(reduceMotion: reduceMotion)) {
-            isSearchVisible = true
-            searchChromeIsExpanded = true
+            isSearchVisible = searchChromeState.isVisible
+            searchChromeIsExpanded = searchChromeState.isExpanded
         }
         searchFieldIsFocused = true
     }
@@ -1017,10 +942,7 @@ struct SessionListView: View {
 
     private func openSearchFromKeyboard() {
         searchFieldIsFocused = false
-
-        if horizontalSizeClass != .regular {
-            navigationState.clearDestination()
-        }
+        isSidebarPresented = true
 
         Task { @MainActor in
             await Task.yield()
@@ -1285,16 +1207,19 @@ struct SessionListView: View {
     private func selectDestination(_ session: SessionSummary) {
         viewModel.invalidateSessionOpening()
         navigationState.select(session)
+        if usesCompactSidebar { isSidebarPresented = false }
     }
 
     private func selectDestination(_ route: PendingNewChatRoute) {
         viewModel.invalidateSessionOpening()
         navigationState.select(route)
+        if usesCompactSidebar { isSidebarPresented = false }
     }
 
     private func selectDestination(_ utility: SessionListUtilityDestination) {
         viewModel.invalidateSessionOpening()
         navigationState.select(utility)
+        if usesCompactSidebar { isSidebarPresented = false }
     }
 
     private func startOpeningSession(_ session: SessionSummary) {
