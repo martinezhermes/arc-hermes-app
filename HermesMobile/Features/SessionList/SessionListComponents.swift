@@ -1012,13 +1012,6 @@ extension View {
             .listRowBackground(Color(.systemBackground))
     }
 
-    func sessionsTopChromeListRow() -> some View {
-        listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 18, trailing: 0))
-            .listRowSeparator(.hidden)
-            .listRowBackground(Color.clear)
-            .zIndex(1)
-    }
-
     func sessionsChromeGlass<S: InsettableShape>(
         isInteractive: Bool = false,
         tint: Color? = nil,
