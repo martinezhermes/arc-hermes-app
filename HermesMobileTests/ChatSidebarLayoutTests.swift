@@ -2,6 +2,22 @@ import XCTest
 @testable import HermesMobile
 
 final class ChatSidebarLayoutTests: XCTestCase {
+    func testOutwardPullCannotCloseOpenPaneEvenWithReverseReleasePrediction() {
+        for direction: CGFloat in [1, -1] {
+            var drag = ChatSidebarDrag(width: 300, presented: true, direction: direction,
+                                      initialTranslation: CGSize(width: 80 * direction, height: 0))
+            XCTAssertTrue(drag.settlesOpen(projected: CGSize(width: -900 * direction, height: 0)))
+            drag.update(CGSize(width: -2 * direction, height: 0))
+            XCTAssertTrue(drag.settlesOpen(projected: CGSize(width: -900 * direction, height: 0)))
+        }
+    }
+
+    func testWrongDirectionCannotOpenClosedPaneFromReleasePredictionAlone() {
+        let drag = ChatSidebarDrag(width: 300, presented: false, direction: 1,
+                                  initialTranslation: CGSize(width: -80, height: 0))
+        XCTAssertFalse(drag.settlesOpen(projected: CGSize(width: 900, height: 0)))
+    }
+
     func testNarrowRegularWindowUsesCompactPresentation() {
         XCTAssertFalse(ChatSidebarLayout.isWide(available: 599, regularSizeClass: true))
         XCTAssertTrue(ChatSidebarLayout.isWide(available: 600, regularSizeClass: true))

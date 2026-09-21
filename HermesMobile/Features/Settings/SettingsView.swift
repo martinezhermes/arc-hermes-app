@@ -9,6 +9,12 @@ enum SettingsScrollAnchor: Hashable {
     case servers
 }
 
+/// Settings is a modal destination; its anchor does not replace the active chat.
+struct SettingsPresentation: Identifiable {
+    let id = UUID()
+    let scrollTarget: SettingsScrollAnchor?
+}
+
 struct SettingsView: View {
     @Bindable var authManager: AuthManager
     let server: URL

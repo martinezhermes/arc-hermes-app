@@ -24,7 +24,9 @@ final class ResponseSelectionInput: UIView, UITextInput, UITextInteractionDelega
     var endOfDocument: UITextPosition { ResponseTextPosition(document.text.length) }
     var hasText: Bool { document.text.length > 0 }
     var isEditable: Bool { false }
-    var textInputView: UIView { subviews.first ?? self }
+    // Selection geometry is expressed in this adapter's coordinate system,
+    // not in the hosted SwiftUI child's coordinates or responder identity.
+    var textInputView: UIView { self }
     override var canBecomeFirstResponder: Bool { true }
     // UITextInteraction promotes a UITextInput to an accessibility element.
     // This adapter is a container; expose the hosted text and controls instead.

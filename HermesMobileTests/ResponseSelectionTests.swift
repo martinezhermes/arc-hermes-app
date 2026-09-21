@@ -4,6 +4,17 @@ import XCTest
 
 @MainActor
 final class ResponseSelectionTests: XCTestCase {
+    func testTextInputCoordinatesStayWithAdapterWhenHostedContentChanges() {
+        let input = ResponseSelectionInput()
+        let host = UIHostingController(rootView: Text("Selectable response"))
+        host.view.frame = CGRect(x: 30, y: 45, width: 200, height: 100)
+        input.addSubview(host.view)
+        XCTAssertTrue(input.textInputView === input)
+        XCTAssertTrue(input.selectionInteraction.textInput === input)
+        host.view.removeFromSuperview()
+        XCTAssertTrue(input.textInputView === input)
+    }
+
     func testAskHermexReturnsExactSelectionAndClearsIt() {
         let input = ResponseSelectionInput()
         let controller = UIViewController()
