@@ -1,6 +1,6 @@
 # Hermex
 
-Hermex is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's `hermes-webui` server over HTTPS and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `HermesMobile`; the App Store name is `Hermex`.
+Hermex is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's `hermes-webui` server over HTTPS and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `ARCHermes`; the App Store name is `Hermex`.
 
 You can think of Hermex as an open source "bring-your-own-server" iPhone client for Hermes. The phone is the control and review plane; the server owns execution, tools, models, and the user's data.
 
@@ -71,7 +71,7 @@ We need to be on the same page with terminology. When communicating, use this la
 The most common defect in this repo is a change that works on the path you tested and is missing everywhere else. Before calling UI work done, walk this list and say which entries applied:
 
 - **Entry points.** A behavior reachable from the chat view is usually also reachable from the session list's context menus, Settings, hardware-keyboard shortcuts, deep links, App Intents, the share extension, and Live Activity taps. Fixing one is not fixing the feature.
-- **Targets.** Main app, `HermesShareExtension`, `HermesLiveActivityWidget`, and `HermesMobileTests`. A shared model or resource change needs a target-membership decision for every target that consumes it.
+- **Targets.** Main app, `HermesShareExtension`, `HermesLiveActivityWidget`, and `ARCHermesTests`. A shared model or resource change needs a target-membership decision for every target that consumes it.
 - **Servers.** Multiple configured servers are real. Switch between two and check that credentials, custom headers, cache, drafts, identity, selections, and defaults stay with their server. Read `docs/agents/multi-server-state-isolation.md` before touching auth, server switching, cache keying, or per-server settings.
 - **Contracts.** Anything crossing the wire goes through `Endpoint` and a tolerant `Codable` model. Change endpoint construction, request body, decode, and SSE handling together, and verify each against upstream (see Working with the server).
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Archive needs restore. Pin needs unpin. Start needs stop. Optimistic mutation needs rollback. A one-way door is a bug.
@@ -98,7 +98,7 @@ A live server is not a test fixture. Unit tests run against `URLProtocol` mocks,
 
 ## Verifying
 
-- Smallest proof that the change works while iterating: focused XCTest for the behavior you touched, via XcodeBuildMCP `test_sim`. Defaults live in `.xcodebuildmcp/config.yaml` (scheme `HermesMobile`, sim **iPhone 17**); if that sim is missing, pick a nearby iPhone and say which.
+- Smallest proof that the change works while iterating: focused XCTest for the behavior you touched, via XcodeBuildMCP `test_sim`. Defaults live in `.xcodebuildmcp/config.yaml` (scheme `ARCHermes`, sim **iPhone 17**); if that sim is missing, pick a nearby iPhone and say which.
 - **Run the full XCTest suite before asking for review or committing a slice.** A failing build or test becomes the current task; fix it before writing more code on top.
 - Behavior changes ship with focused tests for that behavior.
 - Async flows wait on expectations and scripted fixtures, never on sleeps or polling. A test that needs a timeout to pass is wrong.
@@ -140,7 +140,7 @@ Canonical vocabulary: `CONTEXT.md`.
 - `HermesMobile/AppIntents/` and `HermesMobile/LiveActivities/` - system entry points and activity coordination.
 - `HermesShareExtension/` and `HermesLiveActivityWidget/` - separate targets. Shared files need target-membership checks.
 - `HermesMobileTests/` - the XCTest suite, one target directory. Keep tests near the behavior in name and scope.
-- `Config/`, `ci/`, and `.github/workflows/` - signing, CI, and release configuration. Treat edits there as release-sensitive. App identity resolves through xcconfig and is not grep-able: bundle ID `com.uzairansar.hermesmobile`, tests `….tests`, Team `6GYD9C9N6R`, SKU `hermes-mobile-ios`.
+- `Config/`, `ci/`, and `.github/workflows/` - signing, CI, and release configuration. Treat edits there as release-sensitive. App identity resolves through xcconfig and is not grep-able: bundle ID `com.martinezhermes.archermes`, tests `….tests`, Team `E7A828PV52`, SKU `hermes-mobile-ios`.
 - `.codex-tmp/hermes-webui/` - the gitignored, read-only upstream reference. Prefer its patterns over invented ones. Never edit or import from it; refresh with `git pull` when advancing the pin.
 
 ## Taste
@@ -158,7 +158,7 @@ Canonical vocabulary: `CONTEXT.md`.
 
 ## Branch TestFlight (maintainer-only)
 
-"push to branch testflight" means upload the current branch to the side-by-side **Hermex Branch** internal TestFlight app (`com.uzairansar.hermesmobile.branch`). It is a TestFlight upload, **not** a git push. Validate first, use a unique `CURRENT_PROJECT_VERSION` (e.g. `YYYYMMDDHHMM`), and follow the archive and export commands in `DEVELOPMENT.md`. Never touch the production `com.uzairansar.hermesmobile` app, invite testers, or change App Store Connect state unless explicitly asked. `TESTFLIGHT.md` owns release gates.
+"push to branch testflight" means upload the current branch to the side-by-side **ARC Hermes Branch** internal TestFlight app (`com.martinezhermes.archermes.branch`). It is a TestFlight upload, **not** a git push. Validate first, use a unique `CURRENT_PROJECT_VERSION` (e.g. `YYYYMMDDHHMM`), and follow the archive and export commands in `DEVELOPMENT.md`. Never touch the production `com.martinezhermes.archermes` app, invite testers, or change App Store Connect state unless explicitly asked. `TESTFLIGHT.md` owns release gates.
 
 ## Additional tips
 

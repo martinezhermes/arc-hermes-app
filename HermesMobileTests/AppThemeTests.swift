@@ -1,9 +1,46 @@
 import SwiftUI
 import XCTest
 import UserNotifications
+import ImageIO
 @testable import HermesMobile
 
 final class AppThemeTests: XCTestCase {
+    func testCustomPixelHeaderNormalizesAndBoundsInputWithoutLosingTypedSpaces() {
+        XCTAssertEqual(HeaderLogoText.normalized("Arc café-42 "), "ARC CAFE-42 ")
+        XCTAssertEqual(HeaderLogoText.normalized("hi🙂/世界"), "HI")
+        XCTAssertEqual(HeaderLogoText.normalized("ABCDEFGHIJKLMNOPQRST"), "ABCDEFGHIJKLMNOP")
+        XCTAssertEqual(HeaderLogoText.resolved("   "), "ARC HERMES")
+        XCTAssertEqual(HeaderLogoText.resolved("work "), "WORK")
+    }
+
+    @MainActor
+    func testAvatarImportCreatesBoundedReadableThumbnail() throws {
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 1200, height: 600)).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1200, height: 600))
+        }
+        let source = NSMutableData()
+        let writer = try XCTUnwrap(CGImageDestinationCreateWithData(source, "public.jpeg" as CFString, 1, nil))
+        CGImageDestinationAddImage(writer, try XCTUnwrap(image.cgImage), [
+            kCGImagePropertyOrientation: 6,
+            kCGImagePropertyGPSDictionary: [kCGImagePropertyGPSLatitude: 12.0, kCGImagePropertyGPSLatitudeRef: "N"]
+        ] as CFDictionary)
+        XCTAssertTrue(CGImageDestinationFinalize(writer))
+        let data = try AvatarPhoto.thumbnail(from: source as Data)
+        XCTAssertLessThanOrEqual(data.count, AvatarPhoto.maximumStoredBytes)
+        let thumbnail = try XCTUnwrap(UIImage(data: data))
+        XCTAssertEqual(thumbnail.size.width, 128)
+        XCTAssertEqual(thumbnail.size.height, 256)
+        let decoded = try XCTUnwrap(CGImageSourceCreateWithData(data as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(decoded, 0, nil) as? [CFString: Any])
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+    }
+
+    func testAvatarImportRejectsInvalidAndOversizedInput() {
+        XCTAssertThrowsError(try AvatarPhoto.thumbnail(from: Data("not an image".utf8)))
+        XCTAssertThrowsError(try AvatarPhoto.thumbnail(from: Data(repeating: 0, count: AvatarPhoto.maximumInputBytes + 1)))
+    }
+
     func testStoredValueFallsBackToSystemForUnknownRawValue() {
         XCTAssertEqual(AppTheme.storedValue("unexpected"), .system)
     }

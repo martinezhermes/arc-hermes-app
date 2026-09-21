@@ -4,8 +4,8 @@ Maintainer-only release procedures. Uploads, tester invitations, and App Store
 Connect changes require an explicit owner request. Contributors only need
 [DEVELOPMENT.md](DEVELOPMENT.md).
 
-These procedures target the production app, `com.uzairansar.hermesmobile`.
-For the side-by-side **Hermex Branch** app, use the
+These procedures target the production app, `com.martinezhermes.archermes`.
+For the side-by-side **ARC Hermes Branch** app, use the
 [branch upload commands](DEVELOPMENT.md#branch-testflight-upload-cli--the-push-to-branch-testflight-command).
 
 ## Release gates
@@ -35,7 +35,7 @@ after a signing change. Inspect the current settings rather than copying identit
 from a previous release:
 
 ```zsh
-xcodebuild -showBuildSettings -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release | rg "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_STYLE"
+xcodebuild -showBuildSettings -project ARCHermes.xcodeproj -scheme ARCHermes -configuration Release | rg "PRODUCT_BUNDLE_IDENTIFIER|DEVELOPMENT_TEAM|CODE_SIGN_ENTITLEMENTS|CODE_SIGN_STYLE"
 ```
 
 Configure the `internal-testflight` and `external-testflight` GitHub environments,
@@ -58,8 +58,8 @@ xcrun simctl list devices available
 git status --short --branch
 git diff --check
 plutil -lint HermesMobile/Resources/Info.plist HermesMobile/Resources/PrivacyInfo.xcprivacy HermesShareExtension/Resources/Info.plist HermesShareExtension/Resources/PrivacyInfo.xcprivacy
-xcodebuild test -project HermesMobile.xcodeproj -scheme HermesMobile -destination 'platform=iOS Simulator,name=iPhone 17'
-xcodebuild -project HermesMobile.xcodeproj -scheme HermesMobile -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'
+xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermes -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
 
 If that simulator is unavailable, choose an available iPhone and record it.
@@ -160,7 +160,7 @@ and quiet-stream disconnections remain part of connection testing.
 Feedback exported by Xcode lands on the maintainer's Mac at:
 
 ```
-~/Library/Developer/Xcode/Products/com.uzairansar.hermesmobile/Feedback/Points/
+~/Library/Developer/Xcode/Products/com.martinezhermes.archermes/Feedback/Points/
 ```
 
 One `<id>.xcfeedbackpoint/` bundle per submission, each containing

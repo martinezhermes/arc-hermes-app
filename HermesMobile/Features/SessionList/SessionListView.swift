@@ -70,8 +70,6 @@ struct SessionListView: View {
     @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     @AppStorage(PrimaryActionTintSettings.isEnabledKey) private var tintsPrimaryActions = false
     @AppStorage(GlassPreference.isEnabledKey) private var isGlassEnabled = GlassPreference.defaultIsEnabled
-    @AppStorage(SessionIdentitySettings.displayNameKey) private var identityDisplayName = ""
-    @AppStorage(SessionIdentitySettings.initialsKey) private var identityInitials = ""
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(BotModeGate.isEnabledKey) private var isBotModeEnabled = false
 
@@ -366,17 +364,22 @@ struct SessionListView: View {
     }
 
     private var sessionListSurface: some View {
-        ZStack(alignment: .bottomTrailing) {
+        ZStack {
             Color(.systemBackground)
                 .ignoresSafeArea()
 
             content
-
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if !isSearchingSessions {
-                newSessionButton
-                    .padding(.trailing, 24)
-                    .padding(.bottom, 22)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                HStack(spacing: 12) {
+                    newSessionButton
+                    Spacer(minLength: 12)
+                    settingsButton
+                }
+                .padding(.horizontal, 24)
+                .padding(.top, 8)
+                .padding(.bottom, 8)
             }
         }
     }
@@ -549,11 +552,6 @@ struct SessionListView: View {
                 archivedEntryRow
                     .sessionsScreenListRow()
             }
-
-            Color.clear
-                .frame(height: 104)
-                .sessionsScreenListRow()
-                .accessibilityHidden(true)
         }
         .listStyle(.plain)
         // On the List itself, not the navigation container: a refresh action
@@ -577,9 +575,13 @@ struct SessionListView: View {
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
     }
 
+    private var serverIdentity: ServerAccount? {
+        authManager.servers.first { $0.id == server.absoluteString }
+    }
+
     private var header: some View {
         HStack(alignment: .center, spacing: searchChromeIsExpanded ? 0 : 16) {
-            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor)
+            HermesHeaderLogo(selectedColor: selectedHeaderLogoColor, text: serverIdentity?.headerLogoText ?? "")
                 .frame(width: searchChromeIsExpanded ? 0 : 160, alignment: .leading)
                 .opacity(searchChromeIsExpanded ? 0 : 1)
                 .clipped()
@@ -598,7 +600,7 @@ struct SessionListView: View {
     }
 
     private var searchChrome: some View {
-        HStack(spacing: searchChromeIsExpanded ? 8 : 4) {
+        HStack(spacing: searchChromeIsExpanded ? 8 : 0) {
             HapticButton {
                 if searchChromeIsExpanded {
                     searchFieldIsFocused = true
@@ -610,8 +612,8 @@ struct SessionListView: View {
                     .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(searchChromeIsExpanded ? .secondary : .primary)
                     .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-                    .contentShape(Rectangle())
+                    .frame(width: 48, height: 48)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(searchChromeIsExpanded ? "Focus session search" : "Search sessions")
@@ -625,9 +627,11 @@ struct SessionListView: View {
                     .transition(.scale.combined(with: .opacity))
             }
 
-            searchTrailingButton
+            if searchChromeIsExpanded {
+                searchCloseButton
+                    .transition(.opacity)
+            }
         }
-        .padding(.vertical, 2)
         .frame(maxWidth: searchChromeIsExpanded ? .infinity : nil, alignment: .trailing)
         .sessionsChromeGlass(
             isInteractive: true,
@@ -668,61 +672,45 @@ struct SessionListView: View {
         .accessibilityLabel("Clear search")
     }
 
-    private var searchTrailingButton: some View {
-        HapticButton(feedbackStyle: .medium) {
-            if searchChromeIsExpanded {
-                closeSearch()
-            } else {
-                selectDestination(.settings(nil))
-            }
-        } label: {
-            ZStack {
-                Text(settingsInitials)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(initialsAvatarForegroundColor)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .background(selectedHeaderLogoColor, in: Circle())
-                    .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-                    .opacity(searchChromeIsExpanded ? 0 : 1)
-                    .scaleEffect(searchChromeIsExpanded ? 0.72 : 1)
-                    .rotationEffect(.degrees(searchChromeIsExpanded ? -18 : 0))
-
-                Image(systemName: "xmark")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .frame(width: Self.searchChromeIconVisualSize, height: Self.searchChromeIconVisualSize)
-                    .opacity(searchChromeIsExpanded ? 1 : 0)
-                    .scaleEffect(searchChromeIsExpanded ? 1 : 0.72)
-                    .rotationEffect(.degrees(searchChromeIsExpanded ? 0 : 18))
-            }
-            .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
-            .contentShape(Rectangle())
+    private var searchCloseButton: some View {
+        HapticButton(feedbackStyle: .medium, action: closeSearch) {
+            Image(systemName: "xmark")
+                .font(.system(size: 22, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: Self.searchChromeIconHitTarget, height: Self.searchChromeIconHitTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(searchChromeIsExpanded ? "Close search" : "Settings")
-        .accessibilityHint(
-            searchChromeIsExpanded
-                ? "Closes search and clears the current query."
-                : "Opens Settings. Long press to switch servers."
-        )
-        // Long-press the avatar to switch the active server, reusing #17's
-        // switch/add actions. Suppressed while search is expanded so the
-        // "close search" tap state is untouched (#283). The plain tap above is
-        // preserved — `contextMenu` adds long-press without stealing the tap.
+        .accessibilityLabel("Close search")
+        .accessibilityHint("Closes search and clears the current query.")
+    }
+
+    private var settingsButton: some View {
+        HapticButton(feedbackStyle: .medium) {
+            selectDestination(.settings(nil))
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+                .sessionsChromeGlass(isInteractive: true, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Settings")
+        .accessibilityHint("Opens Settings. Long press to switch servers.")
         .contextMenu {
-            if !searchChromeIsExpanded {
-                AvatarServerSwitcherMenu(
-                    model: AvatarServerSwitcherModel(
-                        servers: authManager.servers,
-                        activeServerID: authManager.activeServerID
-                    ),
-                    switchToServer: { account in
-                        authManager.switchActiveServer(to: account)
-                    },
-                    addServer: { isPresentingAddServer = true },
-                    manageServers: { selectDestination(.settings(.servers)) }
-                )
-            }
+            AvatarServerSwitcherMenu(
+                model: AvatarServerSwitcherModel(
+                    servers: authManager.servers,
+                    activeServerID: authManager.activeServerID
+                ),
+                switchToServer: { account in
+                    authManager.switchActiveServer(to: account)
+                },
+                addServer: { isPresentingAddServer = true },
+                manageServers: { selectDestination(.settings(.servers)) }
+            )
         }
     }
 
@@ -730,19 +718,18 @@ struct SessionListView: View {
         HapticButton(feedbackStyle: .medium) {
             openNewChat()
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: "square.and.pencil")
-                    .font(.title3.weight(.semibold))
+                    .font(.system(size: 24, weight: .semibold))
 
                 Text("Chat")
                     .font(.headline.weight(.semibold))
             }
             .foregroundStyle(newSessionButtonForegroundColor)
-            .padding(.horizontal, 22)
-            .frame(height: 58)
-            // Lock the hit region to the visible capsule so taps in the padding,
-            // rounded ends, and icon↔text gap start a new chat instead of falling
-            // through to the session row behind the FAB (issue #242).
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(minHeight: 48)
+            // Keep the padding, rounded ends, and icon-to-text gap tappable.
             .contentShape(Capsule())
             .background {
                 if let fill = newSessionButtonSolidThemeFill {
@@ -883,14 +870,6 @@ struct SessionListView: View {
         return profile.isActive == true
     }
 
-    private var settingsInitials: String {
-        SessionIdentitySettings.displayInitials(
-            displayName: identityDisplayName,
-            storedInitials: identityInitials,
-            fallbackFullName: NSFullUserName()
-        )
-    }
-
     private var selectedHeaderLogoColor: Color {
         HeaderLogoColor.color(for: headerLogoColorHex)
     }
@@ -937,10 +916,6 @@ struct SessionListView: View {
         }
 
         return colorScheme == .dark ? .black : .white
-    }
-
-    private var initialsAvatarForegroundColor: Color {
-        HeaderLogoColor.prefersDarkForeground(for: headerLogoColorHex) ? .black : .white
     }
 
     private var normalizedSearchText: String {
@@ -1415,40 +1390,6 @@ enum SessionListDestinationReturn {
     }
 }
 
-struct HermesHeaderLogo: View {
-    let selectedColor: Color
-
-    private static let aspectRatio = 643.0 / 185.0
-
-    var body: some View {
-        ZStack {
-            Image("hermes-fill-mask")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundStyle(selectedColor)
-
-            Image("hermes-shading-overlay")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.multiply)
-
-            Image("hermes-highlight")
-                .resizable()
-                .scaledToFit()
-                .blendMode(.screen)
-
-            Image("hermes-outline-shadow")
-                .resizable()
-                .scaledToFit()
-        }
-        .aspectRatio(Self.aspectRatio, contentMode: .fit)
-        .compositingGroup()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("HERMEX")
-    }
-}
-
 /// A request from `ContentView` to open the New Chat composer. Carries whether voice
 /// dictation should auto-start (the "New Chat with Voice" App Intent, #338) and an optional
 /// profile name to pin the new session to (the "New Chat in <Profile>" App Intent, #339).
@@ -1500,7 +1441,7 @@ struct PendingNewChatRoute: Identifiable, Hashable {
 
 enum SessionListUtilityDestination: Hashable, Identifiable {
     /// Optional section to scroll to when Settings opens — "Manage Servers"
-    /// passes `.servers`, a plain avatar tap passes `nil` (#283).
+    /// passes `.servers`, a plain Settings tap passes `nil` (#283).
     case settings(SettingsScrollAnchor?)
     case tasks
     case kanban
@@ -1640,7 +1581,7 @@ private struct PendingNewChatView: View {
 
     private var pendingComposer: some View {
         HStack(alignment: .bottom, spacing: 10) {
-            TextField("Message Hermex", text: persistedDraftBinding, axis: .vertical)
+            TextField("Message ARC Hermes", text: persistedDraftBinding, axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...5)
                 .focused($composerIsFocused)

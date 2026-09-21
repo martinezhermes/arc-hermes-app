@@ -11,7 +11,7 @@ import Foundation
 /// `status` and both null. `status` values seen live: `available`, `unsupported`,
 /// `unavailable`, `no_key`, `invalid_key`. Every field is optional so a partial
 /// or future payload decodes instead of throwing, and `pool` — the per-credential
-/// breakdown Hermex deliberately does not show — is ignored.
+/// breakdown ARC Hermes deliberately does not show — is ignored.
 struct ProviderQuotaResponse: Decodable, Equatable, Sendable {
     let ok: Bool?
     let provider: String?

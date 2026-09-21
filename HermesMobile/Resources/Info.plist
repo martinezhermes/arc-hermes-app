@@ -61,19 +61,19 @@
 		</dict>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Hermex connects to your Hermes backend on your local network to load bots and chat.</string>
+	<string>ARC Hermes connects to your Hermes backend on your local network to load bots and chat.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Hermex needs microphone access to dictate text into the message composer.</string>
+	<string>ARC Hermes needs microphone access to dictate text into the message composer.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Hermex needs camera access to capture and attach photos directly in chat.</string>
+	<string>ARC Hermes needs camera access to capture and attach photos directly in chat.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Hermex needs photo library access to attach images to chat messages.</string>
+	<string>ARC Hermes needs photo library access to attach images to chat messages.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>Hermex needs permission to save exported workspace images to Photos.</string>
+	<string>ARC Hermes needs permission to save exported workspace images to Photos.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Hermex uses speech recognition to turn dictated audio into editable draft text.</string>
+	<string>ARC Hermes uses speech recognition to turn dictated audio into editable draft text.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

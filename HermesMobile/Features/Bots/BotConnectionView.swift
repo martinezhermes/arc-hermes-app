@@ -26,7 +26,7 @@ import SwiftUI
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                 SecureField("Password", text: $password).textContentType(.password)
             } header: { Text("Bot connection") } footer: {
-                Text("This connection belongs to the selected Hermex server. Use the address and password of your existing Hermes backend on LAN or Tailscale.")
+                Text("This connection belongs to the selected ARC Hermes server. Use the address and password of your existing Hermes backend on LAN or Tailscale.")
             }
             Section {
                 if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
@@ -40,7 +40,7 @@ import SwiftUI
             Section("Setup in Hermes Desktop") {
                 Text("Keep Hermes Desktop running. In Settings → Advanced, enable Keep computer awake. The display may dim.")
                 Text("In Settings → Plugins, enable Bots for the intended Profile. Applies to selects the Profile configuration being edited.")
-                Text("Desktop and Hermex must use the same password-protected backend. Remote gateway connects Desktop to a backend; it does not expose Desktop’s private local backend to your phone.")
+                Text("Desktop and ARC Hermes must use the same password-protected backend. Remote gateway connects Desktop to a backend; it does not expose Desktop’s private local backend to your phone.")
                 Text("Open each bot’s Bot Chat in Desktop first. Do not start a second backend using the same Profile storage.")
                 Text("Connecting loads the bot roster and may recover archived Bot Chats. Opening a chat may resume unfinished work. Approvals are answered in Desktop.")
             }
@@ -63,7 +63,7 @@ import SwiftUI
             } catch { errorMessage = String(localized: "Could not read saved sign-in details.") }
         }
         .onDisappear { connectTask?.cancel(); client?.close(); client = nil }
-        .confirmationDialog("Remove this connection from Hermex?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
+        .confirmationDialog("Remove this connection from ARC Hermes?", isPresented: $confirmingRemoval, titleVisibility: .visible) {
             Button("Remove bot connection", role: .destructive) {
                 Task {
                     do {

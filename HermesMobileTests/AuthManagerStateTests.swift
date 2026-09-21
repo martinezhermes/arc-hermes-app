@@ -479,6 +479,34 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: HeaderLogoColor.storageKey), "#5B7CFF")
     }
 
+    func testCustomHeaderAndAvatarStayWithTheirServerAcrossStaleEditsAndReload() async throws {
+        let keychain = InMemoryKeychainStore()
+        let registry = ServerRegistry.inMemory(keychain: keychain)
+        let (manager, a, b) = try await makeTwoServerManager(keychain: keychain, registry: registry)
+        let photo = Data([1, 2, 3])
+        manager.updateServerHeader(id: a.id, text: "Home-42")
+        manager.updateServerAvatar(id: a.id, data: photo)
+        manager.updateServerHeader(id: b.id, text: "WORK")
+        // A detail screen may still hold the account value from before the photo import.
+        manager.updateServerIdentity(a, displayName: "Home", initials: "HM", headerLogoColorHex: "#FF3B30")
+        manager.switchActiveServer(to: b)
+        XCTAssertEqual(manager.servers.first { $0.id == a.id }?.avatarImageData, photo)
+        XCTAssertEqual(manager.servers.first { $0.id == a.id }?.headerLogoText, "HOME-42")
+        XCTAssertNil(manager.servers.first { $0.id == b.id }?.avatarImageData)
+        let restored = ServerRegistry.inMemory(keychain: keychain)
+        XCTAssertEqual(restored.servers.first { $0.id == a.id }?.avatarImageData, photo)
+        XCTAssertEqual(restored.servers.first { $0.id == b.id }?.headerLogoText, "WORK")
+        manager.updateServerAvatar(id: a.id, data: nil)
+        manager.updateServerHeader(id: a.id, text: "")
+        XCTAssertNil(manager.servers.first { $0.id == a.id }?.avatarImageData)
+        XCTAssertEqual(manager.servers.first { $0.id == a.id }?.headerLogoText, "")
+        XCTAssertEqual(manager.servers.first { $0.id == b.id }?.headerLogoText, "WORK")
+        await manager.removeServer(a)
+        manager.updateServerAvatar(id: a.id, data: photo)
+        manager.updateServerHeader(id: a.id, text: "LATE")
+        XCTAssertFalse(manager.servers.contains { $0.id == a.id })
+    }
+
     /// Builds a manager with two registered servers: `a.test` signed in + active,
     /// `b.test` present but inactive. Returns the manager and both accounts.
     private func makeTwoServerManager(

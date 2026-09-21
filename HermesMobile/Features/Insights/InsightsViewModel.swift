@@ -521,7 +521,14 @@ final class InsightsViewModel {
             id: "messages",
             label: String(localized: "Messages"),
             value: usageFormattedTokens(totalMessages),
-            detail: String(localized: "across \(String(localized: "\(sessionCount) sessions"))")
+            // Explicit key: the inferred key ("across %@") collides with "Across %@."
+            // when Xcode generates string-catalog symbols (same symbol, case aside).
+            // The default value keeps every locale's rendering byte-identical.
+            detail: String(
+                localized: "insights.totals.messagesAcrossSessions",
+                defaultValue: "across \(String(localized: "\(sessionCount) sessions"))",
+                comment: "Detail under the Messages total: across N sessions (lowercase fragment)."
+            )
         ))
 
         if let peakDay, let day = peakDay.day, !day.isEmpty {

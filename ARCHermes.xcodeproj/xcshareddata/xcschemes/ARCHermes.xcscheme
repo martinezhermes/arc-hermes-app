@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Scheme
-   LastUpgradeVersion = "1640"
+   LastUpgradeVersion = "2700"
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A2B3C4D5E6F700000000040"
-               BuildableName = "HermesMobile.app"
-               BlueprintName = "HermesMobile"
-               ReferencedContainer = "container:HermesMobile.xcodeproj">
+               BuildableName = "ARCHermes.app"
+               BlueprintName = "ARCHermes"
+               ReferencedContainer = "container:ARCHermes.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -38,9 +38,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A2B3C4D5E6F700000000044"
-               BuildableName = "HermesMobileTests.xctest"
-               BlueprintName = "HermesMobileTests"
-               ReferencedContainer = "container:HermesMobile.xcodeproj">
+               BuildableName = "ARCHermesTests.xctest"
+               BlueprintName = "ARCHermesTests"
+               ReferencedContainer = "container:ARCHermes.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -60,9 +60,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A2B3C4D5E6F700000000040"
-            BuildableName = "HermesMobile.app"
-            BlueprintName = "HermesMobile"
-            ReferencedContainer = "container:HermesMobile.xcodeproj">
+            BuildableName = "ARCHermes.app"
+            BlueprintName = "ARCHermes"
+            ReferencedContainer = "container:ARCHermes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -77,9 +77,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A2B3C4D5E6F700000000040"
-            BuildableName = "HermesMobile.app"
-            BlueprintName = "HermesMobile"
-            ReferencedContainer = "container:HermesMobile.xcodeproj">
+            BuildableName = "ARCHermes.app"
+            BlueprintName = "ARCHermes"
+            ReferencedContainer = "container:ARCHermes.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

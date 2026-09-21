@@ -178,7 +178,8 @@ private struct AppIconChoicePreview: View {
                 name: colorScheme == .dark ? "AppIconDarkPreview" : "AppIconLightPreview",
                 size: 44
             )
-        case .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark:
+        case .classicCaduceus, .wingedHelmet, .arcMonogram, .arcMonogramDark, .pixelCaduceus, .pixelCaduceusDark,
+             .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark:
             if let previewImageName = icon.previewImageName {
                 AppIconPreviewImage(name: previewImageName, size: 44)
             }
