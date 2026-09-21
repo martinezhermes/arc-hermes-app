@@ -26,6 +26,7 @@ enum ChatSidebarLayout {
 
 /// A drag keeps its original geometry and axis even as the rendered pane moves.
 struct ChatSidebarDrag {
+    static let activationDistance: CGFloat = 12
     let startWidth: CGFloat
     let startedPresented: Bool
     let direction: CGFloat
@@ -43,7 +44,7 @@ struct ChatSidebarDrag {
     mutating func update(_ value: CGSize) {
         // The first update can still be zero or touch jitter. Do not lock
         // that sample as vertical and reject the rest of a valid swipe.
-        if isHorizontal == nil, max(abs(value.width), abs(value.height)) >= 12 {
+        if isHorizontal == nil, max(abs(value.width), abs(value.height)) >= Self.activationDistance {
             isHorizontal = abs(value.width) > abs(value.height)
         }
         if isHorizontal == true { translation = value.width * direction }
@@ -55,6 +56,10 @@ struct ChatSidebarDrag {
 
     func settlesOpen(projected: CGSize) -> Bool {
         guard isHorizontal == true else { return startedPresented }
+        // Velocity can complete a deliberate swipe, but cannot manufacture
+        // one in the opposite direction or from release jitter at the origin.
+        let travelTowardTransition = startedPresented ? -translation : translation
+        guard travelTowardTransition >= Self.activationDistance else { return startedPresented }
         return ChatSidebarLayout.settlesOpen(width: startWidth, presented: startedPresented,
                                              projectedTranslation: projected.width * direction)
     }
@@ -66,6 +71,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.layoutDirection) private var direction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
     @AppStorage(AppHaptics.isEnabledKey) private var hapticsEnabled = true
     @Binding var isPresented: Bool
     @Binding var isCompact: Bool
@@ -94,6 +100,12 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             let width = ChatSidebarLayout.width(available: available,
                 preferred: resizeDrag.map { $0.startWidth + $0.translation } ?? baseWidth, wide: wide)
             let reveal = !wide ? (revealDrag?.reveal ?? (isPresented ? width : 0)) : (isPresented ? width : 0)
+            let separation = width > 0 ? min(1, max(0, reveal / width)) : 0
+            let chatSurface = UnevenRoundedRectangle(
+                topLeadingRadius: 24 * separation,
+                bottomLeadingRadius: 24 * separation,
+                style: .continuous
+            )
 
             ZStack(alignment: .leading) {
                 sidebar
@@ -102,11 +114,22 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .offset(x: sign * (reveal - width))
                     .allowsHitTesting(isPresented)
                     .accessibilityHidden(!isPresented)
+                    .simultaneousGesture(revealGesture(width: width), isEnabled: !wide && isPresented)
 
                 detail
                     .frame(width: wide ? max(0, available - reveal) : available)
                     .frame(maxHeight: .infinity)
                     .background(.background)
+                    .background {
+                        chatSurface.fill(.background)
+                            .shadow(color: .black.opacity(0.12 * separation), radius: 6, x: -2 * sign)
+                    }
+                    // A compact reveal leaves only a slice of chat visible;
+                    // don't let its native indicator cling to the window edge.
+                    .scrollIndicators(!wide && (isPresented || reveal > 0) ? .hidden : .automatic, axes: .vertical)
+                    // Recognize horizontal reveals across the chat while its
+                    // child scroll views continue handling vertical movement.
+                    .simultaneousGesture(revealGesture(width: width), isEnabled: !wide && !isPresented)
                     .accessibilityHidden(!wide && isPresented)
                     .overlay {
                         if !wide && isPresented {
@@ -118,17 +141,17 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                                 .accessibilityAddTraits(.isButton)
                         }
                     }
+                    // A quiet surface edge, not a mask: native toolbar items
+                    // remain free to render in the window's safe-area rail.
+                    .overlay {
+                        chatSurface.fill(.primary.opacity(0.025 * separation))
+                            .overlay {
+                                chatSurface.strokeBorder(.primary.opacity(0.10 * separation), lineWidth: 1 / displayScale)
+                            }
+                            .allowsHitTesting(false)
+                            .accessibilityHidden(true)
+                    }
                     .offset(x: sign * reveal)
-
-                if !wide && !isPresented {
-                    // Only the leading edge participates, leaving transcript
-                    // scrolling, selection and code-block drags untouched.
-                    Color.clear
-                        .frame(width: 44)
-                        .contentShape(Rectangle())
-                        .gesture(revealGesture(width: width))
-                        .accessibilityHidden(true)
-                }
 
                 if wide && isPresented {
                     Rectangle()
@@ -178,12 +201,12 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             .animation(motion, value: revealDrag == nil)
         }
         .sensoryFeedback(.selection, trigger: isPresented) { old, new in
-            hapticsEnabled && !old && new
+            hapticsEnabled && old != new
         }
     }
 
     private func revealGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 12, coordinateSpace: .named(gestureSpace))
+        DragGesture(minimumDistance: ChatSidebarDrag.activationDistance, coordinateSpace: .named(gestureSpace))
             .updating($revealDrag) { value, state, transaction in
                 // Track the finger directly, including the first drag update.
                 // Only settling after release is animated, without a spring.

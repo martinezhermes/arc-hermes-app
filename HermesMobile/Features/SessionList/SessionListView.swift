@@ -39,6 +39,7 @@ struct SessionListView: View {
     @State private var selectedProjectID: String?
     @State private var sidebarScrollPosition: String?
     @State private var isSidebarPresented = false
+    @State private var settingsPresentation: SettingsPresentation?
     @State private var usesCompactSidebar = true
     @State private var searchChromeState = SessionListSearchChrome()
     @State private var didCompleteInitialLoad = false
@@ -119,6 +120,24 @@ struct SessionListView: View {
                 if hasWaitingSharedImport {
                     waitingSharedImportBanner
                 }
+            }
+            .sheet(item: $settingsPresentation, onDismiss: { returnRefreshID = UUID() }) { presentation in
+                NavigationStack {
+                    SettingsView(authManager: authManager, server: server,
+                                 initialScrollTarget: presentation.scrollTarget)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button("Close", systemImage: "xmark") {
+                                    settingsPresentation = nil
+                                }
+                                .labelStyle(.iconOnly)
+                                .accessibilityIdentifier("settings.close")
+                            }
+                        }
+                }
+                .presentationSizing(.page)
+                .presentationDetents([.large])
+                .presentationCompactAdaptation(.sheet)
             }
             .sheet(item: $sessionExportShareItem) { item in
                 SessionExportShareSheet(fileURL: item.fileURL)
@@ -457,8 +476,6 @@ struct SessionListView: View {
     private func utilityDestination(_ destination: SessionListUtilityDestination) -> some View {
         Group {
             switch destination {
-            case .settings(let scrollTo):
-                SettingsView(authManager: authManager, server: server, initialScrollTarget: scrollTo)
             case .tasks:
                 TasksView(server: server, onAPIError: authManager.handleAPIError)
             case .kanban:
@@ -606,7 +623,7 @@ struct SessionListView: View {
 
     private var settingsButton: some View {
         HapticButton(feedbackStyle: .medium) {
-            selectDestination(.settings(nil))
+            settingsPresentation = SettingsPresentation(scrollTarget: nil)
         } label: {
             Image(systemName: "gearshape")
                 .font(.system(size: 24, weight: .medium))
@@ -628,7 +645,7 @@ struct SessionListView: View {
                     authManager.switchActiveServer(to: account)
                 },
                 addServer: { isPresentingAddServer = true },
-                manageServers: { selectDestination(.settings(.servers)) }
+                manageServers: { settingsPresentation = SettingsPresentation(scrollTarget: .servers) }
             )
         }
     }
@@ -1365,9 +1382,6 @@ struct PendingNewChatRoute: Identifiable, Hashable {
 }
 
 enum SessionListUtilityDestination: Hashable, Identifiable {
-    /// Optional section to scroll to when Settings opens — "Manage Servers"
-    /// passes `.servers`, a plain Settings tap passes `nil` (#283).
-    case settings(SettingsScrollAnchor?)
     case tasks
     case kanban
     case skills
