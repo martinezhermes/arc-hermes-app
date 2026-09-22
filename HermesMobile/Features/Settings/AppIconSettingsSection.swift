@@ -69,7 +69,8 @@ struct AppIconSettingsSection: View {
     }
 
     private func updateAppIcon(to appIcon: AppIconChoice) {
-        guard selectedAppIcon != appIcon, updatingAppIcon == nil else {
+        guard !appIcon.matches(alternateIconName: UIApplication.shared.alternateIconName),
+              updatingAppIcon == nil else {
             return
         }
 
@@ -178,8 +179,8 @@ private struct AppIconChoicePreview: View {
                 name: colorScheme == .dark ? "AppIconDarkPreview" : "AppIconLightPreview",
                 size: 44
             )
-        case .classicCaduceus, .wingedHelmet, .arcMonogram, .arcMonogramDark, .pixelCaduceus, .pixelCaduceusDark,
-             .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark:
+        case .wingedHelmet, .pixelCaduceus, .pixelCaduceusDark, .nousResearch, .nousResearchDark,
+             .nousResearchChromeLight, .nousResearchChromeDark, .nousResearchGlassLight, .nousResearchGlassDark:
             if let previewImageName = icon.previewImageName {
                 AppIconPreviewImage(name: previewImageName, size: 44)
             }
