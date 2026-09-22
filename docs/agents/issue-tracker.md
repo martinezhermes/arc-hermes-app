@@ -35,7 +35,7 @@ GitHub Issues are the work queue; pull requests are the review and merge record.
 - `ready-for-agent` issues default to express mode (autonomous from approved plan to review-addressed PR). An issue also labeled `needs-manual-validation` forces staged mode, where the owner manually tests before the PR publishes. See `docs/agents/triage-labels.md`.
 - Create a short `ACH9/issue-<n>-slug` branch for agent work on one issue or narrow slice; follow an explicitly requested branch name.
 - Commit completed, validated work locally with the matching handoff updates.
-- Push feature branches and open PRs only when the human asks to publish/open a PR. Open them ready for review, not as drafts: the review bots only run on ready PRs.
+- Push feature branches and open PRs only when the human asks to publish/open a PR. Keep the PR draft while required validation is pending or failing; the app workflow runs on drafts. Mark it ready and request `martinezhermes` only after the latest head passes. Review bots that require a ready PR run after this handoff.
 - Use the PR for review: GitHub/Copilot review, CI, external agent review, and human comments should live there when possible.
 - Address PR review comments by triaging them first; do not blindly accept automated review feedback.
 - Merge into `master` only after validation passes, review feedback is resolved, and the human approves.

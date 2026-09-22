@@ -1,0 +1,38 @@
+name: Implementation gate
+description: One reviewable app or delivery change under an existing initiative
+body:
+  - type: textarea
+    id: parent
+    attributes:
+      label: Parent and prerequisites
+      description: Link the parent and blockers. Also add GitHub's native sub-issue/dependency relationships; prose is not a substitute.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Outcome and scope
+      description: Observable behavior, affected surfaces, and explicit exclusions.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Acceptance and validation
+      description: Focused tests, full integration gate, relevant device checks, and what evidence completes this gate.
+    validations:
+      required: true
+  - type: textarea
+    id: recovery
+    attributes:
+      label: Risk and rollback
+      description: Server/data/signing impact, failure behavior, and how to recover.
+    validations:
+      required: true
+  - type: textarea
+    id: ownership
+    attributes:
+      label: Implementation and review ownership
+      description: Name the implementation actor and independent reviewer. Product decisions remain with the maintainer.
+    validations:
+      required: true

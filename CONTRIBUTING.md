@@ -6,8 +6,7 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Local setup
 
-- **Xcode 26 or newer** (the project builds with the iOS 18 SDK or later; the
-  deployment target is iOS 18).
+- **Xcode 27 or newer**, with an iOS 27 simulator (the deployment target is iOS 27).
 - Clone the repo and open `ARCHermes.xcodeproj`. Dependencies resolve
   automatically via Swift Package Manager — the dependency list is locked in
   `AGENTS.md`; do not add new ones without maintainer approval.
@@ -24,12 +23,20 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 The full XCTest suite is the repo's green bar — it must pass before any PR:
 
 ```zsh
-xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'
+scripts/validate
 ```
 
-If that simulator name isn't installed, pick a nearby iPhone from
-`xcrun simctl list devices available`. The same suite runs in CI on every pull
-request with code signing disabled, so forks get green CI without any secrets.
+The default destination is iPhone 17, iOS 27.0. Set `HERMEX_DESTINATION` to
+another supported destination from `xcrun simctl list devices available` if
+needed. The command prints its checkout, commit, toolchain and evidence path.
+`HERMEX_VALIDATION_DIR` must be a fresh output directory; `HERMEX_DERIVED_DATA`
+can reuse a build cache. It uses the debugger-free `ARCHermesValidation` scheme,
+which runs the complete `ARCHermesTests` target.
+
+The proposed GitHub workflow uses the same command on the hosted `xcode-27`
+runner, without Apple account credentials or server secrets. Simulator builds
+retain normal ad-hoc signing. See [delivery control](docs/agents/github-control.md)
+for activation and the difference between prepared and enforced CI.
 
 ## Code signing for contributors
 
@@ -52,10 +59,9 @@ team** — override locally instead:
    committed defaults for every target — no project-file changes needed.
 
 For simulator-only development you usually don't need any of this: simulator
-builds don't require a paid team. Note that unit tests and CI run with
-`CODE_SIGNING_ALLOWED=NO`; installing such a build on a simulator for *manual*
-testing breaks Keychain entitlements — use a normally-signed build for that
-(see `AGENTS.md`).
+builds don't require a paid team. The validation command retains signing. `CODE_SIGNING_ALLOWED=NO` is only
+for explicit compile-only checks; do not install an unsigned build for tests
+or manual use because it breaks Keychain entitlements (see `AGENTS.md`).
 
 ## What PRs we welcome (and what we don't)
 
@@ -104,12 +110,14 @@ bug here, reproduce it in the hermes-webui **web UI** against the same server:
    itself built with coding agents, so it's normal context for review — not a
    gate.
 
-`master` is the protected release-candidate branch. Releases and TestFlight
-uploads (`.github/workflows/*-testflight.yml`) are maintainer-only operations —
-contributors never need App Store Connect access.
+`master` is the release-candidate branch. Do not deliver changes directly to it.
+Required-review/check enforcement is activated only after the workflow is
+proven green; see [delivery control](docs/agents/github-control.md). Releases
+and TestFlight uploads are separate maintainer-only operations described in
+`TESTFLIGHT.md`; validation never uploads a build.
 
 ## Questions
 
-Ask in [GitHub Discussions](https://github.com/uzairansaruzi/hermex/discussions)
+Ask in [GitHub Issues](https://github.com/martinezhermes/arc-hermes-app/issues)
 if something here is unclear or wrong — docs fixes are welcome contributions
 too.
