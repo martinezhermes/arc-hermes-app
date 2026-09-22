@@ -253,7 +253,7 @@ struct ChatTranscriptView: View {
         // One clock read per body pass; each row compares its timestamp to it.
         let now = Date()
 
-        return VStack(spacing: transcriptSpacing) {
+        return LazyVStack(spacing: transcriptSpacing) {
             olderMessagesButton(proxy: proxy)
 
             if let compressionReferenceCard, compressionReferenceCard.afterRenderID == nil {
