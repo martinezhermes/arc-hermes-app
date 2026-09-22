@@ -68,3 +68,61 @@ exist and be demonstrated green before making it a branch-protection gate.
 See [issue-tracker.md](issue-tracker.md), [triage-labels.md](triage-labels.md),
 [../../DEVELOPMENT.md](../../DEVELOPMENT.md) and [../../AGENTS.md](../../AGENTS.md)
 for repository-specific execution rules.
+
+## Repository and agent delivery setup
+
+The maintainer's Xcode checkout stays on `master`; implementation uses an
+issue-bound temporary worktree. `AGENTS.md` routes Apple work through the
+installed architecture, coding, build/debug and signing skills. ACH9001 owns
+implementation; `martinezhermes` owns independent review. CODEOWNERS names the
+human owner. No repository-specific skill bundle or custom policy engine is
+needed.
+
+`scripts/validate` is the local/CI entry point. `.github/workflows/validation.yml`
+uses GitHub's `xcode-27` public-preview hosted image, a 25-minute timeout, and
+seven-day test artifacts. The public repository uses standard hosted runners;
+private forks must account for their own Actions minute allowance and billing.
+Preview-image availability and Xcode updates remain external dependencies. CI
+uses no private Apple certificate, App Store key, production server or test
+account. It validates Simulator behavior and all built targets; it cannot prove
+physical microphone, haptics, lock-screen presentation, or device provisioning.
+
+Runner source: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
+
+## Activate enforcement after a green published check
+
+The checked-in ruleset is a desired policy, not proof it is active. Preparing
+these files does not change GitHub protection, Project ACLs or Actions settings.
+Keep issue #12 open until the remote gate is proven and protection is read back.
+Its UI-fixture dependency (#4) is separate work and is not completed by CI setup.
+
+1. With publication authorized, push the setup branch and open one PR linked to
+   #12 and parent #1. The workflow runs on PRs including drafts.
+2. Wait for `Apple validation` on the latest PR head. Investigate failures using
+   the uploaded `.xcresult` and build log; do not require a nonexistent check.
+3. Hand off only after CI passes. Request `martinezhermes` review, then merge
+   only with owner authorization and resolved review findings.
+4. With activation authorized, apply `.github/master-ruleset.json` using the
+   standard GitHub API. Inspect existing rulesets first; update the matching
+   ruleset rather than creating duplicates. For first activation:
+
+   ```sh
+   gh-ach9 api repos/martinezhermes/arc-hermes-app/rulesets
+   gh-ach9 api --method POST repos/martinezhermes/arc-hermes-app/rulesets \
+     --input .github/master-ruleset.json
+   gh-ach9 api --method PATCH repos/martinezhermes/arc-hermes-app \
+     -F delete_branch_on_merge=true
+   ```
+
+5. Read the returned ruleset back and verify enforcement, code-owner approval,
+   stale-approval dismissal, resolved conversations, strict `Apple validation`
+   checks, and blocked force-push/deletion. There are no agent bypass actors.
+6. Fast-forward the clean maintainer checkout, verify signing/build behavior
+   there, and remove the completed worktree/local branch. Never discard unique
+   commits or pending files as branch cleanup.
+
+If a required runner/check becomes unavailable, repair it on a PR or let the
+owner explicitly adjust the ruleset. Never add an agent bypass, fake a passing
+check, or weaken signing to clear the gate. Revert this setup through a reviewed
+PR if necessary; an owner can disable the identified ruleset through GitHub's
+normal UI/API during recovery.

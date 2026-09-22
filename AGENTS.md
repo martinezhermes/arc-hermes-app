@@ -60,6 +60,45 @@ We need to be on the same page with terminology. When communicating, use this la
 3. Read only the docs the issue and this file point at. There is no product spec; the issue, the code, and the server contract are the spec.
 4. On "wrap up": verify the build and tests, commit the validated code, and leave the resumable state (what landed, how it was validated, what is next) as a comment on the issue or in the PR body. A push still needs approval.
 
+## Agent skills and checkout ownership
+
+Use the installed Apple skills by name and read their `SKILL.md` before the
+relevant work. Load only the references needed for the selected issue.
+
+| Work | Required skill |
+| --- | --- |
+| App architecture, state ownership, modules, shared Swift packages | `apple-app-architecture-reviewer` |
+| Writing/reviewing Swift, concurrency, Observation, modern APIs | `coding-standards-enforcer` |
+| Builds, XCTest, Simulator/device launch, logs and crashes | `build-run-debug` |
+| Apple teams, provisioning, capabilities, Keychain/app groups | `signing-entitlements` |
+| Git/GitHub implementation identity | `agentic-host-ach9` |
+| Independent review and review handoff | `peer-review` |
+| Issues, Projects, CI and branch protection | `github-governance` |
+
+Use `agentic-guest-martinezhermes` only for an explicitly authorized owner
+operation. A skill does not confer authority to approve the agent's own work.
+Do not copy these skill bundles into this repository. If a required skill is
+missing, identify it rather than inventing its guidelines. The checked-in
+project remains authoritative: Swift 5 language mode, targeted concurrency,
+iOS 27+, and the team inherited from `Config/Shared.xcconfig`. Do not migrate
+language mode or add architectural layers merely to match a generic example.
+
+The maintainer's main checkout is the Xcode/device workspace. Leave its branch
+and files alone while implementing in a temporary, issue-bound worktree from
+current `origin/master`. Use `ACH9/issue-<n>-<slug>` and ACH9001 commit authorship;
+record the agent engine in a commit trailer, not the author identity. Keep
+local signing overrides local and never replace shared signing defaults to
+make CI pass.
+
+Before claiming work is saved, account for every intended modified/untracked
+file and compare the tested tree with the committed tree. A green isolated
+slice does not validate other pending files. Never copy snapshots over a
+checkout with Xcode open. After an authorized merge, update the maintainer's
+checkout only when clean; use a fast-forward and reload the same Xcode project
+if it reports stale/missing files. Verify the actual merged checkout before
+handoff. Remove the temporary worktree and branch after the PR is merged or
+closed and all intended changes are committed; preserve and report unique work.
+
 ## The three ways to hurt yourself
 
 1. **Killing by pattern.** Never `pkill -f`, `pgrep | kill`, or `kill` a PID you found by matching a name, path, or worktree string. Your own agent process has this worktree's path in its argv, and this Mac runs several simulators and agent sessions at once. Kill only a PID you captured at spawn. The same goes for `rm -rf`, `git push --force`, and `simctl shutdown all`: suggest them and let the maintainer run them.
@@ -99,7 +138,7 @@ A live server is not a test fixture. Unit tests run against `URLProtocol` mocks,
 ## Verifying
 
 - Smallest proof that the change works while iterating: focused XCTest for the behavior you touched, via XcodeBuildMCP `test_sim`. Defaults live in `.xcodebuildmcp/config.yaml` (scheme `ARCHermes`, sim **iPhone 17**); if that sim is missing, pick a nearby iPhone and say which.
-- **Run the full XCTest suite before asking for review or committing a slice.** A failing build or test becomes the current task; fix it before writing more code on top.
+- **Run `scripts/validate` (the full XCTest suite) before asking for review or committing a slice.** A failing build or test becomes the current task; fix it before writing more code on top.
 - Behavior changes ship with focused tests for that behavior.
 - Async flows wait on expectations and scripted fixtures, never on sleeps or polling. A test that needs a timeout to pass is wrong.
 - UI or runtime changes get one integrated pass in the real app: build, install, and launch a signed Debug build (`build_run_sim`), then hand the maintainer a short manual simulator test plan. Capture screenshots or logs when they are evidence. Subagents do not launch their own builds.
@@ -108,7 +147,7 @@ A live server is not a test fixture. Unit tests run against `URLProtocol` mocks,
 ## Pull requests
 
 - Never push a branch, open or update a PR, or merge unless the developer explicitly asks you to do so.
-- One issue → one short `issue/<n>-slug` branch → one PR (`chore/` or `fix/` for approved work without an issue). `master` is the protected internal-TestFlight candidate: keep it buildable, never do feature work on it.
+- One issue → one `ACH9/issue-<n>-slug` branch → one PR (`ACH9/chore-...` or `ACH9/fix-...` for approved work without an issue). `master` is the internal-TestFlight candidate: keep it buildable, never commit or push implementation directly to it. Platform enforcement is activated through the procedure in `docs/agents/github-control.md`; do not assume it exists from this policy alone.
 - Conventional commit titles, plain language: `fix(chat): recover the active stream after foregrounding`.
 - Body: follow the PR template. `Fixes #<n>`, the problem in a sentence or two, then how you fixed it and exactly how it was tested. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.

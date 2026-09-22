@@ -59,6 +59,15 @@ launchctl unload ~/Library/LaunchAgents/com.hermes.webui.plist
 launchctl kickstart -k gui/$(id -u)/com.hermes.webui
 ```
 
+## One validation command
+
+Run `scripts/validate` from the checkout you intend to deliver. It uses the
+complete `ARCHermesTests` target through `ARCHermesValidation`, serial Simulator
+execution, normal signing, and saves an `.xcresult` plus build log outside the
+repository. It never changes Xcode selection, contacts a server, installs on a
+phone, or uploads to TestFlight. See `CONTRIBUTING.md` for output/destination
+overrides. Physical-device signing and interaction remain separate evidence.
+
 ## Local Validation With XcodeBuildMCP
 
 Defaults and the verification flow live in `AGENTS.md` § Verifying. Human/CLI equivalents:
