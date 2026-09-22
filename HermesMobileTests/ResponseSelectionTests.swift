@@ -4,6 +4,14 @@ import XCTest
 
 @MainActor
 final class ResponseSelectionTests: XCTestCase {
+    func testSelectionInteractionStaysOnTextInputAdapter() {
+        let controller = ResponseSelectionController()
+        controller.loadViewIfNeeded()
+
+        XCTAssertTrue(controller.input.interactions.contains { $0 === controller.input.selectionInteraction })
+        XCTAssertFalse(controller.host.view.interactions.contains { $0 === controller.input.selectionInteraction })
+    }
+
     func testTextInputCoordinatesStayWithAdapterWhenHostedContentChanges() {
         let input = ResponseSelectionInput()
         let host = UIHostingController(rootView: Text("Selectable response"))

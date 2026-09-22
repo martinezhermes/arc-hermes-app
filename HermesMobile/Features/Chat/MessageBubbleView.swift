@@ -15,6 +15,9 @@ struct MessageBubbleView: View {
 
     /// Bot snapshots are text-only and must render synchronously while growing.
     let textOnly: Bool
+    /// Lazy transcript rows already unmount offscreen content; other surfaces
+    /// still need geometry-based glyph deferral while their rows stay mounted.
+    let usesLazyTranscriptRows: Bool
     let message: ChatMessage
     let loadAttachmentImage: ((String) async -> Data?)?
     let loadAttachmentData: ((String) async -> Data?)?
@@ -45,9 +48,11 @@ struct MessageBubbleView: View {
         liveTokensPerSecond: Double? = nil,
         onAskHermex: @escaping (String) -> Void = { _ in },
         contextMenu: ChatMessageActionMenu? = nil,
-        textOnly: Bool = false
+        textOnly: Bool = false,
+        usesLazyTranscriptRows: Bool = false
     ) {
         self.textOnly = textOnly
+        self.usesLazyTranscriptRows = usesLazyTranscriptRows
         self.message = message
         self.loadAttachmentImage = loadAttachmentImage
         self.loadAttachmentData = loadAttachmentData
@@ -117,13 +122,7 @@ struct MessageBubbleView: View {
             if isStreaming {
                 assistantContent(segments: segments)
             } else {
-                ResponseTextSelection(identity: messageText, collectsGlyphs: responseIsVisible, onAskHermex: onAskHermex) {
-                    assistantContent(segments: segments)
-                }
-                .onGeometryChange(for: Bool.self) { geometry in
-                    guard let viewport = geometry.bounds(of: .scrollView(axis: .vertical)) else { return true }
-                    return viewport.intersects(CGRect(origin: .zero, size: geometry.size))
-                } action: { responseIsVisible = $0 }
+                selectableAssistantContent(segments: segments)
             }
 
             linkPreview
@@ -136,6 +135,26 @@ struct MessageBubbleView: View {
             isStreaming ? ChatMotion.streamingFollow(reduceMotion: reduceMotion) : nil,
             value: messageText
         )
+    }
+
+    @ViewBuilder
+    private func selectableAssistantContent(segments: [TranscriptMediaSegment]) -> some View {
+        let selection = ResponseTextSelection(
+            identity: messageText,
+            collectsGlyphs: usesLazyTranscriptRows || responseIsVisible,
+            onAskHermex: onAskHermex
+        ) {
+            assistantContent(segments: segments)
+        }
+
+        if usesLazyTranscriptRows {
+            selection
+        } else {
+            selection.onGeometryChange(for: Bool.self) { geometry in
+                guard let viewport = geometry.bounds(of: .scrollView(axis: .vertical)) else { return true }
+                return viewport.intersects(CGRect(origin: .zero, size: geometry.size))
+            } action: { responseIsVisible = $0 }
+        }
     }
 
     @ViewBuilder
