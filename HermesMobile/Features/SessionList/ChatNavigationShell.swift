@@ -2,6 +2,11 @@ import SwiftUI
 
 /// Layout policy shared by the live container and its regression tests.
 enum ChatSidebarLayout {
+    static func allowsReveal(startLocation: CGPoint, shellFrame: CGRect, excludedFrame: CGRect) -> Bool {
+        let globalStart = CGPoint(x: shellFrame.minX + startLocation.x, y: shellFrame.minY + startLocation.y)
+        return !excludedFrame.contains(globalStart)
+    }
+
     static func isWide(available: CGFloat, regularSizeClass: Bool) -> Bool {
         regularSizeClass && available >= 600
     }
@@ -21,6 +26,14 @@ enum ChatSidebarLayout {
 
     static func settlesOpen(width: CGFloat, presented: Bool, projectedTranslation: CGFloat) -> Bool {
         reveal(width: width, presented: presented, translation: projectedTranslation) > width / 2
+    }
+}
+
+struct SidebarRevealExclusionFrameKey: PreferenceKey {
+    static let defaultValue: CGRect = .null
+
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        value = nextValue()
     }
 }
 
@@ -76,6 +89,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
     @Binding var isPresented: Bool
     @Binding var isCompact: Bool
     @State private var preferredWidth: CGFloat?
+    @State private var revealExclusionFrame: CGRect = .null
     @Namespace private var gestureSpace
     @GestureState private var revealDrag: ChatSidebarDrag?
     @GestureState private var resizeDrag: ChatSidebarDrag?
@@ -114,7 +128,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .offset(x: sign * (reveal - width))
                     .allowsHitTesting(isPresented)
                     .accessibilityHidden(!isPresented)
-                    .simultaneousGesture(revealGesture(width: width), isEnabled: !wide && isPresented)
+                    .simultaneousGesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)), isEnabled: !wide && isPresented)
 
                 detail
                     .frame(width: wide ? max(0, available - reveal) : available)
@@ -129,14 +143,14 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .scrollIndicators(!wide && (isPresented || reveal > 0) ? .hidden : .automatic, axes: .vertical)
                     // Recognize horizontal reveals across the chat while its
                     // child scroll views continue handling vertical movement.
-                    .simultaneousGesture(revealGesture(width: width), isEnabled: !wide && !isPresented)
+                    .simultaneousGesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)), isEnabled: !wide && !isPresented)
                     .accessibilityHidden(!wide && isPresented)
                     .overlay {
                         if !wide && isPresented {
                             Color.black.opacity(0.15)
                                 .contentShape(Rectangle())
                                 .onTapGesture { isPresented = false }
-                                .gesture(revealGesture(width: width))
+                                .gesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)))
                                 .accessibilityLabel("Hide Sessions")
                                 .accessibilityAddTraits(.isButton)
                         }
@@ -192,6 +206,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             }
             .frame(width: available, height: geometry.size.height, alignment: .leading)
             .coordinateSpace(name: gestureSpace)
+            .onPreferenceChange(SidebarRevealExclusionFrameKey.self) { revealExclusionFrame = $0 }
             .onChange(of: wide, initial: true) { _, wide in
                 isCompact = !wide
             }
@@ -205,9 +220,11 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
         }
     }
 
-    private func revealGesture(width: CGFloat) -> some Gesture {
+    private func revealGesture(width: CGFloat, shellFrame: CGRect) -> some Gesture {
         DragGesture(minimumDistance: ChatSidebarDrag.activationDistance, coordinateSpace: .named(gestureSpace))
             .updating($revealDrag) { value, state, transaction in
+                guard ChatSidebarLayout.allowsReveal(startLocation: value.startLocation,
+                    shellFrame: shellFrame, excludedFrame: revealExclusionFrame) else { return }
                 // Track the finger directly, including the first drag update.
                 // Only settling after release is animated, without a spring.
                 transaction.disablesAnimations = true
@@ -218,6 +235,8 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                 state?.update(value.translation)
             }
             .onEnded { value in
+                guard ChatSidebarLayout.allowsReveal(startLocation: value.startLocation,
+                    shellFrame: shellFrame, excludedFrame: revealExclusionFrame) else { return }
                 // GestureState is transient: release must still commit if
                 // SwiftUI has already reset it before this callback reads it.
                 let drag = revealDrag ?? ChatSidebarDrag(width: width, presented: isPresented,

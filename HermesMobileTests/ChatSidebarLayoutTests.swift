@@ -2,6 +2,21 @@ import XCTest
 @testable import HermesMobile
 
 final class ChatSidebarLayoutTests: XCTestCase {
+    func testComposerToolbarSwipeDoesNotRevealSidebar() {
+        let shell = CGRect(x: 20, y: 40, width: 390, height: 800)
+        let toolbar = CGRect(x: 36, y: 680, width: 300, height: 44)
+
+        XCTAssertFalse(ChatSidebarLayout.allowsReveal(
+            startLocation: CGPoint(x: 100, y: 660), shellFrame: shell, excludedFrame: toolbar
+        ))
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(
+            startLocation: CGPoint(x: 100, y: 500), shellFrame: shell, excludedFrame: toolbar
+        ))
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(
+            startLocation: CGPoint(x: 100, y: 660), shellFrame: shell, excludedFrame: .null
+        ))
+    }
+
     func testOutwardPullCannotCloseOpenPaneEvenWithReverseReleasePrediction() {
         for direction: CGFloat in [1, -1] {
             var drag = ChatSidebarDrag(width: 300, presented: true, direction: direction,
