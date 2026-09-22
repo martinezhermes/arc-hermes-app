@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import UniformTypeIdentifiers
 
 struct ShareInput {
@@ -117,12 +118,17 @@ enum ShareInputReader {
             return nil
         }
 
-        let item = await loadItem(from: provider, typeIdentifier: UTType.fileURL.identifier)
-        guard let url = fileURL(from: item), url.isFileURL else {
+        guard let url = await loadFileURL(from: provider) else {
             return nil
         }
 
         return try? attachment(from: url, provider: provider)
+    }
+
+    static func loadFileURL(from provider: NSItemProvider) async -> URL? {
+        let item = await loadItem(from: provider, typeIdentifier: UTType.fileURL.identifier)
+        guard let url = fileURL(from: item), url.isFileURL else { return nil }
+        return url
     }
 
     private static func loadDataAttachment(from provider: NSItemProvider) async -> SharedAttachmentImport? {
@@ -240,11 +246,44 @@ enum ShareInputReader {
     }
 
     private static func loadItem(from provider: NSItemProvider, typeIdentifier: String) async -> NSSecureCoding? {
-        await withCheckedContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { item, _ in
-                continuation.resume(returning: item)
+        let data = await loadData(from: provider, typeIdentifier: typeIdentifier)
+        if let data {
+            // Providers created by older apps may vend a secure archive instead of
+            // raw bytes. Decode only the supported value classes, never display the
+            // binary archive as text or mistake it for a URL.
+            if let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+               plist["$archiver"] as? String == "NSKeyedArchiver" {
+                return (try? NSKeyedUnarchiver.unarchivedObject(
+                    ofClasses: [NSURL.self, NSString.self, NSAttributedString.self, NSData.self], from: data
+                )) as? NSSecureCoding
             }
         }
+        if UTType(typeIdentifier)?.conforms(to: .url) == true,
+           provider.canLoadObject(ofClass: URL.self) {
+            let url: URL? = await withCheckedContinuation { continuation in
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    continuation.resume(returning: url)
+                }
+            }
+            if let url { return url as NSURL }
+        }
+        if provider.canLoadObject(ofClass: NSAttributedString.self) {
+            let text: String? = await withCheckedContinuation { continuation in
+                provider.loadObject(ofClass: NSAttributedString.self) { item, _ in
+                    continuation.resume(returning: (item as? NSAttributedString)?.string)
+                }
+            }
+            if let text { return text as NSString }
+        }
+        if provider.canLoadObject(ofClass: NSString.self) {
+            let text: String? = await withCheckedContinuation { continuation in
+                provider.loadObject(ofClass: NSString.self) { item, _ in
+                    continuation.resume(returning: item as? String)
+                }
+            }
+            if let text { return text as NSString }
+        }
+        return data.map { $0 as NSData }
     }
 
     private static func loadData(from provider: NSItemProvider, typeIdentifier: String) async -> Data? {

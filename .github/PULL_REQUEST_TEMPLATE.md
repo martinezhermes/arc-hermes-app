@@ -1,22 +1,36 @@
-<!-- Thanks for contributing! Please read CONTRIBUTING.md before opening a PR. -->
+<!-- Read CONTRIBUTING.md and docs/agents/github-control.md before opening a PR. -->
 
-## Linked issue
+## Linked work
 
-<!-- Every PR should close an issue, e.g. "Fixes #123". If there is no issue yet, open one first. -->
+Closes #
+Refs # <!-- Parent issue, or explain why this is standalone. -->
 
-Fixes #
+## Problem and resulting behavior
 
-## What changed
+<!-- Describe the concrete trigger and before/after behavior. Keep one executable gate per PR. -->
 
-<!-- A short, plain-English summary of the change and why it's the right fix. -->
+## Validation
 
-## How it was tested
+<!-- Commands, toolchain/destination, results, and any limitations. UI changes need before/after evidence. -->
 
-<!-- e.g. full XCTest suite (command + result), manual simulator steps, screenshots for UI changes. -->
+## Risk and rollback
+
+<!-- What can regress? How is this change safely rolled back? -->
+
+## Data and secrets impact
+
+<!-- Server contracts, persistence, credentials, permissions, signing, and live mutation: state the actual impact or none. -->
+
+## Ownership
+
+<!-- Name the implementation actor, independent reviewer, model and harness. Do not represent agent work as owner approval. -->
 
 ## Checklist
 
-- [ ] The full test suite passes locally (`xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'`)
-- [ ] New/changed `Codable` models decode tolerantly (optionals for fields the server might add or rename)
-- [ ] No new third-party dependencies (the list in `AGENTS.md` is locked)
-- [ ] No invented API endpoints or JSON shapes (verified against upstream source or a running server)
+- [ ] The full XCTest suite passes on a supported iOS 27+ destination; failures are not hidden or silently skipped
+- [ ] Changed UI/runtime behavior has signed build and relevant device/simulator evidence
+- [ ] Shared changes cover the main app, share extension, widget and tests where applicable
+- [ ] Server-facing models decode tolerantly and wire contracts are verified when changed
+- [ ] Per-server state, cancellation and stale-result behavior remain correct
+- [ ] No new third-party dependency without approval
+- [ ] Linked issue/parent, scope and validation evidence are ready for independent review

@@ -194,7 +194,7 @@ struct TranscriptLogRowView<Icon: View, Status: View, ExpandedBody: View>: View 
                 }
             }
         } else if let detail {
-            (summaryText + Text(" ") + detailText(detail))
+            Text("\(summaryText) \(detailText(detail))")
                 .lineLimit(1)
         } else {
             summaryText.lineLimit(1)

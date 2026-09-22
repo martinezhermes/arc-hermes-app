@@ -71,7 +71,6 @@ final class ListenRemoteControlController: ListenRemoteControlControlling {
             command.isEnabled = false
         }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
     func configure(
@@ -123,13 +122,11 @@ final class ListenRemoteControlController: ListenRemoteControlControlling {
             MPNowPlayingInfoPropertyPlaybackRate: snapshot.isPlaying ? snapshot.speed.rawValue : 0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: snapshot.speed.rawValue
         ]
-        MPNowPlayingInfoCenter.default().playbackState = snapshot.isPlaying ? .playing : .paused
     }
 
     func clear() {
         clearCommandTargets()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
     private func clearCommandTargets() {
@@ -4254,47 +4251,28 @@ final class ChatViewModel {
         listeningMessageID = context.messageID
         beginListenPlaybackPreparation(for: context)
 
-        guard ServerTTSPolicy.shouldUseServerTTS(for: listenText) else {
-            // Over the server's 5000-char request cap: go straight to the on-device
-            // path (chunking is a non-goal of #15).
-            clearListenPlaybackState()
-            speakWithOnDeviceSynthesizer(listenText)
-            return
-        }
-
-        // Prefer the server's neural TTS; on any failure (offline, 4xx/5xx, rate
-        // limit, undecodable audio) fall back silently to the on-device
-        // synthesizer — no error alert (#15).
         let requestID = UUID()
         activeListenRequestID = requestID
         listenPreparationTask = Task { [weak self, client] in
-            guard !Task.isCancelled else {
-                // Stopped before the fetch began (e.g. a rapid second tap): skip
-                // the request entirely instead of issuing one whose response
-                // would be dropped anyway.
-                return
-            }
-            let audioData: Data?
-            do {
-                audioData = try await client.synthesizeSpeech(
-                    text: listenText,
-                    voice: ServerTTSPolicy.defaultVoice
+            guard !Task.isCancelled else { return }
+            var audioData: Data?
+            if ServerTTSPolicy.shouldUseServerTTS(for: listenText) {
+                audioData = try? await client.synthesizeSpeech(
+                    text: listenText, voice: ServerTTSPolicy.defaultVoice
                 )
+            }
+            guard let self, !Task.isCancelled, self.activeListenRequestID == requestID else { return }
+            do {
+                if let audioData, try await self.startServerAudioPlayback(
+                    audioData, title: self.listenPlaybackTitle, requestID: requestID
+                ) { return }
+                guard !Task.isCancelled, self.activeListenRequestID == requestID else { return }
+                self.clearListenPlaybackState()
+                try await self.speakWithOnDeviceSynthesizer(listenText, requestID: requestID)
             } catch {
-                audioData = nil
+                guard self.activeListenRequestID == requestID else { return }
+                self.finishListening()
             }
-
-            guard let self, !Task.isCancelled, self.activeListenRequestID == requestID else {
-                // Stopped or superseded while the fetch was in flight — the user no
-                // longer wants this audio; never start playback from a stale response.
-                return
-            }
-
-            if let audioData, self.startServerAudioPlayback(audioData, title: self.listenPlaybackTitle) {
-                return
-            }
-            self.clearListenPlaybackState()
-            self.speakWithOnDeviceSynthesizer(listenText)
         }
     }
 
@@ -5357,8 +5335,7 @@ final class ChatViewModel {
         listenAudioPlayer = nil
         listeningMessageID = nil
         clearListenPlaybackState()
-        // Release the shared session so any audio we interrupted can resume. Safe to
-        // call when nothing was speaking: `setActive(false)` no-ops via `try?`.
+        // Release only this Listen operation's lease; idle cleanup does no audio I/O.
         listenAudioSession.deactivate()
     }
 
@@ -5383,12 +5360,13 @@ final class ChatViewModel {
 
     /// Speaks `text` with the on-device `AVSpeechSynthesizer` — the pre-#15 Listen
     /// path, kept as the offline/failure fallback for server TTS.
-    private func speakWithOnDeviceSynthesizer(_ text: String) {
+    private func speakWithOnDeviceSynthesizer(_ text: String, requestID: UUID) async throws {
         // Route speech to the speaker (not the receiver/earpiece) immediately before
         // speech starts — not when the Listen tap lands — so a slow `/api/tts` fetch
         // never interrupts other audio while ARC Hermes is silent (review on #35).
         // Released again in `finishListening()` once playback ends. See #252.
-        listenAudioSession.activate()
+        try await listenAudioSession.activate()
+        guard !Task.isCancelled, activeListenRequestID == requestID else { return }
         let speechSynthesizer = speechSynthesizerForListening()
         let utterance = AVSpeechUtterance(string: text)
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
@@ -5399,7 +5377,7 @@ final class ChatViewModel {
     /// Attempts to start playback of server-synthesized audio bytes. Returns
     /// `false` when the bytes can't be decoded into a player or playback fails to
     /// start, so the caller can fall back to the on-device synthesizer.
-    private func startServerAudioPlayback(_ audioData: Data, title: String) -> Bool {
+    private func startServerAudioPlayback(_ audioData: Data, title: String, requestID: UUID) async throws -> Bool {
         guard let player = try? serverTTSAudioPlayerFactory(audioData) else {
             return false
         }
@@ -5408,6 +5386,8 @@ final class ChatViewModel {
         player.onFinish = { [weak self] in
             self?.handleListenPlayerCompletion(for: playerID)
         }
+        try await listenAudioSession.activate()
+        guard !Task.isCancelled, activeListenRequestID == requestID else { return false }
         player.prepareToPlay()
         player.rate = Float(listenPlaybackSpeed.rawValue)
         listenPlaybackTitle = title
@@ -5416,11 +5396,6 @@ final class ChatViewModel {
         listenPlaybackScrubTime = nil
         configureListenRemoteControls()
 
-        // Activate the session only once decodable audio is in hand, immediately
-        // before playback, so the network wait never held it (review on #35). If
-        // `play()` still fails, the on-device fallback re-activates for itself —
-        // `activate()` is idempotent, and `finishListening()` releases it either way.
-        listenAudioSession.activate()
         guard player.play() else {
             return false
         }
@@ -5435,23 +5410,46 @@ final class ChatViewModel {
     }
 
     private func pauseListenPlayback() {
-        guard listenPlaybackPhase == .playing, let player = listenAudioPlayer else { return }
+        guard listenPlaybackPhase == .playing || listenPlaybackPhase == .loading,
+              let player = listenAudioPlayer else { return }
+        listenPreparationTask?.cancel()
         player.pause()
         updateListenPlaybackProgressFromPlayer()
         listenPlaybackPhase = .paused
         stopListenPlaybackTicker()
+        listenAudioSession.deactivate()
         updateListenNowPlaying()
     }
 
     private func resumeListenPlayback() {
         guard listenPlaybackPhase == .paused, let player = listenAudioPlayer else { return }
-        player.rate = Float(listenPlaybackSpeed.rawValue)
-        listenAudioSession.activate()
-        guard player.play() else { return }
-        listenPlaybackPhase = .playing
-        startListenPlaybackTicker()
-        updateListenPlaybackProgressFromPlayer()
-        updateListenNowPlaying()
+        listenPreparationTask?.cancel()
+        let requestID = UUID()
+        let playerID = ObjectIdentifier(player)
+        activeListenRequestID = requestID
+        listenPlaybackPhase = .loading
+        listenPreparationTask = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            do {
+                try await self.listenAudioSession.activate()
+                guard !Task.isCancelled, self.activeListenRequestID == requestID,
+                      self.activeListenPlayerID == playerID else { return }
+                player.rate = Float(self.listenPlaybackSpeed.rawValue)
+                guard player.play() else {
+                    self.listenPlaybackPhase = .paused
+                    self.listenAudioSession.deactivate()
+                    return
+                }
+                self.listenPlaybackPhase = .playing
+                self.startListenPlaybackTicker()
+                self.updateListenPlaybackProgressFromPlayer()
+                self.updateListenNowPlaying()
+            } catch {
+                guard self.activeListenRequestID == requestID else { return }
+                self.listenPlaybackPhase = .paused
+                self.listenAudioSession.deactivate()
+            }
+        }
     }
 
     private func seekListenPlayback(to time: TimeInterval) {
@@ -6587,40 +6585,47 @@ extension AVSpeechSynthesizer: ChatSpeechSynthesizing {}
 enum ListenAudioSessionConfiguration {
     static let category = AVAudioSession.Category.playback
     static let mode = AVAudioSession.Mode.spokenAudio
-    static let deactivationOptions = AVAudioSession.SetActiveOptions.notifyOthersOnDeactivation
+    static let deactivationOptions = AVAudioSessionDeactivationOptions.notifyOthersOnDeactivation
 }
 
 /// Activates/deactivates the shared audio session around a "Listen" utterance.
 /// Injectable so tests can assert the call sequence without touching real hardware.
 @MainActor
 protocol ListenAudioSessionControlling {
-    func activate()
+    func activate() async throws
     func deactivate()
 }
 
 /// Production `ListenAudioSessionControlling`: drives the real shared `AVAudioSession`.
 @MainActor
 final class ListenAudioSessionController: ListenAudioSessionControlling {
-    func activate() {
-        // If composer dictation is capturing the mic, leave the shared session alone:
-        // switching it to `.playback` would tear down the live recording engine. Mirrors
-        // `InlineAudioPlayerView`'s guard so the two playback paths stay consistent.
-        guard !ComposerAudioCaptureState.shared.isCapturing else { return }
+    private let coordinator: AudioSessionCoordinator
+    private var owner: UUID?
 
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(
-            ListenAudioSessionConfiguration.category,
-            mode: ListenAudioSessionConfiguration.mode
-        )
-        try? session.setActive(true)
+    init(coordinator: AudioSessionCoordinator? = nil) {
+        self.coordinator = coordinator ?? .shared
+    }
+
+    func activate() async throws {
+        deactivate()
+        let owner = UUID()
+        self.owner = owner
+        do {
+            try await coordinator.activate(owner: owner, configuration: AudioSessionConfiguration(
+                category: ListenAudioSessionConfiguration.category,
+                mode: ListenAudioSessionConfiguration.mode
+            ))
+        } catch {
+            coordinator.deactivate(owner: owner)
+            if self.owner == owner { self.owner = nil }
+            throw error
+        }
     }
 
     func deactivate() {
-        guard !ComposerAudioCaptureState.shared.isCapturing else { return }
-        try? AVAudioSession.sharedInstance().setActive(
-            false,
-            options: ListenAudioSessionConfiguration.deactivationOptions
-        )
+        guard let owner else { return }
+        self.owner = nil
+        coordinator.deactivate(owner: owner)
     }
 }
 

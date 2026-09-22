@@ -436,42 +436,29 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
                 AVVideoHeightKey: 64,
             ]
         )
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey as String: 64,
-                kCVPixelBufferHeightKey as String: 64,
-            ]
-        )
         guard writer.canAdd(input) else {
             throw PhotoLibraryTestVideoError.cannotConfigureWriter
         }
-        writer.add(input)
-        guard writer.startWriting() else {
-            throw writer.error ?? PhotoLibraryTestVideoError.cannotStartWriter
-        }
+        let receiver = writer.inputPixelBufferReceiver(
+            for: input,
+            pixelBufferAttributes: CVPixelBufferCreationAttributes(
+                pixelFormatType: CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA),
+                size: CVImageSize(width: 64, height: 64)
+            )
+        )
+        try writer.start()
         writer.startSession(atSourceTime: .zero)
-
-        guard let pool = adaptor.pixelBufferPool else {
+        guard let pool = receiver.pixelBufferPool else {
             throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
         }
-        var pixelBuffer: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer) == kCVReturnSuccess,
-              let pixelBuffer
-        else {
-            throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
+        var pixelBuffer = try pool.makeMutablePixelBuffer()
+        pixelBuffer.accessUnsafeMutableRawPlaneBytes { planes in
+            for plane in planes {
+                _ = plane.bytes.initializeMemory(as: UInt8.self, repeating: 0x30)
+            }
         }
-        CVPixelBufferLockBaseAddress(pixelBuffer, [])
-        if let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) {
-            memset(baseAddress, 0x30, CVPixelBufferGetDataSize(pixelBuffer))
-        }
-        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
-
-        guard adaptor.append(pixelBuffer, withPresentationTime: .zero) else {
-            throw writer.error ?? PhotoLibraryTestVideoError.cannotAppendFrame
-        }
-        input.markAsFinished()
+        try await receiver.append(CVReadOnlyPixelBuffer(pixelBuffer), with: .zero)
+        receiver.finish()
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter

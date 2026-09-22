@@ -26,9 +26,9 @@ final class ComposerVoiceNoteRecorder {
 
     /// Hard cap on a single clip. AAC mono at ~32 kbps stays far under the 20 MB
     /// upload limit even at five minutes (~1.2 MB), so this bounds UX, not size.
-    static let maximumDuration: TimeInterval = 5 * 60
+    nonisolated static let maximumDuration: TimeInterval = 5 * 60
     /// Clips shorter than this are treated as accidental taps and discarded.
-    static let minimumDuration: TimeInterval = 0.5
+    nonisolated static let minimumDuration: TimeInterval = 0.5
 
     private(set) var state: State = .idle
     private(set) var elapsed: TimeInterval = 0
@@ -37,7 +37,9 @@ final class ComposerVoiceNoteRecorder {
     @ObservationIgnored private var recorder: AVAudioRecorder?
     @ObservationIgnored private var fileURL: URL?
     @ObservationIgnored private var ticker: Timer?
-    @ObservationIgnored private var didActivateSession = false
+    @ObservationIgnored private var audioOwnerID: UUID?
+    @ObservationIgnored private var activeRequestID: UUID?
+    @ObservationIgnored private let audioSession: AudioSessionCoordinator
     @ObservationIgnored private let recorderFactory: (URL) throws -> AVAudioRecorder
     @ObservationIgnored private let permissionRequester: () async -> Bool
     private let logger = Logger(
@@ -47,22 +49,24 @@ final class ComposerVoiceNoteRecorder {
 
     init(
         recorderFactory: @escaping (URL) throws -> AVAudioRecorder = { try AVAudioRecorder(url: $0, settings: ComposerVoiceNoteRecorder.recordingSettings) },
-        permissionRequester: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() }
+        permissionRequester: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() },
+        audioSession: AudioSessionCoordinator? = nil
     ) {
         self.recorderFactory = recorderFactory
         self.permissionRequester = permissionRequester
+        self.audioSession = audioSession ?? .shared
     }
 
     var isRecording: Bool { state == .recording }
     var isRequestingPermission: Bool { state == .requestingPermission }
     var hasReachedMaximumDuration: Bool { elapsed >= Self.maximumDuration }
 
-    static let recordingSettings: [String: Any] = [
+    nonisolated static var recordingSettings: [String: Any] { [
         AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
         AVSampleRateKey: 44_100.0,
         AVNumberOfChannelsKey: 1,
         AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
-    ]
+    ] }
 
     // MARK: - Lifecycle
 
@@ -73,22 +77,29 @@ final class ComposerVoiceNoteRecorder {
         errorMessage = nil
         elapsed = 0
         state = .requestingPermission
+        let requestID = UUID()
+        activeRequestID = requestID
 
         let granted = await permissionRequester()
         // The state can change while we await the system prompt (e.g. the view
         // disappeared and called `cancel()`); bail rather than starting late.
-        guard state == .requestingPermission else { return }
+        guard state == .requestingPermission, activeRequestID == requestID else { return }
+        guard !Task.isCancelled else { cancel(); return }
         guard granted else {
             fail(String(localized: "Microphone access is disabled. Enable it in Settings to record a voice note."))
             return
         }
 
         do {
-            try startRecording()
+            try await startRecording()
+            guard activeRequestID == requestID, !Task.isCancelled else { return }
             state = .recording
             startTicker()
             logger.info("Voice note recording started")
+        } catch is CancellationError {
+            if activeRequestID == requestID { cancel() }
         } catch {
+            guard activeRequestID == requestID else { return }
             fail(error.localizedDescription)
         }
     }
@@ -134,21 +145,22 @@ final class ComposerVoiceNoteRecorder {
 
     // MARK: - Recording internals
 
-    private func startRecording() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.allowBluetooth])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
-        didActivateSession = true
+    private func startRecording() async throws {
+        let owner = UUID()
+        audioOwnerID = owner
+        try await audioSession.activate(owner: owner, configuration: AudioSessionConfiguration(
+            category: .playAndRecord, mode: .default, options: [.allowBluetoothHFP]
+        ))
+        guard audioOwnerID == owner, !Task.isCancelled else { throw CancellationError() }
 
         let url = Self.makeTemporaryFileURL()
+        fileURL = url
         let recorder = try recorderFactory(url)
+        self.recorder = recorder
         recorder.prepareToRecord()
         guard recorder.record() else {
             throw ComposerVoiceNoteRecorderError.couldNotStart
         }
-        self.recorder = recorder
-        self.fileURL = url
-        ComposerAudioCaptureState.shared.setCapturing(true)
     }
 
     private func stopRecorder() {
@@ -156,7 +168,6 @@ final class ComposerVoiceNoteRecorder {
             recorder?.stop()
         }
         recorder = nil
-        ComposerAudioCaptureState.shared.setCapturing(false)
         stopTicker()
     }
 
@@ -168,12 +179,13 @@ final class ComposerVoiceNoteRecorder {
     }
 
     private func teardownSession() {
-        guard didActivateSession else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        didActivateSession = false
+        guard let owner = audioOwnerID else { return }
+        audioOwnerID = nil
+        audioSession.deactivate(owner: owner)
     }
 
     private func resetState() {
+        activeRequestID = nil
         state = .idle
         elapsed = 0
     }

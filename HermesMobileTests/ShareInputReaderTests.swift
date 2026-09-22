@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 import UniformTypeIdentifiers
 @testable import HermesMobile
 
@@ -16,9 +17,9 @@ final class ShareInputReaderTests: XCTestCase {
 
     func testURLProviderVariantsLandInURLs() async {
         let providers = [
-            NSItemProvider(item: URL(string: "https://example.com/a")! as NSURL, typeIdentifier: UTType.url.identifier),
-            NSItemProvider(item: "https://example.com/b" as NSString, typeIdentifier: UTType.url.identifier),
-            NSItemProvider(item: Data("https://example.com/c".utf8) as NSData, typeIdentifier: UTType.url.identifier)
+            legacyProvider(item: URL(string: "https://example.com/a")! as NSURL, typeIdentifier: UTType.url.identifier),
+            legacyProvider(item: "https://example.com/b" as NSString, typeIdentifier: UTType.url.identifier),
+            legacyProvider(item: Data("https://example.com/c".utf8) as NSData, typeIdentifier: UTType.url.identifier)
         ]
 
         let input = await ShareInputReader.input(from: providers)
@@ -32,7 +33,7 @@ final class ShareInputReaderTests: XCTestCase {
     }
 
     func testURLStringsAreTrimmed() async {
-        let provider = NSItemProvider(
+        let provider = legacyProvider(
             item: "  https://example.com/trim  " as NSString,
             typeIdentifier: UTType.url.identifier
         )
@@ -43,7 +44,7 @@ final class ShareInputReaderTests: XCTestCase {
     }
 
     func testFileURLIsRejectedFromURLs() async {
-        let provider = NSItemProvider(
+        let provider = legacyProvider(
             item: URL(fileURLWithPath: "/tmp/example.txt") as NSURL,
             typeIdentifier: UTType.url.identifier
         )
@@ -58,9 +59,9 @@ final class ShareInputReaderTests: XCTestCase {
 
     func testTextProviderVariantsLandInTextSnippets() async {
         let providers = [
-            NSItemProvider(item: "plain string" as NSString, typeIdentifier: UTType.plainText.identifier),
-            NSItemProvider(item: NSAttributedString(string: "attributed string"), typeIdentifier: UTType.plainText.identifier),
-            NSItemProvider(item: Data("utf8 data".utf8) as NSData, typeIdentifier: UTType.plainText.identifier)
+            legacyProvider(item: "plain string" as NSString, typeIdentifier: UTType.plainText.identifier),
+            legacyProvider(item: NSAttributedString(string: "attributed string"), typeIdentifier: UTType.plainText.identifier),
+            legacyProvider(item: Data("utf8 data".utf8) as NSData, typeIdentifier: UTType.plainText.identifier)
         ]
 
         let input = await ShareInputReader.input(from: providers)
@@ -74,7 +75,7 @@ final class ShareInputReaderTests: XCTestCase {
 
     func testOversizedImageDataProducesNoAttachment() async {
         let oversized = Data(count: HermesShareDraft.maximumSharedAttachmentBytes + 1)
-        let provider = NSItemProvider(item: oversized as NSData, typeIdentifier: UTType.png.identifier)
+        let provider = legacyProvider(item: oversized as NSData, typeIdentifier: UTType.png.identifier)
 
         let input = await ShareInputReader.input(from: [provider])
 
@@ -83,7 +84,7 @@ final class ShareInputReaderTests: XCTestCase {
 
     func testAttachmentsCappedAtSharedLimit() async {
         let providers = (0...HermesShareDraft.maximumSharedAttachmentCount).map { index in
-            NSItemProvider(item: Data([UInt8(index)]) as NSData, typeIdentifier: UTType.png.identifier)
+            legacyProvider(item: Data([UInt8(index)]) as NSData, typeIdentifier: UTType.png.identifier)
         }
         XCTAssertEqual(providers.count, HermesShareDraft.maximumSharedAttachmentCount + 1)
 
@@ -104,7 +105,7 @@ final class ShareInputReaderTests: XCTestCase {
         let payload = Data("file attachment bytes".utf8)
         try payload.write(to: fileURL)
 
-        let provider = NSItemProvider(item: fileURL as NSURL, typeIdentifier: UTType.fileURL.identifier)
+        let provider = legacyProvider(item: fileURL as NSURL, typeIdentifier: UTType.fileURL.identifier)
 
         let input = await ShareInputReader.input(from: [provider])
 
@@ -119,7 +120,7 @@ final class ShareInputReaderTests: XCTestCase {
 
     func testAttachmentFilenameFallsBackToTypeBasedName() async {
         // No suggestedName → fallbackFilename derives a name from the UTType.
-        let provider = NSItemProvider(item: Data([0x01, 0x02]) as NSData, typeIdentifier: UTType.png.identifier)
+        let provider = legacyProvider(item: Data([0x01, 0x02]) as NSData, typeIdentifier: UTType.png.identifier)
 
         let input = await ShareInputReader.input(from: [provider])
 
@@ -127,10 +128,10 @@ final class ShareInputReaderTests: XCTestCase {
     }
 
     func testAttachmentFilenameUsesSuggestedName() async {
-        let withoutExtension = NSItemProvider(item: Data([0x01]) as NSData, typeIdentifier: UTType.png.identifier)
+        let withoutExtension = legacyProvider(item: Data([0x01]) as NSData, typeIdentifier: UTType.png.identifier)
         withoutExtension.suggestedName = "vacation"
 
-        let withExtension = NSItemProvider(item: Data([0x02]) as NSData, typeIdentifier: UTType.png.identifier)
+        let withExtension = legacyProvider(item: Data([0x02]) as NSData, typeIdentifier: UTType.png.identifier)
         withExtension.suggestedName = "vacation.png"
 
         let input = await ShareInputReader.input(from: [withoutExtension, withExtension])
@@ -148,4 +149,32 @@ final class ShareInputReaderTests: XCTestCase {
         XCTAssertTrue(input.textSnippets.isEmpty)
         XCTAssertTrue(input.attachments.isEmpty)
     }
+    func testModernObjectProvidersPreserveURLsAndText() async {
+        let input = await ShareInputReader.input(from: [
+            NSItemProvider(object: URL(string: "https://example.com/modern")! as NSURL),
+            NSItemProvider(object: "modern text" as NSString),
+            NSItemProvider(object: NSAttributedString(string: "modern attributed text"))
+        ])
+        XCTAssertEqual(input.urls.map(\.absoluteString), ["https://example.com/modern"])
+        XCTAssertEqual(input.textSnippets, ["modern text", "modern attributed text"])
+    }
+
+    // Match the wire representations emitted by init(item:typeIdentifier:)
+    // without depending on that deprecated initializer in the fixture itself.
+    private func legacyProvider(item: NSSecureCoding, typeIdentifier: String) -> NSItemProvider {
+        let provider = NSItemProvider()
+        let data: Data
+        do {
+            data = try (item as? Data) ?? NSKeyedArchiver.archivedData(withRootObject: item, requiringSecureCoding: true)
+        } catch {
+            XCTFail("Could not encode the provider fixture: \(error)")
+            return provider
+        }
+        provider.registerDataRepresentation(forTypeIdentifier: typeIdentifier, visibility: .all) { completion in
+            completion(data, nil)
+            return nil
+        }
+        return provider
+    }
+
 }

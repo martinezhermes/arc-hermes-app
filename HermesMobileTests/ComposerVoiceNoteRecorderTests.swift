@@ -3,6 +3,47 @@ import XCTest
 @testable import HermesMobile
 
 final class ComposerVoiceNoteRecorderTests: XCTestCase {
+    @MainActor
+    func testPermissionResultFromCancelledRecordingCannotOverwriteNewRequest() async {
+        let first = expectation(description: "first permission request")
+        let second = expectation(description: "second permission request")
+        let permission = VoiceNotePermissionGate(started: [first, second])
+        let recorder = ComposerVoiceNoteRecorder(
+            recorderFactory: { _ in
+                XCTFail("Denied or cancelled permission must never construct a recorder")
+                throw ComposerVoiceNoteRecorderError.couldNotStart
+            },
+            permissionRequester: { await permission.request() }
+        )
+        let firstTask = Task { await recorder.begin() }
+        await fulfillment(of: [first], timeout: 2)
+        recorder.cancel()
+        let secondTask = Task { await recorder.begin() }
+        await fulfillment(of: [second], timeout: 2)
+        permission.resolve(index: 0, granted: false)
+        await firstTask.value
+        XCTAssertEqual(recorder.state, .requestingPermission)
+        XCTAssertNil(recorder.errorMessage)
+        permission.resolve(index: 1, granted: false)
+        await secondTask.value
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertNotNil(recorder.errorMessage)
+    }
+
+    @MainActor
+    func testCancelledPermissionTaskReturnsToIdleWithoutAnError() async {
+        let started = expectation(description: "permission request")
+        let permission = VoiceNotePermissionGate(started: [started])
+        let recorder = ComposerVoiceNoteRecorder(permissionRequester: { await permission.request() })
+        let task = Task { await recorder.begin() }
+        await fulfillment(of: [started], timeout: 2)
+        task.cancel()
+        permission.resolve(index: 0, granted: true)
+        await task.value
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertNil(recorder.errorMessage)
+    }
+
     // MARK: - Filename
 
     func testGenerateFilenameIsM4AVoiceNote() {
@@ -55,4 +96,21 @@ final class ComposerVoiceNoteRecorderTests: XCTestCase {
         XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatMPEG4AAC))
         XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
     }
+}
+
+@MainActor
+private final class VoiceNotePermissionGate {
+    let started: [XCTestExpectation]
+    private var continuations: [CheckedContinuation<Bool, Never>] = []
+
+    init(started: [XCTestExpectation]) { self.started = started }
+
+    func request() async -> Bool {
+        await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+            started[continuations.count - 1].fulfill()
+        }
+    }
+
+    func resolve(index: Int, granted: Bool) { continuations[index].resume(returning: granted) }
 }

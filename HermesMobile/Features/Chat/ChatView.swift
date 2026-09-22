@@ -808,31 +808,30 @@ struct ChatView: View {
                     )
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    ChatToolbarActionCluster {
-                        if viewModel.hasActivatedGoalCommand {
-                            ChatToolbarActionSlot {
-                                goalControlMenu
-                            }
-                        }
+                if viewModel.hasActivatedGoalCommand {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        goalControlMenu
+                            .accessibilityIdentifier("chat.goal")
+                    }
+                }
 
-                        if showsFilesButton {
-                            ChatToolbarActionSlot {
-                                NavigationLink {
-                                    FileBrowserView(session: session, server: server, onAPIError: onAPIError)
-                                } label: {
-                                    Label("Files", systemImage: "folder")
-                                }
-                                .disabled(viewModel.isViewingCachedData)
-                                .accessibilityLabel("Files")
-                            }
+                if showsFilesButton {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        NavigationLink {
+                            FileBrowserView(session: session, server: server, onAPIError: onAPIError)
+                        } label: {
+                            Label("Files", systemImage: "folder")
                         }
+                        .disabled(viewModel.isViewingCachedData)
+                        .accessibilityLabel("Files")
+                        .accessibilityIdentifier("chat.files")
+                    }
+                }
 
-                        if showsGitControls, gitAvailabilityViewModel.hasRepository {
-                            ChatToolbarActionSlot {
-                                gitActionsMenu
-                            }
-                        }
+                if showsGitControls, gitAvailabilityViewModel.hasRepository {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        gitActionsMenu
+                            .accessibilityIdentifier("chat.git")
                     }
                 }
             }
@@ -2426,7 +2425,7 @@ struct ChatView: View {
 
         for url in fileURLs {
             do {
-                let file = try loadPastedFile(from: url, suggestedName: nil)
+                let file = try Self.loadPastedFile(from: url, suggestedName: nil)
                 await viewModel.uploadAttachment(data: file.data, filename: file.filename)
             } catch {
                 viewModel.setUploadAttachmentError(error.localizedDescription)
@@ -2446,7 +2445,7 @@ struct ChatView: View {
 
         for provider in fileProviders {
             do {
-                let file = try await loadPastedFile(from: provider)
+                let file = try await Self.loadPastedFile(from: provider)
                 await viewModel.uploadAttachment(data: file.data, filename: file.filename)
             } catch {
                 viewModel.setUploadAttachmentError(error.localizedDescription)
@@ -2486,33 +2485,16 @@ struct ChatView: View {
                 continue
             }
 
-            await viewModel.uploadAttachment(data: data, filename: pastedImageFilename(), previewData: data)
+            await viewModel.uploadAttachment(data: data, filename: Self.pastedImageFilename(), previewData: data)
         }
     }
 
-    private func loadPastedFile(from provider: NSItemProvider) async throws -> PastedFile {
-        let suggestedName = provider.suggestedName
-
-        return try await withCheckedThrowingContinuation { continuation in
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let url = pastedFileURL(from: item) else {
-                    continuation.resume(throwing: PastedFileError.unreadableURL)
-                    return
-                }
-
-                do {
-                    let file = try loadPastedFile(from: url, suggestedName: suggestedName)
-                    continuation.resume(returning: file)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
+    @concurrent
+    nonisolated private static func loadPastedFile(from provider: NSItemProvider) async throws -> PastedFile {
+        guard let url = await ShareInputReader.loadFileURL(from: provider) else {
+            throw PastedFileError.unreadableURL
         }
+        return try loadPastedFile(from: url, suggestedName: provider.suggestedName)
     }
 
     private func handlePastedFileURLs(_ urls: [URL]) async {
@@ -2525,7 +2507,7 @@ struct ChatView: View {
 
         for url in fileURLs {
             do {
-                let file = try loadPastedFile(from: url, suggestedName: nil)
+                let file = try Self.loadPastedFile(from: url, suggestedName: nil)
                 await viewModel.uploadAttachment(data: file.data, filename: file.filename)
             } catch {
                 viewModel.setUploadAttachmentError(error.localizedDescription)
@@ -2533,7 +2515,7 @@ struct ChatView: View {
         }
     }
 
-    private func loadPastedFile(from url: URL, suggestedName: String?) throws -> PastedFile {
+    nonisolated private static func loadPastedFile(from url: URL, suggestedName: String?) throws -> PastedFile {
         let didStartAccessing = url.startAccessingSecurityScopedResource()
         defer {
             if didStartAccessing {
@@ -2541,7 +2523,7 @@ struct ChatView: View {
             }
         }
 
-        try validateAttachmentSize(for: url)
+        try Self.validateAttachmentSize(for: url)
         let data = try Data(contentsOf: url)
         let filename = url.lastPathComponent.isEmpty
             ? suggestedName ?? "pasted-file"
@@ -2549,7 +2531,7 @@ struct ChatView: View {
         return PastedFile(data: data, filename: filename)
     }
 
-    private func validateAttachmentSize(for url: URL) throws {
+    nonisolated private static func validateAttachmentSize(for url: URL) throws {
         let values = try url.resourceValues(forKeys: [.fileSizeKey])
         guard let size = values.fileSize,
               size > PendingAttachment.maximumUploadBytes
@@ -2583,14 +2565,14 @@ struct ChatView: View {
                 continuation.resume(
                     returning: PastedFile(
                         data: data,
-                        filename: pastedImageFilename(suggestedName: suggestedName)
+                        filename: Self.pastedImageFilename(suggestedName: suggestedName)
                     )
                 )
             }
         }
     }
 
-    private func pastedImageFilename(suggestedName: String? = nil) -> String {
+    nonisolated private static func pastedImageFilename(suggestedName: String? = nil) -> String {
         if let suggestedName,
            !suggestedName.isEmpty,
            !URL(fileURLWithPath: suggestedName).pathExtension.isEmpty {
@@ -2598,22 +2580,6 @@ struct ChatView: View {
         }
 
         return "image_\(Int(Date().timeIntervalSince1970))_\(UUID().uuidString.prefix(4)).jpg"
-    }
-
-    private func pastedFileURL(from item: NSSecureCoding?) -> URL? {
-        if let url = item as? URL {
-            return url
-        }
-
-        if let data = item as? Data {
-            return URL(dataRepresentation: data, relativeTo: nil)
-        }
-
-        if let string = item as? String {
-            return URL(string: string) ?? URL(fileURLWithPath: string)
-        }
-
-        return nil
     }
 
     private func handleScenePhaseChange(_ phase: ScenePhase) {
@@ -3061,73 +3027,6 @@ struct ChatToolbarTitleLabel: View {
     }
 }
 
-struct ChatToolbarActionCluster<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            content
-        }
-        .padding(.horizontal, 4)
-        .frame(minHeight: 44)
-        .modifier(LegacyToolbarClusterStyle())
-        .accessibilityElement(children: .contain)
-    }
-}
-
-/// On iOS 26+ the navigation toolbar already renders this trailing item inside a
-/// Liquid Glass pill, so styling the cluster ourselves stacked a second capsule
-/// and produced the double border reported in #333. Below iOS 26 the system
-/// supplies no pill, so we keep the original material capsule there.
-private struct LegacyToolbarClusterStyle: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
-
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            content
-        } else {
-            content
-                .background(
-                    Color(.secondarySystemBackground).opacity(colorScheme == .dark ? 0.24 : 0.42),
-                    in: Capsule()
-                )
-                .adaptiveGlass(
-                    .regular,
-                    isInteractive: false,
-                    fallbackMaterial: .ultraThinMaterial,
-                    in: Capsule()
-                )
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule()
-                        .stroke(Color(.separator).opacity(colorScheme == .dark ? 0.38 : 0.24), lineWidth: 0.5)
-                        .allowsHitTesting(false)
-                }
-        }
-    }
-}
-
-struct ChatToolbarActionSlot<Content: View>: View {
-    private let content: Content
-
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .labelStyle(.iconOnly)
-            .font(.body)
-            .frame(width: 44, height: 44)
-            .contentShape(Rectangle())
-    }
-}
-
 enum ChatToolbarSubtitleResolver {
     static func subtitle(workspacePath: String?, profileTitle: String?) -> String? {
         if let workspace = nonEmpty(workspacePath) {
@@ -3189,7 +3088,7 @@ private struct ClearConversationAlertModifier: ViewModifier {
     }
 }
 
-private struct PastedFile {
+private struct PastedFile: Sendable {
     let data: Data
     let filename: String
 }

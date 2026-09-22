@@ -65,15 +65,19 @@ struct InlineAudioPlayerView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.accentColor)
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
+                    if model.isStarting {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 .frame(width: 40, height: 40)
             }
             .buttonStyle(.chatTactile(.icon))
             .accessibilityLabel(
-                model.isPlaying
+                model.isStarting ? String(localized: "Cancel") : model.isPlaying
                     ? String(localized: "Pause \(title)")
                     : String(localized: "Play \(title)")
             )
@@ -167,6 +171,7 @@ final class InlineAudioPlayerModel {
 
     private(set) var phase: Phase = .idle
     private(set) var isPlaying = false
+    private(set) var isStarting = false
     private(set) var currentTime: Double = 0
     private(set) var duration: Double = 0
     private var scrubTime: Double?
@@ -179,6 +184,13 @@ final class InlineAudioPlayerModel {
     @ObservationIgnored private let delegateProxy = AudioPlayerDelegateProxy()
     @ObservationIgnored private var ticker: Timer?
     @ObservationIgnored private var didLoad = false
+    @ObservationIgnored private var playbackTask: Task<Void, Never>?
+    @ObservationIgnored private var audioOwnerID: UUID?
+    @ObservationIgnored private let audioSession: AudioSessionCoordinator
+
+    init(audioSession: AudioSessionCoordinator? = nil) {
+        self.audioSession = audioSession ?? .shared
+    }
 
     func loadIfNeeded(using load: () async -> Data?) async {
         guard !didLoad else { return }
@@ -214,7 +226,6 @@ final class InlineAudioPlayerModel {
                 Task { @MainActor in self?.handleDecodeError() }
             }
             player.delegate = delegateProxy
-            player.prepareToPlay()
             self.player = player
             duration = player.duration
             phase = .ready
@@ -225,26 +236,50 @@ final class InlineAudioPlayerModel {
 
     func togglePlayPause() {
         guard phase == .ready, let player else { return }
-        if isPlaying {
+        if isPlaying || isStarting {
             pause()
-        } else {
-            AudioAttachmentPlaybackCenter.shared.playbackWillBegin(for: self)
-            activateSession()
-            if player.play() {
-                isPlaying = true
-                startTicker()
+            return
+        }
+        AudioAttachmentPlaybackCenter.shared.playbackWillBegin(for: self)
+        let owner = UUID()
+        audioOwnerID = owner
+        isStarting = true
+        playbackTask = Task { [weak self] in
+            guard let self, !Task.isCancelled else { return }
+            do {
+                try await self.audioSession.activate(owner: owner, configuration: AudioSessionConfiguration(
+                    category: .playback, mode: .default
+                ))
+                guard !Task.isCancelled, self.audioOwnerID == owner else { return }
+                self.isStarting = false
+                player.prepareToPlay()
+                if player.play() {
+                    self.isPlaying = true
+                    self.startTicker()
+                } else {
+                    self.deactivateSession()
+                    self.phase = .failed
+                }
+            } catch {
+                guard self.audioOwnerID == owner else { return }
+                self.isStarting = false
+                self.deactivateSession()
+                if !(error is CancellationError) { self.phase = .failed }
             }
         }
     }
 
     private func pause() {
+        playbackTask?.cancel()
+        playbackTask = nil
+        isStarting = false
         player?.pause()
         isPlaying = false
         stopTicker()
         // Release the shared session on manual pause too, so an audio app we
         // interrupted (Spotify, Podcasts, …) is told it can resume instead of
         // staying blocked until the view disappears. If another clip takes over,
-        // its `activateSession()` immediately reclaims the session.
+        // its activation is queued after this release.
         deactivateSession()
     }
 
@@ -293,27 +328,10 @@ final class InlineAudioPlayerModel {
         phase = .failed
     }
 
-    private func activateSession() {
-        // If composer dictation is currently capturing the mic, leave the shared
-        // session alone: switching it to `.playback` would tear down the live
-        // recording engine. `.playAndRecord` already supports playback, so the
-        // clip still plays through the active session.
-        guard !ComposerAudioCaptureState.shared.isCapturing else { return }
-
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default)
-        try? session.setActive(true)
-    }
-
-    /// Releases the shared session once playback ends or the view disappears, so
-    /// any audio app we interrupted on `activateSession()` is told it can resume
-    /// (`.notifyOthersOnDeactivation`). Skipped while composer dictation owns the
-    /// mic — same guard as activation. If another clip is still playing, iOS
-    /// refuses to deactivate a session with running I/O and `try?` swallows it,
-    /// so this never cuts off an active clip.
     private func deactivateSession() {
-        guard !ComposerAudioCaptureState.shared.isCapturing else { return }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        guard let owner = audioOwnerID else { return }
+        audioOwnerID = nil
+        audioSession.deactivate(owner: owner)
     }
 
     private func startTicker() {

@@ -40,7 +40,7 @@ final class AppIconChoiceTests: XCTestCase {
     func testAllCasesUseApprovedDisplayOrder() {
         XCTAssertEqual(
             AppIconChoice.allCases,
-            [.system, .classicCaduceus, .wingedHelmet, .arcMonogram, .arcMonogramDark, .pixelCaduceus, .pixelCaduceusDark,
+            [.system, .wingedHelmet, .classicCaduceus, .arcMonogram, .arcMonogramDark, .pixelCaduceus, .pixelCaduceusDark,
              .light, .dark, .disco, .monochromeLight, .monochromeDark, .gradientLight, .gradientDark]
         )
     }

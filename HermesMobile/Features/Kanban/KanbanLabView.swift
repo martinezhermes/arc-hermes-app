@@ -708,9 +708,7 @@ struct KanbanStatusFocusView: View {
                 Text(KanbanCountFormatter.cards(model.selectedCardCount))
                     .font(.subheadline.weight(.semibold))
                     .accessibilityLabel(
-                        Text(KanbanCountFormatter.cards(model.selectedCardCount))
-                        + Text(", ")
-                        + Text("Selected")
+                        Text("\(Text(KanbanCountFormatter.cards(model.selectedCardCount))), \(Text("Selected"))")
                     )
                 Spacer()
                 Button("Bulk Actions") { showsBulkActions = true }
@@ -820,9 +818,7 @@ struct KanbanStatusFocusView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Kanban is available with limited capabilities.")
                 if !model.unavailableWriteCapabilities.isEmpty {
-                    Text("Unavailable")
-                        + Text(verbatim: ": ")
-                        + Text(verbatim: unavailableWriteCapabilityNames)
+                    Text("\(Text("Unavailable")): \(Text(verbatim: unavailableWriteCapabilityNames))")
                 }
             }
             .font(.footnote)

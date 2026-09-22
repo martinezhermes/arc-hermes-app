@@ -8,7 +8,7 @@
 
 Your server. Your iPhone. No middleman.
 
-[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/hermex/id6767006319)
+[![iOS 27+](https://img.shields.io/badge/iOS-27%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/hermex/id6767006319)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Follow on X](https://img.shields.io/badge/Follow-%40uzairansar-000000?logo=x&logoColor=white)](https://x.com/uzairansar)
@@ -28,7 +28,7 @@ Hermex is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](h
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
-- **Native.** Real SwiftUI, built for iOS 18+, not a web wrapper.
+- **Native.** Real SwiftUI, built for iOS 27 and iPadOS 27, not a web wrapper.
 
 ## Features
 
@@ -81,7 +81,7 @@ If connection testing fails, check these first:
 
 ## Building from source
 
-Prefer the [App Store build](https://apps.apple.com/app/hermex/id6767006319) unless you're developing. To build yourself you need Xcode 26 or newer (iOS 18 SDK) and an iPhone or simulator on iOS 18+.
+Prefer the [App Store build](https://apps.apple.com/app/hermex/id6767006319) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 27+, or a matching simulator.
 
 Clone the repo, open `ARCHermes.xcodeproj`, and run the `ARCHermes` scheme on an iPhone simulator (the Xcode target is `ARCHermes`; the app's display name is `Hermex`). Dependencies are resolved automatically via Swift Package Manager.
 

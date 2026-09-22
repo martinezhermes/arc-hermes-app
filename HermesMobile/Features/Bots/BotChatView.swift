@@ -7,6 +7,7 @@ import SwiftUI
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var model: BotConversation
+    private var onTranscriptReady: ((ScrollViewProxy) -> Void)?
     @State private var stopAction: BotConversation.StopAction?
     @State private var recoveryID = UUID()
     @State private var followLatch = ChatScrollPolicy.FollowLatch()
@@ -24,8 +25,9 @@ import SwiftUI
         _model = State(initialValue: BotConversation(server: server, connection: connection, profile: profile, historyCache: .shared))
     }
 
-    init(model: BotConversation) {
+    init(model: BotConversation, onTranscriptReady: ((ScrollViewProxy) -> Void)? = nil) {
         _model = State(initialValue: model)
+        self.onTranscriptReady = onTranscriptReady
     }
 
     var body: some View {
@@ -69,11 +71,11 @@ import SwiftUI
                             )
                             .id(BotChatView.requestAnchor)
                         }
-                        Color.clear.frame(height: 1).id("bot-transcript-bottom")
                     }
                     .padding(.horizontal, dynamicTypeSize.isAccessibilitySize ? 20 : 16)
                     .padding(.top, 16)
                     .padding(.bottom, 44)
+                    .id("bot-transcript-bottom")
                     // A tapped row must stay under the finger: stop following so
                     // neither the size-change anchor nor the next activity update
                     // moves the reader. Latest brings them back.
@@ -86,6 +88,7 @@ import SwiftUI
                 .defaultScrollAnchor(ChatScrollPolicy.initialTranscriptAnchor, for: .initialOffset)
                 .defaultScrollAnchor(ChatScrollPolicy.sizeChangeAnchor(shouldFollowLatestMessage: followsLatest), for: .sizeChanges)
                 .scrollDismissesKeyboard(.interactively)
+                .onAppear { onTranscriptReady?(proxy) }
                 .onChange(of: model.messages.count) { followLatest(proxy) }
                 .onChange(of: model.liveMessages.last?.content) { followLatest(proxy) }
                 .onChange(of: model.liveActivity.toolCalls.count) { followLatest(proxy) }

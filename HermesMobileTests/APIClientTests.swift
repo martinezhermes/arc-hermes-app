@@ -40,7 +40,7 @@ class APIClientTestCase: XCTestCase {
     }
 }
 
-final class MockURLProtocol: URLProtocol, @unchecked Sendable {
+final class MockURLProtocol: URLProtocol {
     static var requestHandler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
 
     /// Handlers run here rather than on the caller's thread. URLSession drives

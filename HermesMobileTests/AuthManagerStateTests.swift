@@ -25,12 +25,23 @@ final class AuthManagerStateTests: XCTestCase {
         }
     }
 
+    private nonisolated static func seedCookie(_ cookie: HTTPCookie) async {
+        // Cookie storage synchronously waits for its backing service. Seed the
+        // fixture on a utility queue, outside the UI/cooperative executor.
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                HTTPCookieStorage.shared.setCookie(cookie)
+                continuation.resume()
+            }
+        }
+    }
+
     func testUnauthorizedWhileLoggedInKeepsServerAndMovesToLoggedOut() async throws {
         let keychain = InMemoryKeychainStore()
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://example.test")
         let server = try XCTUnwrap(URL(string: "https://example.test"))
         let cookieStorage = HTTPCookieStorage.shared
-        cookieStorage.setCookie(try makeSessionCookie(for: server))
+        await Self.seedCookie(try makeSessionCookie(for: server))
 
         manager.handleAPIError(APIError.unauthorized)
 
@@ -145,7 +156,7 @@ final class AuthManagerStateTests: XCTestCase {
             serverURLString: "https://example.test",
             client: client
         )
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: server))
+        await Self.seedCookie(try makeSessionCookie(for: server))
 
         await manager.signOut()
 
@@ -162,8 +173,8 @@ final class AuthManagerStateTests: XCTestCase {
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://a.test")
         // Both servers hold a session cookie in the shared jar (which both APIClient
         // and SSEClient stream against).
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         await manager.signOut()
 
@@ -177,8 +188,8 @@ final class AuthManagerStateTests: XCTestCase {
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
         let manager = try await makeLoggedInManager(keychain: keychain, serverURLString: "https://a.test")
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         manager.handleAPIError(APIError.unauthorized)
 
@@ -298,8 +309,8 @@ final class AuthManagerStateTests: XCTestCase {
         let (manager, _, bAccount) = try await makeTwoServerManager(keychain: keychain, registry: registry)
         let serverA = try XCTUnwrap(URL(string: "https://a.test"))
         let serverB = try XCTUnwrap(URL(string: "https://b.test"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
-        HTTPCookieStorage.shared.setCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverA, value: "a-cookie"))
+        await Self.seedCookie(try makeSessionCookie(for: serverB, value: "b-cookie"))
 
         await manager.removeServer(bAccount)
 

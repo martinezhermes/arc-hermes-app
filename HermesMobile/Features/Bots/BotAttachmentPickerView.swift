@@ -59,17 +59,11 @@ struct BotAttachmentPickerPresentation: ViewModifier {
             for provider in providers {
                 guard model.mayImportAttachments else { return }
                 await model.attachments.importValue {
-                    try await withCheckedThrowingContinuation { continuation in
-                        if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
-                            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, error in
-                                if let error { continuation.resume(throwing: error); return }
-                                let url = (item as? URL) ?? (item as? Data).flatMap { URL(dataRepresentation: $0, relativeTo: nil) }
-                                do {
-                                    guard let url else { throw BotAttachmentFailure.unreadable }
-                                    continuation.resume(returning: try BotAttachmentDraft.readFile(url))
-                                } catch { continuation.resume(throwing: error) }
-                            }
-                        } else if let type = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) {
+                    if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                        return try await readProviderFile(provider)
+                    }
+                    return try await withCheckedThrowingContinuation { continuation in
+                        if let type = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .image) == true }) {
                             provider.loadDataRepresentation(forTypeIdentifier: type) { data, error in
                                 if let error { continuation.resume(throwing: error); return }
                                 guard let data else { continuation.resume(throwing: BotAttachmentFailure.unreadable); return }
@@ -80,6 +74,14 @@ struct BotAttachmentPickerPresentation: ViewModifier {
                 }
             }
         }
+    }
+
+    @concurrent
+    nonisolated private static func readProviderFile(_ provider: NSItemProvider) async throws -> (Data, String) {
+        guard let url = await ShareInputReader.loadFileURL(from: provider) else {
+            throw BotAttachmentFailure.unreadable
+        }
+        return try BotAttachmentDraft.readFile(url)
     }
 
     static func images(_ images: [UIImage], model: BotConversation) {

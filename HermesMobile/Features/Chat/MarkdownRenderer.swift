@@ -615,7 +615,7 @@ private struct PlainCodeBlockText: View {
 
     private func combinedText(for line: MarkdownPlainCodeLine) -> Text {
         line.segments.reduce(Text(verbatim: "")) { partial, segment in
-            partial + Text(verbatim: segment.text)
+            Text("\(partial)\(Text(verbatim: segment.text))")
         }
     }
 }
@@ -653,7 +653,7 @@ private struct HighlightedCodeBlockText: View {
 
     private func combinedText(for line: MarkdownAttributedCodeLine) -> Text {
         line.segments.reduce(Text(verbatim: "")) { partial, segment in
-            partial + Text(AttributedString(segment.attributedText))
+            Text("\(partial)\(Text(AttributedString(segment.attributedText)))")
         }
     }
 }

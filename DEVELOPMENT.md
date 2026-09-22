@@ -81,6 +81,29 @@ Update `.xcodebuildmcp/config.yaml` only when a new simulator should become the 
 
 `scripts/check-swift-file-sizes` warns on production app Swift files (`HermesMobile/`) over 500 LOC; tests, generated files, preview files, the share extension, and the live activity widget are exempt. It exits successfully even with warnings — it makes drift visible without blocking current work. Override the threshold for local experiments with `HERMES_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes`.
 
+## Supported OS and Concurrency
+
+Signing is inherited by all targets from `Config/Shared.xcconfig`, using Hermes's
+Apple team `ACBA2466CM`. `E7A828PV52` appears in the development certificate's
+display name but is not its team ID. Do not add target-level or simulator-only
+team overrides: they mask the shared configuration and can break signing when
+switching branches. Contributors can use the ignored `Config/Local.xcconfig`.
+
+The app, share extension, Live Activity widget, and test target require iOS/iPadOS
+27.0 or newer and Xcode 27+. Use an iOS 27 simulator for all build and test commands.
+Swift language mode remains 5 with targeted concurrency checking;
+`InferSendableFromCaptures` enables checked sendability inference for immutable
+key-path literals, including SwiftData predicates.
+
+Audio activation/deactivation uses the iOS 27 asynchronous APIs through
+`AudioSessionCoordinator`. Every playback/capture owns a token; only releasing the
+last owner deactivates the session. Capture keeps priority over playback. Tests
+use an injected driver and explicit continuations, with no microphone hardware.
+
+The hosted test bundle uses the app’s linked MarkdownUI implementation. Do not
+add a second MarkdownUI package-product link to the test target: Xcode then
+repackages its transitive C modules as frameworks and emits a module-map warning.
+
 ## Raw xcodebuild Fallback
 
 Use raw `xcodebuild` when XcodeBuildMCP is unavailable, when validating lower-level build failures, or when matching the GitHub Actions release/archive commands exactly. The TestFlight workflows continue to use raw `xcodebuild` and are not replaced by XcodeBuildMCP.

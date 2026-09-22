@@ -15,11 +15,13 @@ final class ResponseSelectionTests: XCTestCase {
         XCTAssertTrue(input.textInputView === input)
     }
 
-    func testAskHermexReturnsExactSelectionAndClearsIt() {
+    func testAskHermexReturnsExactSelectionAndClearsIt() throws {
         let input = ResponseSelectionInput()
         let controller = UIViewController()
         controller.view = input
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 200)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
@@ -45,7 +47,9 @@ final class ResponseSelectionTests: XCTestCase {
         let controller = UIHostingController(rootView: ResponseTextSelection(identity: "response") {
             Text("A completed response").responseSelectableText("A completed response")
         })
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 400))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 400)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
@@ -95,7 +99,9 @@ final class ResponseSelectionTests: XCTestCase {
         controller.loadViewIfNeeded()
         controller.host.rootView = AnyView(MarkdownRenderer(content: markdown)
             .responseSelectionDocument(controller.scope))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 900))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 900)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
@@ -129,7 +135,9 @@ final class ResponseSelectionTests: XCTestCase {
             Text("let value = 1").font(.system(.body, design: .monospaced))
                 .responseSelectableText("let value = 1")
         }.responseSelectionDocument(controller.scope))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 600))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 600)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
@@ -162,7 +170,9 @@ final class ResponseSelectionTests: XCTestCase {
         controller.loadViewIfNeeded()
         controller.host.rootView = AnyView(Text(verbatim: text).responseSelectableText(text)
             .responseSelectionDocument(controller.scope))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 200))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 200)
         window.rootViewController = controller
         window.makeKeyAndVisible()
         defer { window.isHidden = true }

@@ -5,8 +5,8 @@ import UIKit
 
 enum AppIconChoice: String, CaseIterable, Identifiable {
     case system
-    case classicCaduceus
     case wingedHelmet
+    case classicCaduceus
     case arcMonogram
     case arcMonogramDark
     case pixelCaduceus
@@ -70,9 +70,9 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
-        case .system:
+        case .system, .wingedHelmet:
             String(localized: "Matches device appearance")
-        case .classicCaduceus, .wingedHelmet, .arcMonogram, .pixelCaduceus:
+        case .classicCaduceus, .arcMonogram, .pixelCaduceus:
             String(localized: "Original artwork")
         case .light:
             String(localized: "Always use the light icon")

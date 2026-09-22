@@ -167,7 +167,7 @@ import XCTest
         let currentConnection = connection(name: "One")
         let other = connection(name: "Two")
         let keychain = InMemoryKeychainStore()
-        var store = BotConnectionStore(keychain: keychain)
+        let store = BotConnectionStore(keychain: keychain)
         try store.save(currentConnection, server: server)
         let wire = BotProfileEditorWire(details: details())
         let editor = BotProfileEditor(server: server, connection: currentConnection, profile: profile(), avatar: nil,

@@ -117,21 +117,36 @@ import XCTest
         }
         let model = make(wire)
         await model.recover()
-        let window = try show(BotChatView(model: model)
+        var transcriptProxy: ScrollViewProxy?
+        let window = try show(NavigationStack { BotChatView(model: model, onTranscriptReady: { transcriptProxy = $0 }) }
             .environment(\.scenePhase, .inactive))
         window.overrideUserInterfaceStyle = .dark
         defer { close(window); model.suspend() }
         await renderFrames(30)
-        XCTAssertNotNil(descendants(window).compactMap { $0 as? ChatScrollObserver.ObserverView }.first)
-        let scroll = try XCTUnwrap(descendants(window).compactMap { $0 as? UIScrollView }.first {
-            $0.bounds.width > 300 && $0.contentSize.height > $0.bounds.height
-        })
-        scroll.setContentOffset(CGPoint(x: 0, y: -scroll.adjustedContentInset.top), animated: false)
+        let observer = try XCTUnwrap(descendants(window).compactMap { $0 as? ChatScrollObserver.ObserverView }.first)
+        // Target the transcript's actual scrolling ancestor. Navigation chrome
+        // can contain its own scroll views with equally large bounds on iOS 27.
+        let scroll = try XCTUnwrap(enclosingScrollView(of: observer))
+        let candidates = descendants(window).compactMap { $0 as? UIScrollView }
+        let diagnostics = candidates.map {
+            "\(type(of: $0)): bounds=\($0.bounds), content=\($0.contentSize), transcript=\($0 === scroll)"
+        }.joined(separator: "\n")
+        let scrollAttachment = XCTAttachment(string: diagnostics)
+        scrollAttachment.name = "Transcript scroll ownership"
+        scrollAttachment.lifetime = .keepAlways
+        add(scrollAttachment)
+        let proxy = try XCTUnwrap(transcriptProxy)
+        proxy.scrollTo(try XCTUnwrap(model.messages.first).id, anchor: .top)
         await renderFrames(30)
-        XCTAssertLessThan(scroll.contentOffset.y, 1)
+        let distanceAbove = scroll.contentSize.height - scroll.bounds.height
+            + scroll.adjustedContentInset.bottom - scroll.contentOffset.y
+        // Lazy stacks reconcile estimated row heights as they materialize. The
+        // reading position must be away from the bottom, not at a fixed offset.
+        XCTAssertGreaterThan(distanceAbove, ChatScrollPolicy.bottomThreshold(isStreaming: false),
+                             "offset=\(scroll.contentOffset.y), content=\(scroll.contentSize.height), viewport=\(scroll.bounds.height)")
         let above = try screenshot(window, name: "479-latest-arrow-above-bottom")
         XCTAssertFalse(above.contains("Latest"), above)
-        scroll.setContentOffset(CGPoint(x: 0, y: scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom), animated: false)
+        proxy.scrollTo("bot-transcript-bottom", anchor: .bottom)
         await renderFrames(30)
         let distance = scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom - scroll.contentOffset.y
         XCTAssertLessThanOrEqual(distance, ChatScrollPolicy.followReArmThreshold)
@@ -487,7 +502,11 @@ import XCTest
 
     func testTextOnlyEditorRejectsAttachmentProviders() {
         let editor = ComposerChipTextView()
-        let image = NSItemProvider(item: NSData(), typeIdentifier: UTType.png.identifier)
+        let image = NSItemProvider()
+        image.registerDataRepresentation(forTypeIdentifier: UTType.png.identifier, visibility: .all) { completion in
+            completion(Data(), nil)
+            return nil
+        }
         let text = NSItemProvider(object: "plain text" as NSString)
         XCTAssertTrue(editor.canPasteItemProviders([image]), "Sessions retain attachment support")
         editor.acceptsAttachments = false
@@ -570,15 +589,7 @@ import XCTest
         // Let the view own its one recovery. Starting another here can race
         // the view's .task and erase the live event after this test sends it.
         let connected = expectation(description: "view recovered")
-        func observeConnection() {
-            if model.connectionState == .connected { connected.fulfill(); return }
-            withObservationTracking {
-                _ = model.connectionState
-            } onChange: {
-                Task { @MainActor in observeConnection() }
-            }
-        }
-        observeConnection()
+        Self.observeConnection(in: model, connected: connected)
         await fulfillment(of: [connected], timeout: 3)
         wire.onEvent?(.object([
             "session_id": .string("runtime"), "seq": .number(1), "type": .string("tool.start"),
@@ -602,6 +613,15 @@ import XCTest
         XCTAssertTrue(hidden.contains("Plan"), "work progress stays visible with cards off: " + hidden)
     }
 
+    private static func observeConnection(in model: BotConversation, connected: XCTestExpectation) {
+        if model.connectionState == .connected { connected.fulfill(); return }
+        withObservationTracking {
+            _ = model.connectionState
+        } onChange: {
+            Task { @MainActor in observeConnection(in: model, connected: connected) }
+        }
+    }
+
     private func show<V: View>(_ view: V) throws -> UIWindow {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
@@ -616,6 +636,15 @@ import XCTest
         window.endEditing(true)
         window.isHidden = true
         window.rootViewController = nil
+    }
+
+    private func enclosingScrollView(of view: UIView) -> UIScrollView? {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if let scroll = current as? UIScrollView { return scroll }
+            ancestor = current.superview
+        }
+        return nil
     }
 
     private func descendants(_ view: UIView) -> [UIView] {

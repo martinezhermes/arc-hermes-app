@@ -112,6 +112,31 @@ final class ChatViewModelSendTests: XCTestCase {
     }
 
     @MainActor
+    func testStoppingDuringAudioActivationDoesNotSpeakAfterActivationCompletes() async throws {
+        let began = expectation(description: "audio activation began")
+        let gate = ListenActivationGate(started: began)
+        let session = SpyListenAudioSession()
+        session.onActivate = { await gate.wait() }
+        let synthesizer = SpySpeechSynthesizer()
+        let model = try makeViewModel(speechSynthesizerFactory: { synthesizer }, listenAudioSession: session) {
+            Self.ttsUnavailableResponse(for: $0)
+        }
+        let context = try XCTUnwrap(MessageActionContext(
+            message: ChatMessage(role: "assistant", content: "Read this aloud.", timestamp: 1, messageId: "activation-test"),
+            visibleIndex: 0, messagesOffset: 0
+        ))
+        model.toggleListening(to: context)
+        let preparation = try XCTUnwrap(model.listenPreparationTask)
+        await fulfillment(of: [began], timeout: 2)
+        model.stopListening()
+        gate.release()
+        await preparation.value
+        XCTAssertTrue(synthesizer.spokenStrings.isEmpty)
+        XCTAssertNil(model.listeningMessageID)
+        XCTAssertEqual(model.listenPlaybackPhase, .idle)
+    }
+
+    @MainActor
     func testListenActivatesAudioSessionBeforeSpeaking() async throws {
         let recorder = ListenCallRecorder()
         let speechSynthesizer = SpySpeechSynthesizer(recorder: recorder)
@@ -351,6 +376,7 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(remoteControlCenter.snapshots.last).isPlaying)
 
         remoteControlCenter.firePlay()
+        await viewModel.listenPreparationTask?.value
         XCTAssertEqual(player.playCount, 2)
         XCTAssertEqual(viewModel.listenPlaybackPhase, .playing)
         XCTAssertTrue(try XCTUnwrap(remoteControlCenter.snapshots.last).isPlaying)
@@ -364,6 +390,7 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertEqual(viewModel.listenPlaybackPhase, .paused)
 
         remoteControlCenter.fireTogglePlayPause()
+        await viewModel.listenPreparationTask?.value
         XCTAssertEqual(player.playCount, 3)
         XCTAssertEqual(viewModel.listenPlaybackPhase, .playing)
     }
@@ -598,8 +625,8 @@ final class ChatViewModelSendTests: XCTestCase {
 
         viewModel.toggleListening(to: context)
 
-        // Straight to the on-device path — synchronous, no preparation task.
-        XCTAssertNil(viewModel.listenPreparationTask)
+        // Skip the server, but wait for nonblocking audio-session activation.
+        await viewModel.listenPreparationTask?.value
         XCTAssertEqual(speechSynthesizer.spokenStrings, [longText])
         XCTAssertEqual(viewModel.listeningMessageID, "assistant-23")
     }
@@ -1144,7 +1171,7 @@ final class ChatViewModelSendTests: XCTestCase {
             data: Data("fake-jpeg".utf8),
             filename: "photo.jpg"
         )
-        try XCTUnwrap(staged)
+        XCTAssertNotNil(staged)
         XCTAssertEqual(viewModel.pendingAttachments.count, 1)
 
         // Empty draft + staged attachment: previously rejected, now sends.
@@ -9823,14 +9850,16 @@ private final class SpyListenAudioSession: ListenAudioSessionControlling {
     private(set) var activateCount = 0
     private(set) var deactivateCount = 0
     private let recorder: ListenCallRecorder?
+    var onActivate: (() async throws -> Void)?
 
     init(recorder: ListenCallRecorder? = nil) {
         self.recorder = recorder
     }
 
-    func activate() {
+    func activate() async throws {
         activateCount += 1
         recorder?.record("activate")
+        try await onActivate?()
     }
 
     func deactivate() {
@@ -9948,5 +9977,23 @@ private actor ManualAsyncDelay {
         for observer in satisfied {
             observer.continuation.resume()
         }
+    }
+}
+
+@MainActor
+private final class ListenActivationGate {
+    let started: XCTestExpectation
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(started: XCTestExpectation) { self.started = started }
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+            started.fulfill()
+        }
+    }
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }

@@ -38,7 +38,7 @@ body:
     id: ios-version
     attributes:
       label: iOS version and device
-      placeholder: e.g. iOS 18.5 on iPhone 15 Pro, or iOS 18 simulator
+      placeholder: e.g. iOS 27 on iPhone 16 Pro, or iPadOS 27 simulator
     validations:
       required: true
   - type: input

@@ -189,7 +189,7 @@ struct DiffCountsLabel: View {
         .monospacedDigit()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            Text("\(additions) added") + Text(verbatim: ", ") + Text("\(deletions) removed")
+            Text("\(Text("\(additions) added")), \(Text("\(deletions) removed"))")
         )
     }
 }

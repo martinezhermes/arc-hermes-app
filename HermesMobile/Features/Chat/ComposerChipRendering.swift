@@ -304,7 +304,7 @@ enum ComposerChipTextLine {
         for token in tokens where token.range.location >= cursor {
             if token.range.location > cursor {
                 let plain = string.substring(with: NSRange(location: cursor, length: token.range.location - cursor))
-                line = line + Text(verbatim: plain)
+                line = Text("\(line)\(Text(verbatim: plain))")
             }
 
             let chip = ComposerChipRenderer.image(
@@ -314,12 +314,12 @@ enum ComposerChipTextLine {
                 traits: style.traits,
                 isRightToLeft: style.isRightToLeft
             )
-            line = line + Text(Image(uiImage: chip))
+            line = Text("\(line)\(Text(Image(uiImage: chip)))")
             cursor = token.range.upperBound
         }
 
         if cursor < string.length {
-            line = line + Text(verbatim: string.substring(from: cursor))
+            line = Text("\(line)\(Text(verbatim: string.substring(from: cursor)))")
         }
 
         return line

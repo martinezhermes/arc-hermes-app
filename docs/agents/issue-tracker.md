@@ -1,25 +1,27 @@
 # Issue Tracker: GitHub
 
-Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for issue operations.
+Issues and PRDs for this repo live as GitHub issues. Use the `gh-ach9` CLI for issue operations.
 
 ## Repository
 
-- GitHub repo: `uzairansaruzi/hermex`
-- Remote: `https://github.com/uzairansaruzi/hermex.git`
+- GitHub repo: `martinezhermes/arc-hermes-app`
+- Remote: `git@github.com-ach9:martinezhermes/arc-hermes-app.git`
 
-Infer the repo from `git remote -v` when possible; `gh` does this automatically when run inside the clone.
+Infer the repo from `git remote -v` when possible; `gh-ach9` does this automatically when run inside the clone.
+
+Project sequencing and parent/child gates follow [github-control.md](github-control.md).
 
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`
-- **Read an issue**: `gh issue view <number> --comments`
-- **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
-- **Comment on an issue**: `gh issue comment <number> --body "..."`
-- **Apply a label**: `gh issue edit <number> --add-label "..."`
-- **Remove a label**: `gh issue edit <number> --remove-label "..."`
-- **Close an issue**: `gh issue close <number> --comment "..."`
+- **Create an issue**: `gh-ach9 issue create --title "..." --body-file /path/to/issue.md`
+- **Read an issue**: `gh-ach9 issue view <number> --comments`
+- **List issues**: `gh-ach9 issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`
+- **Comment on an issue**: `gh-ach9 issue comment <number> --body "..."`
+- **Apply a label**: `gh-ach9 issue edit <number> --add-label "..."`
+- **Remove a label**: `gh-ach9 issue edit <number> --remove-label "..."`
+- **Close an issue**: `gh-ach9 issue close <number> --comment "..."`
 
-Use heredocs for multi-line issue bodies and comments.
+Write multi-line issue bodies and comments to a file and pass `--body-file` to preserve formatting.
 
 ## Pull Requests as a Triage Surface
 
@@ -31,7 +33,7 @@ GitHub Issues are the work queue; pull requests are the review and merge record.
 
 - Pick implementation work from issues labeled `ready-for-agent`, unless the human selects another issue.
 - `ready-for-agent` issues default to express mode (autonomous from approved plan to review-addressed PR). An issue also labeled `needs-manual-validation` forces staged mode, where the owner manually tests before the PR publishes. See `docs/agents/triage-labels.md`.
-- Create a short `issue/<n>-slug` branch for one issue or narrow slice (no-issue branches use `chore/`/`fix/`).
+- Create a short `ACH9/issue-<n>-slug` branch for agent work on one issue or narrow slice; follow an explicitly requested branch name.
 - Commit completed, validated work locally with the matching handoff updates.
 - Push feature branches and open PRs only when the human asks to publish/open a PR. Open them ready for review, not as drafts: the review bots only run on ready PRs.
 - Use the PR for review: GitHub/Copilot review, CI, external agent review, and human comments should live there when possible.
@@ -49,4 +51,4 @@ GitHub Issues are the work queue; pull requests are the review and merge record.
 
 When a skill says "publish to the issue tracker", create a GitHub issue.
 
-When a skill says "fetch the relevant ticket", run `gh issue view <number> --comments`.
+When a skill says "fetch the relevant ticket", run `gh-ach9 issue view <number> --comments`.
