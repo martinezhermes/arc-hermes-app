@@ -1,7 +1,7 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "New ${applicationName} chat": {
+    "New ${applicationName} chat": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -113,7 +113,7 @@
         }
       }
     },
-    "New ${applicationName} voice chat": {
+    "New ${applicationName} voice chat": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -225,7 +225,7 @@
         }
       }
     },
-    "New ${profile} chat in ${applicationName}": {
+    "New ${profile} chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -337,7 +337,7 @@
         }
       }
     },
-    "New chat in ${applicationName}": {
+    "New chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -449,7 +449,7 @@
         }
       }
     },
-    "New chat in ${profile} on ${applicationName}": {
+    "New chat in ${profile} on ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -561,7 +561,7 @@
         }
       }
     },
-    "New voice chat in ${applicationName}": {
+    "New voice chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -673,7 +673,7 @@
         }
       }
     },
-    "Start a new ${profile} chat in ${applicationName}": {
+    "Start a new ${profile} chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -785,7 +785,7 @@
         }
       }
     },
-    "Start a new chat in ${applicationName}": {
+    "Start a new chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {
@@ -897,7 +897,7 @@
         }
       }
     },
-    "Start a voice chat in ${applicationName}": {
+    "Start a voice chat in ${applicationName}": {"extractionState": "manual",
       "localizations": {
         "ar": {
           "stringUnit": {

@@ -10,6 +10,11 @@ APP_IDENTIFIER_SUFFIX =
 APP_BUNDLE_IDENTIFIER = com.martinezhermes.archermes$(APP_IDENTIFIER_SUFFIX)
 APP_GROUP_IDENTIFIER = group.com.martinezhermes.archermes$(APP_IDENTIFIER_SUFFIX)
 
+// Catalogs are maintained explicitly; Xcode's parser otherwise rewrites them
+// after IDE builds even when SWIFT_EMIT_LOC_STRINGS is disabled.
+LOCALIZATION_EXPORT_SUPPORTED = NO
+STRING_CATALOG_GENERATE_SYMBOLS = NO
+
 // Optional per-machine overrides. This include must stay last: later
 // assignments win, so Local.xcconfig values override the defaults above.
 #include? "Local.xcconfig"
