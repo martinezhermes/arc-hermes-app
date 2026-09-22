@@ -2610,7 +2610,7 @@
 		1A2B3C4D5E6F700000000082 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus AppIconARCMonogramDark AppIconPixelCaduceusDark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
@@ -2640,7 +2640,7 @@
 		1A2B3C4D5E6F700000000083 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconLight AppIconDark AppIconDisco AppIconMonochromeLight AppIconMonochromeDark AppIconGradientLight AppIconGradientDark AppIconClassicCaduceus AppIconWingedHelmet AppIconARCMonogram AppIconPixelCaduceus AppIconARCMonogramDark AppIconPixelCaduceusDark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = HermesMobile/Resources/HermesMobile.entitlements;
