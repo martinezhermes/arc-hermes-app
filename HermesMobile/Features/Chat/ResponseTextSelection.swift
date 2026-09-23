@@ -46,7 +46,6 @@ final class ResponseSelectionController: UIViewController {
         host.view.backgroundColor = .clear
         host.view.translatesAutoresizingMaskIntoConstraints = false
         input.addSubview(host.view)
-        host.view.addInteraction(input.selectionInteraction)
         input.accessibilityElements = [host.view!]
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: input.leadingAnchor),
