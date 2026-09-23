@@ -1,6 +1,6 @@
 # Bot Mode
 
-Bots use the selected configured Hermex server's optional direct-Hermes connection.
+Bots use the selected configured ARCHermes server's optional direct-Hermes connection.
 The connection is a separate Hermes Desktop HTTP/WebSocket backend, not webui.
 The connection record, credentials and stable UUID live in server-scoped Keychain
 storage. A different endpoint or username gets a new UUID. Password/name edits
@@ -297,7 +297,7 @@ fetch; a missing revision refetches on every roster load. Loading a roster drops
 every other connection's images, and removing or replacing a connection purges
 its entries, so equal Profile names on two hosts never share a picture. A
 malformed, oversized or missing asset leaves the row on its static shape fallback.
-Hermex renders Desktop's compatible classic shape and color metadata; blobatars,
+ARCHermes renders Desktop's compatible classic shape and color metadata; blobatars,
 pets and other Desktop renderers remain Desktop-owned. Drawn faces blink on a
 sparse `BotBlinkSchedule` (shut and open entries every 3 to 5 s, phase seeded by
 Profile name) so nothing repaints between blinks; only the open bot's face in the
@@ -305,7 +305,7 @@ chat title takes Desktop's 15 fps working pose, and only while its turn is live.
 Reduce Motion, the shape and expression picker tiles, photos and the extensions
 render one still frame; inbox rows and pinned tiles blink.
 The drawn face's rest `expression` (sixteen Bloub-derived eye geometries in
-`BotAvatarExpression`) is a Hermex-owned key in the same look object: Desktop's
+`BotAvatarExpression`) is a ARCHermes-owned key in the same look object: Desktop's
 `saveBotMeta` spreads server keys into its local copy and re-sends the whole
 object, so the key survives a Desktop save, and Desktop ignores it when drawing.
 Unknown values read as neutral.

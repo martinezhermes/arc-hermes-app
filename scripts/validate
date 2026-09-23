@@ -2,22 +2,22 @@
 # The same signed Simulator test command runs locally and on GitHub-hosted Macs.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-validation_dir="${HERMEX_VALIDATION_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/hermex-validation.XXXXXX")}"
-destination="${HERMEX_DESTINATION:-platform=iOS Simulator,name=iPhone 17,OS=27.0}"
+validation_dir="${ARCHERMES_VALIDATION_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/archermes-validation.XXXXXX")}"
+destination="${ARCHERMES_DESTINATION:-platform=iOS Simulator,name=iPhone 17,OS=27.0}"
 mkdir -p "$validation_dir"
 if [[ -e "$validation_dir/Tests.xcresult" ]]; then
-  echo "Choose a fresh HERMEX_VALIDATION_DIR; Tests.xcresult already exists." >&2
+  echo "Choose a fresh ARCHERMES_VALIDATION_DIR; Tests.xcresult already exists." >&2
   exit 1
 fi
 printf 'Checkout: %s\nCommit: %s\nDestination: %s\nEvidence: %s\n' \
   "$PWD" "$(git rev-parse HEAD)" "$destination" "$validation_dir"
 xcodebuild -version
 git diff --check
-catalogs=(HermesMobile/Resources/Localizable.xcstrings HermesMobile/Resources/AppShortcuts.xcstrings)
+catalogs=(ARCHermes/Resources/Localizable.xcstrings ARCHermes/Resources/AppShortcuts.xcstrings)
 shasum -a 256 "${catalogs[@]}" > "$validation_dir/catalogs.before"
 xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermesValidation \
   -configuration Debug -destination "$destination" \
-  -derivedDataPath "${HERMEX_DERIVED_DATA:-$validation_dir/DerivedData}" \
+  -derivedDataPath "${ARCHERMES_DERIVED_DATA:-$validation_dir/DerivedData}" \
   -resultBundlePath "$validation_dir/Tests.xcresult" \
   -parallel-testing-enabled NO test 2>&1 | tee "$validation_dir/xcodebuild.log"
 # A successful build must not rewrite the manually maintained catalogs.

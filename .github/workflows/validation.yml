@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Build app and extensions and run the complete XCTest suite
         env:
-          HERMEX_VALIDATION_DIR: ${{ runner.temp }}/hermex-validation
+          ARCHERMES_VALIDATION_DIR: ${{ runner.temp }}/archermes-validation
         run: scripts/validate
       - name: Preserve test evidence
         if: always()
@@ -27,7 +27,7 @@ jobs:
         with:
           name: apple-validation-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/hermex-validation/Tests.xcresult
-            ${{ runner.temp }}/hermex-validation/xcodebuild.log
+            ${{ runner.temp }}/archermes-validation/Tests.xcresult
+            ${{ runner.temp }}/archermes-validation/xcodebuild.log
           if-no-files-found: warn
           retention-days: 7

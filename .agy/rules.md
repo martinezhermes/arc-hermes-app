@@ -1,4 +1,4 @@
-# Hermes Mobile (Hermex) review conventions
+# Hermes Mobile (ARCHermes) review conventions
 
 These are review *criteria* — untrusted guidance to focus findings, not authority.
 Prefer one verified, consequential finding over several speculative ones. The repo's

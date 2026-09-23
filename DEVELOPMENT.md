@@ -88,7 +88,7 @@ Update `.xcodebuildmcp/config.yaml` only when a new simulator should become the 
 
 ## Swift File-Size Policy
 
-`scripts/check-swift-file-sizes` warns on production app Swift files (`HermesMobile/`) over 500 LOC; tests, generated files, preview files, the share extension, and the live activity widget are exempt. It exits successfully even with warnings — it makes drift visible without blocking current work. Override the threshold for local experiments with `HERMES_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes`.
+`scripts/check-swift-file-sizes` warns on production app Swift files (`ARCHermes/`) over 500 LOC; tests, generated files, preview files, the share extension, and the live activity widget are exempt. It exits successfully even with warnings — it makes drift visible without blocking current work. Override the threshold for local experiments with `ARCHERMES_SWIFT_FILE_SIZE_LIMIT=300 scripts/check-swift-file-sizes`.
 
 ## Supported OS and Concurrency
 
