@@ -617,8 +617,9 @@ final class ComposerVoiceInputController {
         logger.info(
             "Voice input installing audio tap sampleRate=\(recordingFormat.sampleRate, privacy: .public) channels=\(recordingFormat.channelCount, privacy: .public)"
         )
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: recordingFormat) { [weak request] buffer, _ in
-            request?.append(buffer)
+        let tapRequest = ComposerSpeechTapRequest(request: request)
+        try inputNode.installAudioTap(onBus: 0, bufferSize: 1_024, format: recordingFormat) { buffer, _ in
+            tapRequest.append(buffer)
         }
         audioTapInstalled = true
         logger.info("Voice input audio tap installed")
@@ -826,6 +827,20 @@ final class ComposerVoiceInputController {
     }
 }
 
+/// The audio callback is concurrent with the UI actor. The tap is removed before
+/// `endAudio()`, and this wrapper holds only a weak reference to the request.
+private final class ComposerSpeechTapRequest: @unchecked Sendable {
+    private weak var request: SFSpeechAudioBufferRecognitionRequest?
+
+    init(request: SFSpeechAudioBufferRecognitionRequest) {
+        self.request = request
+    }
+
+    func append(_ buffer: AVReadOnlyAudioPCMBuffer) {
+        request?.append(AVAudioPCMBuffer(copying: buffer))
+    }
+}
+
 private final class SpeechRecognitionContinuationBox {
     var didResume = false
 }
@@ -843,7 +858,7 @@ enum ComposerVoiceMicrophonePermissionRequester {
 enum ComposerVoiceAudioSessionConfiguration {
     static let category = AVAudioSession.Category.playAndRecord
     static let mode = AVAudioSession.Mode.measurement
-    static let options: AVAudioSession.CategoryOptions = [.mixWithOthers, .allowBluetooth]
+    static let options: AVAudioSession.CategoryOptions = [.mixWithOthers, .allowBluetoothHFP]
 }
 
 enum ComposerVoiceInputError: LocalizedError {
