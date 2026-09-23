@@ -114,6 +114,41 @@ final class AudioSessionCoordinatorTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
+    func testComposerDictationStoppedDuringActivationDoesNotStartLate() async throws {
+        let driver = AudioSessionTestDriver()
+        var captureStates: [Bool] = []
+        let coordinator = AudioSessionCoordinator(driver: driver) { captureStates.append($0) }
+        let controller = ComposerVoiceInputController(
+            speechRecognizerFactory: { nil },
+            microphonePermissionRequester: { true },
+            appIsActive: { true },
+            audioSession: coordinator
+        )
+        controller.apiClient = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.invalid")))
+
+        let began = expectation(description: "composer audio activation started")
+        let ended = expectation(description: "cancelled composer audio released")
+        driver.activationStarted = began
+        driver.onDeactivate = { ended.fulfill() }
+        let task = Task { await controller.toggle(currentDraft: "", updateDraft: { _ in }) }
+        await fulfillment(of: [began], timeout: 2)
+
+        controller.stopKeepingTranscript()
+        driver.resumeActivation()
+        await task.value
+        await fulfillment(of: [ended], timeout: 2)
+
+        XCTAssertEqual(controller.state, .idle)
+        XCTAssertNil(controller.errorMessage)
+        XCTAssertEqual(driver.activations, [AudioSessionConfiguration(
+            category: ComposerVoiceAudioSessionConfiguration.category,
+            mode: ComposerVoiceAudioSessionConfiguration.mode,
+            options: ComposerVoiceAudioSessionConfiguration.options
+        )])
+        XCTAssertEqual(captureStates, [true, false])
+        XCTAssertEqual(driver.deactivations, 1)
+    }
+
     private static func silentWAV() -> Data {
         var data = Data()
         func append<T: FixedWidthInteger>(_ value: T) {
