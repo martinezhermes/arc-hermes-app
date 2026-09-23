@@ -1427,7 +1427,6 @@ struct ChatView: View {
             onPreviewTranscriptMedia: { reference in
                 presentTranscriptMediaPreview(reference)
             },
-            onAskHermex: addSelectedPassageToDraft,
             onToggleListening: { context in
                 viewModel.toggleListening(to: context)
             },
@@ -2304,12 +2303,6 @@ struct ChatView: View {
         )
         draftMessage = resolvedContent.text
         draftQuotes = resolvedContent.quotes
-    }
-
-    private func addSelectedPassageToDraft(_ passage: String) {
-        guard !passage.isEmpty else { return }
-        persistedQuotesBinding.wrappedValue = draftQuotes + [ComposerQuote(text: passage)]
-        requestComposerFocusIfPossible()
     }
 
     private func flushDraftsBestEffort() {
