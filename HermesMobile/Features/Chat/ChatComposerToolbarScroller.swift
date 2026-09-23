@@ -76,6 +76,14 @@ struct ComposerToolbarScroller<Content: View>: View {
             fades = newFades
         }
         .mask { fadeMask }
+        .background {
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: SidebarRevealExclusionFrameKey.self,
+                    value: geometry.frame(in: .global)
+                )
+            }
+        }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: fades)
     }
 
