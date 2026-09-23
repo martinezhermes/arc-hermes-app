@@ -22,6 +22,9 @@ final class ComposerVoiceInputController {
 
     private let speechRecognizerFactory: () -> SFSpeechRecognizer?
     private let audioEngineFactory: () -> AVAudioEngine
+    @ObservationIgnored private let microphonePermissionRequester: () async -> Bool
+    @ObservationIgnored private let appIsActive: @MainActor () -> Bool
+    @ObservationIgnored private let audioSession: AudioSessionCoordinator
     private var speechRecognizer: SFSpeechRecognizer?
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -31,7 +34,8 @@ final class ComposerVoiceInputController {
     private var draftUpdateSession = ComposerVoiceDraftUpdateSession()
     private var updateDraft: ((String) -> Void)?
     private var suppressNextRecognitionError = false
-    private var activatedAudioSessionForRecording = false
+    @ObservationIgnored private var audioOwnerID: UUID?
+    @ObservationIgnored private var activeStartID: UUID?
     private var audioTapInstalled = false
     @ObservationIgnored private var transcriptionTask: Task<Void, Never>?
     private var activeTranscriptionID: UUID?
@@ -43,10 +47,16 @@ final class ComposerVoiceInputController {
 
     init(
         speechRecognizerFactory: @escaping () -> SFSpeechRecognizer? = { SFSpeechRecognizer(locale: Locale.current) },
-        audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() }
+        audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() },
+        microphonePermissionRequester: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() },
+        appIsActive: @escaping @MainActor () -> Bool = { UIApplication.shared.applicationState == .active },
+        audioSession: AudioSessionCoordinator? = nil
     ) {
         self.speechRecognizerFactory = speechRecognizerFactory
         self.audioEngineFactory = audioEngineFactory
+        self.microphonePermissionRequester = microphonePermissionRequester
+        self.appIsActive = appIsActive
+        self.audioSession = audioSession ?? .shared
     }
 
     var isListening: Bool {
@@ -67,6 +77,7 @@ final class ComposerVoiceInputController {
 
     func stopKeepingTranscript() {
         suppressNextRecognitionError = true
+        activeStartID = nil
         switch state {
         case .serverListening:
             stopServerRecordingAndTranscribe()
@@ -84,6 +95,7 @@ final class ComposerVoiceInputController {
 
     func stopBeforeSubmittingDraft() {
         suppressNextRecognitionError = true
+        activeStartID = nil
         cancelServerTranscription()
         stopAcceptingDraftUpdates()
         discardServerRecording()
@@ -93,6 +105,8 @@ final class ComposerVoiceInputController {
 
     private func start(currentDraft: String, updateDraft: @escaping (String) -> Void) async {
         guard state == .idle else { return }
+        let startID = UUID()
+        activeStartID = startID
 
         logger.info("Voice input start requested")
         errorMessage = nil
@@ -123,22 +137,23 @@ final class ComposerVoiceInputController {
             return
         }
 
-        await start(provider: provider)
+        await start(provider: provider, startID: startID)
     }
 
-    private func start(provider: ComposerSTTProvider) async {
+    private func start(provider: ComposerSTTProvider, startID: UUID) async {
+        guard activeStartID == startID else { return }
         switch provider {
         case .server:
-            await startServerProvider()
+            await startServerProvider(startID: startID)
         case .onDevice:
-            await startOnDeviceProvider()
+            await startOnDeviceProvider(startID: startID)
         }
     }
 
-    private func startServerProvider() async {
+    private func startServerProvider(startID: UUID) async {
         let isMicrophonePermissionGranted = await requestMicrophonePermission()
         logger.info("Server voice input microphone permission completed granted=\(isMicrophonePermissionGranted, privacy: .public)")
-        guard state == .requestingPermission else { return }
+        guard state == .requestingPermission, activeStartID == startID else { return }
         guard isMicrophonePermissionGranted else {
             fail(
                 String(localized: "Microphone access is disabled. Enable it in Settings to use voice input."),
@@ -147,7 +162,7 @@ final class ComposerVoiceInputController {
             return
         }
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: UIApplication.shared.applicationState == .active) else {
+        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: appIsActive()) else {
             fail(
                 ComposerVoiceInputError.appNotActive.localizedDescription,
                 logCategory: .appNotActive
@@ -156,42 +171,54 @@ final class ComposerVoiceInputController {
         }
 
         do {
-            try startServerRecording()
+            try await startServerRecording(startID: startID)
             state = .serverListening
+            activeStartID = nil
+        } catch is CancellationError {
+            guard activeStartID == startID else { return }
+            stopAcceptingDraftUpdates()
+            stopAudio(cancelTask: true)
+            activeStartID = nil
+            state = .idle
         } catch {
+            guard activeStartID == startID else { return }
+            stopAudio(cancelTask: true)
             await fallbackOrFail(
                 from: .server,
                 message: error.localizedDescription,
-                logCategory: Self.logCategory(for: error)
+                logCategory: Self.logCategory(for: error),
+                startID: startID
             )
         }
     }
 
-    private func startOnDeviceProvider() async {
+    private func startOnDeviceProvider(startID: UUID) async {
         guard let speechRecognizer = onDeviceSpeechRecognizerForRecording() else {
             await fallbackOrFail(
                 from: .onDevice,
                 message: String(localized: "On-device speech recognition is not available for the current locale."),
-                logCategory: .speechUnavailable
+                logCategory: .speechUnavailable,
+                startID: startID
             )
             return
         }
 
         let speechStatus = await requestSpeechAuthorization()
         logger.info("Voice input speech authorization completed status=\(Self.logDescription(for: speechStatus), privacy: .public)")
-        guard state == .requestingPermission else { return }
+        guard state == .requestingPermission, activeStartID == startID else { return }
         guard speechStatus == .authorized else {
             await fallbackOrFail(
                 from: .onDevice,
                 message: Self.speechAuthorizationMessage(for: speechStatus),
-                logCategory: .speechAuthorization
+                logCategory: .speechAuthorization,
+                startID: startID
             )
             return
         }
 
         let isMicrophonePermissionGranted = await requestMicrophonePermission()
         logger.info("Voice input microphone permission completed granted=\(isMicrophonePermissionGranted, privacy: .public)")
-        guard state == .requestingPermission else { return }
+        guard state == .requestingPermission, activeStartID == startID else { return }
         guard isMicrophonePermissionGranted else {
             fail(
                 String(localized: "Microphone access is disabled. Enable it in Settings to use voice input."),
@@ -200,7 +227,7 @@ final class ComposerVoiceInputController {
             return
         }
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: UIApplication.shared.applicationState == .active) else {
+        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: appIsActive()) else {
             fail(
                 ComposerVoiceInputError.appNotActive.localizedDescription,
                 logCategory: .appNotActive
@@ -209,13 +236,23 @@ final class ComposerVoiceInputController {
         }
 
         do {
-            try startRecognition(speechRecognizer: speechRecognizer)
+            try await startRecognition(speechRecognizer: speechRecognizer, startID: startID)
             state = .listening
+            activeStartID = nil
+        } catch is CancellationError {
+            guard activeStartID == startID else { return }
+            stopAcceptingDraftUpdates()
+            stopAudio(cancelTask: true)
+            activeStartID = nil
+            state = .idle
         } catch {
+            guard activeStartID == startID else { return }
+            stopAudio(cancelTask: true)
             await fallbackOrFail(
                 from: .onDevice,
                 message: error.localizedDescription,
-                logCategory: Self.logCategory(for: error)
+                logCategory: Self.logCategory(for: error),
+                startID: startID
             )
         }
     }
@@ -223,8 +260,10 @@ final class ComposerVoiceInputController {
     private func fallbackOrFail(
         from failedProvider: ComposerSTTProvider,
         message: String,
-        logCategory: VoiceInputFailureLogCategory
+        logCategory: VoiceInputFailureLogCategory,
+        startID: UUID
     ) async {
+        guard activeStartID == startID else { return }
         let fallback = ComposerSTTProviderPolicy.fallbackProvider(
             after: failedProvider,
             preference: providerPreference,
@@ -239,7 +278,7 @@ final class ComposerVoiceInputController {
 
         logger.info("Voice input falling back after \(String(describing: failedProvider), privacy: .public)")
         state = .requestingPermission
-        await start(provider: fallback)
+        await start(provider: fallback, startID: startID)
     }
 
     private func unavailableMessage(serverConfigured: Bool, onDeviceSupported: Bool) -> String {
@@ -256,6 +295,39 @@ final class ComposerVoiceInputController {
         }
 
         return String(localized: "On-device speech recognition is not available for the current locale.")
+    }
+
+    private func activateAudioSession(startID: UUID) async throws {
+        guard state == .requestingPermission,
+              activeStartID == startID,
+              !Task.isCancelled
+        else { throw CancellationError() }
+        let owner = UUID()
+        audioOwnerID = owner
+        do {
+            try await audioSession.activate(owner: owner, configuration: AudioSessionConfiguration(
+                category: ComposerVoiceAudioSessionConfiguration.category,
+                mode: ComposerVoiceAudioSessionConfiguration.mode,
+                options: ComposerVoiceAudioSessionConfiguration.options
+            ))
+            guard state == .requestingPermission,
+                  activeStartID == startID,
+                  audioOwnerID == owner,
+                  appIsActive(),
+                  !Task.isCancelled
+            else { throw CancellationError() }
+        } catch {
+            audioSession.deactivate(owner: owner)
+            if audioOwnerID == owner { audioOwnerID = nil }
+            throw error
+        }
+    }
+
+    private func deactivateAudioSession() {
+        guard let owner = audioOwnerID else { return }
+        audioOwnerID = nil
+        audioSession.deactivate(owner: owner)
+        logger.info("Voice input audio session deactivated")
     }
 
     // MARK: - Server STT
@@ -295,19 +367,12 @@ final class ComposerVoiceInputController {
         return try dataLoader()
     }
 
-    private func startServerRecording() throws {
+    private func startServerRecording(startID: UUID) async throws {
         stopAudio(cancelTask: true)
         logger.info("Server voice input audio startup preparing")
 
+        try await activateAudioSession(startID: startID)
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(
-            ComposerVoiceAudioSessionConfiguration.category,
-            mode: ComposerVoiceAudioSessionConfiguration.mode,
-            options: ComposerVoiceAudioSessionConfiguration.options
-        )
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        activatedAudioSessionForRecording = true
-
         try ComposerVoiceInputStartPolicy.validateAudioSessionInput(
             isInputAvailable: audioSession.isInputAvailable,
             sampleRate: audioSession.sampleRate,
@@ -326,7 +391,6 @@ final class ComposerVoiceInputController {
 
         self.recordingURL = recordingURL
         audioRecorder = recorder
-        ComposerAudioCaptureState.shared.setCapturing(true)
         logger.info("Server voice input recording started")
     }
 
@@ -345,12 +409,7 @@ final class ComposerVoiceInputController {
             recorder.stop()
         }
         audioRecorder = nil
-        ComposerAudioCaptureState.shared.setCapturing(false)
-
-        if activatedAudioSessionForRecording {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            activatedAudioSessionForRecording = false
-        }
+        deactivateAudioSession()
 
         state = .transcribing
         liveTranscript = ""
@@ -577,22 +636,16 @@ final class ComposerVoiceInputController {
         }
     }
 
-    private func startRecognition(speechRecognizer: SFSpeechRecognizer) throws {
+    private func startRecognition(speechRecognizer: SFSpeechRecognizer, startID: UUID) async throws {
         stopAudio(cancelTask: true)
         logger.info("Voice input audio startup preparing")
 
-        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: UIApplication.shared.applicationState == .active) else {
+        guard ComposerVoiceInputStartPolicy.canStart(appIsActive: appIsActive()) else {
             throw ComposerVoiceInputError.appNotActive
         }
 
+        try await activateAudioSession(startID: startID)
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(
-            ComposerVoiceAudioSessionConfiguration.category,
-            mode: ComposerVoiceAudioSessionConfiguration.mode,
-            options: ComposerVoiceAudioSessionConfiguration.options
-        )
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        activatedAudioSessionForRecording = true
         logger.info(
             "Voice input audio session active inputAvailable=\(audioSession.isInputAvailable, privacy: .public) sampleRate=\(audioSession.sampleRate, privacy: .public) inputChannels=\(audioSession.inputNumberOfChannels, privacy: .public)"
         )
@@ -633,7 +686,6 @@ final class ComposerVoiceInputController {
         }
 
         try audioEngine.start()
-        ComposerAudioCaptureState.shared.setCapturing(true)
         logger.info("Voice input audio engine started")
     }
 
@@ -668,8 +720,6 @@ final class ComposerVoiceInputController {
     }
 
     private func stopAudio(cancelTask: Bool) {
-        ComposerAudioCaptureState.shared.setCapturing(false)
-
         if let recorder = audioRecorder, recorder.isRecording {
             recorder.stop()
         }
@@ -700,11 +750,7 @@ final class ComposerVoiceInputController {
         recognitionTask = nil
         recognitionRequest = nil
 
-        if activatedAudioSessionForRecording {
-            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-            activatedAudioSessionForRecording = false
-            logger.info("Voice input audio session deactivated")
-        }
+        deactivateAudioSession()
     }
 
     private func discardServerRecording() {
@@ -759,6 +805,7 @@ final class ComposerVoiceInputController {
     private func fail(_ message: String, logCategory: VoiceInputFailureLogCategory) {
         logger.error("Voice input failed category=\(logCategory.rawValue, privacy: .public)")
         suppressNextRecognitionError = false
+        activeStartID = nil
         stopAcceptingDraftUpdates()
         cancelServerTranscription()
         discardServerRecording()
@@ -776,7 +823,7 @@ final class ComposerVoiceInputController {
     }
 
     private func requestMicrophonePermission() async -> Bool {
-        await ComposerVoiceMicrophonePermissionRequester.request()
+        await microphonePermissionRequester()
     }
 
     private static func speechAuthorizationMessage(for status: SFSpeechRecognizerAuthorizationStatus) -> String {
