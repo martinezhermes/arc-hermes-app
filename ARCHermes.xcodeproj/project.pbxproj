@@ -153,9 +153,6 @@
 		3F91D2A54B9A4F66A2C01003 /* TasksViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01013 /* TasksViewModel.swift */; };
 		3F91D2A54B9A4F66A2C01004 /* TaskDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01014 /* TaskDetailView.swift */; };
 		3F91D2A54B9A4F66A2C01005 /* TaskDetailViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F91D2A54B9A4F66A2C01015 /* TaskDetailViewModel.swift */; };
-		454454454454454454454402 /* ResponseTextSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 454454454454454454454401 /* ResponseTextSelection.swift */; };
-		454454454454454454454412 /* ResponseSelectionInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 454454454454454454454411 /* ResponseSelectionInput.swift */; };
-		454454454454454454454432 /* ResponseSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 454454454454454454454431 /* ResponseSelectionTests.swift */; };
 		5417A7400000000000000092 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = 5417A7400000000000000091 /* SwiftMath */; };
 		5927FF7204918E46CCE7387C /* SlashAutocompleteRanking.swift in Sources */ = {isa = PBXBuildFile; fileRef = A82A2A58F08883E396B94B1C /* SlashAutocompleteRanking.swift */; };
 		6F1EF01AA79B446C989D7FC1 /* Bots/BotSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0AA6F787074B4A8DC903FF /* Bots/BotSearchView.swift */; };
@@ -679,9 +676,6 @@
 		40877A8534C94AAF97EA1C7C /* Bots/BotConnectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotConnectionView.swift; sourceTree = "<group>"; };
 		417A680DBE734B64988AC062 /* ComposerSlashTrigger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComposerSlashTrigger.swift; sourceTree = "<group>"; };
 		41FCCA0BACC647998F9CC3D0 /* Bots/BotHistoryCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotHistoryCache.swift; sourceTree = "<group>"; };
-		454454454454454454454401 /* ResponseTextSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseTextSelection.swift; sourceTree = "<group>"; };
-		454454454454454454454411 /* ResponseSelectionInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseSelectionInput.swift; sourceTree = "<group>"; };
-		454454454454454454454431 /* ResponseSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponseSelectionTests.swift; sourceTree = "<group>"; };
 		488791F556304AD2AC59BC5D /* ThirdPartyNotices */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ThirdPartyNotices; sourceTree = "<group>"; };
 		4D68A45E44464C838C2DD96D /* Bots/BotAttachmentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotAttachmentPickerView.swift; sourceTree = "<group>"; };
 		5619C4EB852849D396C45F95 /* Bots/BotProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bots/BotProtocol.swift; sourceTree = "<group>"; };
@@ -1221,7 +1215,6 @@
 				C0AA02000000000000000F03 /* ToolCallSummaryFormatterTests.swift */,
 				C0AA020000000000000000F12 /* ReasoningSummaryFormatterTests.swift */,
 				C0AA020000000000000000F13 /* TranscriptLogRowBodyWindowTests.swift */,
-				454454454454454454454431 /* ResponseSelectionTests.swift */,
 				C0AA0208000000000000F002 /* ChatMessageActionMenuTests.swift */,
 				C0AA03000000000000000F02 /* TranscriptTurnFoldingTests.swift */,
 				C0AA07000000000000000F07 /* ChatTranscriptRowEntryTests.swift */,
@@ -1489,8 +1482,6 @@
 				C21200000000000000000002 /* StreamingWordDrain.swift */,
 				C21300000000000000000002 /* StreamingTextFade.swift */,
 				C21300000000000000000004 /* StreamingTextFadeRenderer.swift */,
-				454454454454454454454401 /* ResponseTextSelection.swift */,
-				454454454454454454454411 /* ResponseSelectionInput.swift */,
 				1A2B3C4D5E6F7000000000DB /* MarkdownRenderer.swift */,
 				C14300000000000000000002 /* StreamingMarkdownSupport.swift */,
 				C0DE34000000000000000002 /* TranscriptMedia.swift */,
@@ -2170,8 +2161,6 @@
 				1A2B3C4D5E6F7000000000E8 /* FilePreviewView.swift in Sources */,
 				1A2B3C4D5E6F7000000000EA /* FilePreviewViewModel.swift in Sources */,
 				BEEF02600000000000000001 /* FileExportSupport.swift in Sources */,
-				454454454454454454454402 /* ResponseTextSelection.swift in Sources */,
-				454454454454454454454412 /* ResponseSelectionInput.swift in Sources */,
 				1A2B3C4D5E6F7000000000DA /* MarkdownRenderer.swift in Sources */,
 				C14300000000000000000001 /* StreamingMarkdownSupport.swift in Sources */,
 				C0DE34000000000000000001 /* TranscriptMedia.swift in Sources */,
@@ -2386,7 +2375,6 @@
 				C0AA02000000000000000B03 /* ToolCallSummaryFormatterTests.swift in Sources */,
 				C0AA020000000000000000B12 /* ReasoningSummaryFormatterTests.swift in Sources */,
 				C0AA020000000000000000B13 /* TranscriptLogRowBodyWindowTests.swift in Sources */,
-				454454454454454454454432 /* ResponseSelectionTests.swift in Sources */,
 				C0AA0208000000000000B002 /* ChatMessageActionMenuTests.swift in Sources */,
 				C0AA03000000000000000B02 /* TranscriptTurnFoldingTests.swift in Sources */,
 				C0AA07000000000000000B07 /* ChatTranscriptRowEntryTests.swift in Sources */,

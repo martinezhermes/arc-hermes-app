@@ -31,7 +31,7 @@ final class ChatTranscriptRowEntryTests: XCTestCase {
 
 @MainActor
 final class ChatTranscriptMaterializationTests: XCTestCase {
-    func testLongTranscriptMountsOnlyNearbyResponseViews() {
+    func testLongTranscriptBuildsOnlyNearbyMessageRows() throws {
         let messages = (0..<120).map { index in
             ChatMessage(role: "assistant", content: "Response \(index)",
                         timestamp: 1_700_000_000 + Double(index), messageId: "message-\(index)")
@@ -40,6 +40,7 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             TranscriptMessage(loadedIndex: index, renderID: "transcript:\(index)",
                               anchorID: "message-\(index)", message: message)
         }
+        var renderedMessageIDs = Set<String>()
         let transcript = ChatTranscriptView(
             isLoading: false,
             errorMessage: nil,
@@ -85,7 +86,10 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             loadTranscriptMediaData: { _ in nil },
             transcriptMediaCacheNamespace: "",
             actionContext: { _, _ in nil },
-            shouldRenderMessageRow: { _ in true },
+            shouldRenderMessageRow: { message in
+                renderedMessageIDs.insert(message.id)
+                return true
+            },
             onLoadMessages: {},
             onLoadOlderMessages: { false },
             onUpdateScrollMetrics: { _ in },
@@ -101,7 +105,6 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             onScrollToLatestContent: { _, _ in },
             onPreviewAttachment: { _, _ in },
             onPreviewTranscriptMedia: { _ in },
-            onAskHermex: { _ in },
             onToggleListening: { _ in },
             onRegenerate: { _ in },
             onEdit: { _ in },
@@ -109,19 +112,15 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             onCopy: { _ in }
         )
         let host = UIHostingController(rootView: transcript)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         host.view.layoutIfNeeded()
 
-        func responseInputCount(in view: UIView) -> Int {
-            (view is ResponseSelectionInput ? 1 : 0)
-                + view.subviews.reduce(0) { $0 + responseInputCount(in: $1) }
-        }
-
-        let mountedResponses = responseInputCount(in: host.view)
-        XCTAssertGreaterThan(mountedResponses, 0)
-        XCTAssertLessThan(mountedResponses, messages.count / 2)
+        XCTAssertGreaterThan(renderedMessageIDs.count, 0)
+        XCTAssertLessThan(renderedMessageIDs.count, messages.count / 2)
     }
 }

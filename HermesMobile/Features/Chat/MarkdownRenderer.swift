@@ -69,14 +69,14 @@ struct MarkdownRenderer: View {
                     }
                 }
             }
-            .responseTextSelectionPolicy()
+            .textSelection(.enabled)
         case .plain(let markdown):
             ChatMarkdownView(
                 content: markdown,
                 colorScheme: colorScheme,
                 isStreaming: isStreaming
             )
-            .responseTextSelectionPolicy()
+            .textSelection(.enabled)
         }
     }
 }
@@ -595,7 +595,6 @@ private struct PlainCodeBlockText: View {
             ForEach(lines) { line in
                 if wraps {
                     combinedText(for: line)
-                        .responseSelectableText(line.segments.map(\.text).joined())
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
@@ -603,7 +602,6 @@ private struct PlainCodeBlockText: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         ForEach(line.segments) { segment in
                             Text(verbatim: segment.text)
-                                .responseSelectableText(segment.text, separator: segment.id == line.segments.last?.id ? "\n" : "")
                         }
                     }
                 }
@@ -635,7 +633,6 @@ private struct HighlightedCodeBlockText: View {
             ForEach(lines) { line in
                 if wraps {
                     combinedText(for: line)
-                        .responseSelectableText(line.segments.map { $0.attributedText.string }.joined())
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .multilineTextAlignment(.leading)
@@ -643,7 +640,6 @@ private struct HighlightedCodeBlockText: View {
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         ForEach(line.segments) { segment in
                             Text(AttributedString(segment.attributedText))
-                                .responseSelectableText(segment.attributedText.string, separator: segment.id == line.segments.last?.id ? "\n" : "")
                         }
                     }
                 }
@@ -1171,11 +1167,10 @@ private struct PlainMarkdownFallbackView: View {
 
     var body: some View {
         Text(verbatim: content)
-            .responseSelectableText(content)
             .font(.body)
             .foregroundStyle(.primary)
             .fixedSize(horizontal: false, vertical: true)
-            .responseTextSelectionPolicy()
+            .textSelection(.enabled)
             .onAppear {
                 logger.info(
                     "Markdown plain fallback reason=\(reason.rawValue, privacy: .public) characters=\(content.count, privacy: .public) lines=\(MarkdownHighlightPolicy.lineCount(in: content), privacy: .public)"
@@ -1194,7 +1189,6 @@ private extension MarkdownUI.Theme {
             }
             .paragraph { configuration in
                 configuration.label
-                    .responseSelectableText(configuration.content.renderPlainText().trimmingCharacters(in: .newlines), separator: "\n\n")
                     .fixedSize(horizontal: false, vertical: true)
                     .relativeLineSpacing(.em(0.25))
                     .markdownMargin(top: 0, bottom: 16)
@@ -1235,7 +1229,6 @@ private extension MarkdownUI.Theme {
                     maxWidth: ChatMarkdownTable.cellMaxWidth
                 ) {
                     configuration.label
-                        .responseSelectableText(configuration.content.renderPlainText().trimmingCharacters(in: .newlines), separator: "\t", tableColumn: configuration.column)
                         .markdownTextStyle {
                             if configuration.row == 0 {
                                 FontWeight(.semibold)
@@ -1379,7 +1372,6 @@ private struct SelectableMarkdownHeading: View {
     }
     private var label: some View {
         configuration.label
-            .responseSelectableText(configuration.content.renderPlainText().trimmingCharacters(in: .newlines), separator: "\n\n")
             .relativeLineSpacing(.em(0.125))
             .markdownMargin(top: 24, bottom: 16)
             .markdownTextStyle {
