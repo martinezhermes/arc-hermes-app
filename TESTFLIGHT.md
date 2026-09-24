@@ -57,7 +57,7 @@ Run on the exact RC commit:
 xcrun simctl list devices available
 git status --short --branch
 git diff --check
-plutil -lint HermesMobile/Resources/Info.plist HermesMobile/Resources/PrivacyInfo.xcprivacy HermesShareExtension/Resources/Info.plist HermesShareExtension/Resources/PrivacyInfo.xcprivacy
+plutil -lint ARCHermes/Resources/Info.plist ARCHermes/Resources/PrivacyInfo.xcprivacy ARCHermesShareExtension/Resources/Info.plist ARCHermesShareExtension/Resources/PrivacyInfo.xcprivacy
 xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'
 xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermes -configuration Release -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
 ```
@@ -122,7 +122,7 @@ the share extension.
 
 Review notes and App Privacy answers must match the submitted build:
 
-- Hermex is a native client for a user-configured, self-hosted Hermes server,
+- ARCHermes is a native client for a user-configured, self-hosted Hermes server,
   with no in-app account creation or purchase flow.
 - There is no tracking or third-party analytics. Account for what the server
   operator can access when providing an owner-hosted server to testers.

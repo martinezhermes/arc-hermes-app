@@ -1,4 +1,4 @@
-# Contributing to Hermex
+# Contributing to ARCHermes
 
 Thanks for your interest in contributing! This document covers local setup,
 running tests, code signing for contributors, and the PR workflow. Please also
@@ -26,10 +26,10 @@ The full XCTest suite is the repo's green bar — it must pass before any PR:
 scripts/validate
 ```
 
-The default destination is iPhone 17, iOS 27.0. Set `HERMEX_DESTINATION` to
+The default destination is iPhone 17, iOS 27.0. Set `ARCHERMES_DESTINATION` to
 another supported destination from `xcrun simctl list devices available` if
 needed. The command prints its checkout, commit, toolchain and evidence path.
-`HERMEX_VALIDATION_DIR` must be a fresh output directory; `HERMEX_DERIVED_DATA`
+`ARCHERMES_VALIDATION_DIR` must be a fresh output directory; `ARCHERMES_DERIVED_DATA`
 can reuse a build cache. It uses the debugger-free `ARCHermesValidation` scheme,
 which runs the complete `ARCHermesTests` target.
 
@@ -50,8 +50,8 @@ team** — override locally instead:
    DEVELOPMENT_TEAM = YOUR_TEAM_ID
    // Optional — only needed if provisioning complains about the bundle ID.
    // The app-group entitlement must stay in sync with the bundle ID.
-   // APP_BUNDLE_IDENTIFIER = com.yourname.hermex
-   // APP_GROUP_IDENTIFIER = group.com.yourname.hermex
+   // APP_BUNDLE_IDENTIFIER = com.yourname.archermes
+   // APP_GROUP_IDENTIFIER = group.com.yourname.archermes
    ```
 
 2. Build normally. `Config/Shared.xcconfig` is wired into the project and ends
@@ -76,7 +76,7 @@ independently useful, it deserves its own PR.
 
 ## App bug or server bug?
 
-Hermex is a thin client over [hermes-webui](https://github.com/nesquena/hermes-webui),
+ARCHermes is a thin client over [hermes-webui](https://github.com/nesquena/hermes-webui),
 so a fair share of apparent app bugs are really server bugs. Before filing a
 bug here, reproduce it in the hermes-webui **web UI** against the same server:
 

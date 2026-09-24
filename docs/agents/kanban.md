@@ -1,25 +1,25 @@
 # Kanban: contract and behavior rules
 
-Durable rules for the shipped Kanban feature (`HermesMobile/Features/Kanban/`).
+Durable rules for the shipped Kanban feature (`ARCHermes/Features/Kanban/`).
 These are normative where they differ from the desktop WebUI. Vocabulary is owned by
 root `CONTEXT.md`: upstream `task`/`task_id` stay network-boundary names; user-facing
 and Swift domain names use Card with a `Kanban` qualifier.
 
-The official Hermes API docs omit Kanban internals, so Hermex makes no version-range
+The official Hermes API docs omit Kanban internals, so ARCHermes makes no version-range
 promise for this feature. Compatibility is capability-based and must be revalidated
 after a material upstream `api/kanban_bridge.py` change. Design rationale lives in
 issues #140–#148.
 
 ## Compatibility handshake and capability boundaries
 
-Before showing live Kanban data, Hermex performs this non-mutating handshake, in order:
+Before showing live Kanban data, ARCHermes performs this non-mutating handshake, in order:
 
 1. `GET /api/kanban/config`
 2. `GET /api/kanban/boards`
 3. `GET /api/kanban/board?board=<server-reported-current-slug>`
 
 Every upstream wire-model property is optional, unknown fields are ignored, and
-decoding is followed by capability-specific semantic validation. Hermex must not
+decoding is followed by capability-specific semantic validation. ARCHermes must not
 infer missing Board identity, current Board, Card identity, Card Status, dependency
 direction, or mutation outcome. An unknown Status remains visible as an unsupported
 server value and disables mutations for that Card.
@@ -44,7 +44,7 @@ precedence `AGENTS.md` requires before changing any of them.
 
 | Capability | Verified method and path | Required contract notes |
 |---|---|---|
-| Configuration | `GET /api/kanban/config` | Columns, Profiles/counts, defaults, grouping/archive/Markdown flags, and `read_only`. Hermex reads but never writes the server-global grouping setting. |
+| Configuration | `GET /api/kanban/config` | Columns, Profiles/counts, defaults, grouping/archive/Markdown flags, and `read_only`. ARCHermes reads but never writes the server-global grouping setting. |
 | Boards | `GET /api/kanban/boards` | Board metadata/counts, `current`, and `read_only`. Never surface `db_path` in normal UI or logs. |
 | Board snapshot | `GET /api/kanban/board` | `board`, Profile/tenant/archive filters, and optional event cursor; full `changed:true` or minimal `changed:false` envelope. |
 | Stats and Profiles | `GET /api/kanban/stats`, `GET /api/kanban/assignees` | Stats tolerate the older minimal shape. WebUI-parity UI uses total and per-Status counts. |
@@ -57,8 +57,8 @@ precedence `AGENTS.md` requires before changing any of them.
 | Block/Unblock | `POST /api/kanban/tasks/{id}/block`, `POST /api/kanban/tasks/{id}/unblock` | Preserve the structured server verbs and refusal errors. |
 | Dependencies | `POST /api/kanban/links`, `POST /api/kanban/links/delete` | Exact direction is Prerequisite `parent_id` to Dependent `child_id`. |
 | Bulk Actions | `POST /api/kanban/tasks/bulk` | Nonempty IDs with Archive, Status, Assigned Profile, or priority. HTTP 200 can contain per-Card failures and is never treated as atomic success. |
-| Dispatcher | `POST /api/kanban/dispatch` | `board`, `dry_run`, and `max` are query parameters; Board in JSON is ineffective. Hermex always uses maximum eight. |
-| Create Board | `POST /api/kanban/boards` | Slug plus name/description/icon/color. Hermex does not automatically make the new Board active. |
+| Dispatcher | `POST /api/kanban/dispatch` | `board`, `dry_run`, and `max` are query parameters; Board in JSON is ineffective. ARCHermes always uses maximum eight. |
+| Create Board | `POST /api/kanban/boards` | Slug plus name/description/icon/color. ARCHermes does not automatically make the new Board active. |
 | Edit/Archive Board | `PATCH /api/kanban/boards/{slug}`, `DELETE /api/kanban/boards/{slug}` | Slug is immutable. Archive uses DELETE without hard-delete query. Default Board cannot be archived. |
 | Make Active Board | `POST /api/kanban/boards/{slug}/switch` | Confirm because it changes shared server state visible to other Hermes clients. |
 
@@ -69,7 +69,7 @@ editing, filtering, or bulk-assigning Cards must never call `/api/profile/switch
 change the active chat Profile cookie, or source assignment state from that
 client-wide chat-profile selection.
 
-Hermex deliberately does not expose backend-only hard deletion, archived-Board
+ARCHermes deliberately does not expose backend-only hard deletion, archived-Board
 enumeration/restoration, the global `PATCH /api/kanban/config` grouping mutation, the
 legacy Card patch alias, or unsupported task attachments.
 
@@ -77,7 +77,7 @@ legacy Card patch alias, or unsupported task attachments.
 
 Kanban is a distinct `SessionListUtilityDestination` constructed with the active
 server URL and centralized authentication-error handling. Browsing a Board is local
-to Hermex and never changes the server's active Board. Profile grouping is also a
+to ARCHermes and never changes the server's active Board. Profile grouping is also a
 local presentation choice. Any persisted Board/filter/Status preference must be keyed
 by server. The browsed Board slug is the one persisted preference (`KanbanBoardPreference`,
 #259): it is restored on load only after the fresh Board list confirms it, and a stale
@@ -127,7 +127,7 @@ Overwrite. This is best-effort detection and must not be described as a guarante
 Require confirmation for:
 
 - Run Dispatcher, warning that it may start workers and consume API budget;
-- Archive Board, warning that Hermex cannot restore it in-app;
+- Archive Board, warning that ARCHermes cannot restore it in-app;
 - Archive Cards as a Bulk Action;
 - creating a Ready, Unassigned Card;
 - every transition out of Running, warning that claim/worker state may be cleared;

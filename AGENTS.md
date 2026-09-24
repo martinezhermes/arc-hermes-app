@@ -1,34 +1,34 @@
-# Hermex
+# ARCHermes
 
-Hermex is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's `hermes-webui` server over HTTPS and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `ARCHermes`; the App Store name is `Hermex`.
+ARCHermes is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's `hermes-webui` server over HTTPS and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `ARCHermes`; the on-device display name remains `ARC Hermes`. App Store listing metadata is updated separately at release time.
 
-You can think of Hermex as an open source "bring-your-own-server" iPhone client for Hermes. The phone is the control and review plane; the server owns execution, tools, models, and the user's data.
+You can think of ARCHermes as an open source "bring-your-own-server" iPhone client for Hermes. The phone is the control and review plane; the server owns execution, tools, models, and the user's data.
 
-## What makes Hermex special?
+## What makes ARCHermes special?
 
-Hermex is on the App Store and people run it against their own servers every day. It's important we maintain the things they rely on as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
+ARCHermes is on the App Store and people run it against their own servers every day. It's important we maintain the things they rely on as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
 
 ### 1. Open at the core
 
-Hermex is truly open. We share our roadmap (GitHub Issues), we share how we think about things, and of course we share all our code. There is no Hermex relay, hosted backend, analytics service, or tracking layer: agent work and data stay on the user's hardware. We work in the open, and should strive to stay that way.
+ARCHermes is truly open. We share our roadmap (GitHub Issues), we share how we think about things, and of course we share all our code. There is no ARCHermes relay, hosted backend, analytics service, or tracking layer: agent work and data stay on the user's hardware. We work in the open, and should strive to stay that way.
 
 ### 2. Performance without compromise
 
-Lots of apps have gotten bogged down with bad tech decisions and "slop". We have not, and we're proud of the performance of Hermex. We regularly audit for performance regressions, often caused by unnecessary view invalidation, unstable identity in lists, eager work in scrolling paths, and animations that ignore Reduce Motion. Make sure all changes are considerate of performance impact.
+Lots of apps have gotten bogged down with bad tech decisions and "slop". We have not, and we're proud of the performance of ARCHermes. We regularly audit for performance regressions, often caused by unnecessary view invalidation, unstable identity in lists, eager work in scrolling paths, and animations that ignore Reduce Motion. Make sure all changes are considerate of performance impact.
 
 ### 3. Remote ready
 
-Hermex connects to servers wherever they live: on the same Mac over `localhost`, across a Tailscale tailnet, or through an HTTPS tunnel such as Cloudflare. Long-lived SSE streams over those hops, reattaching after backgrounding, and multiple configured servers are core to the product. Whether users are on their local network or half a world away from their Mac, we need to make sure new features are properly supported, and that nothing scoped to one server ever shows up under another.
+ARCHermes connects to servers wherever they live: on the same Mac over `localhost`, across a Tailscale tailnet, or through an HTTPS tunnel such as Cloudflare. Long-lived SSE streams over those hops, reattaching after backgrounding, and multiple configured servers are core to the product. Whether users are on their local network or half a world away from their Mac, we need to make sure new features are properly supported, and that nothing scoped to one server ever shows up under another.
 
 ### 4. Multi-surface
 
-Hermex has 3 key app surfaces: **the app**, **the share extension**, and **the Live Activity widget**.
+ARCHermes has 3 key app surfaces: **the app**, **the share extension**, and **the Live Activity widget**.
 
 **The app** is the main surface. It is a native SwiftUI app, not a web wrapper, and should behave like a first-rate iOS app across navigation, gestures, keyboard input, accessibility, backgrounding, deep links, App Intents, and notifications.
 
-**The share extension** (`HermesShareExtension`) lets users send files and text from other apps into a session. It stages imports through the app group and hands off to the main app.
+**The share extension** (`ARCHermesShareExtension`) lets users send files and text from other apps into a session. It stages imports through the app group and hands off to the main app.
 
-**The Live Activity widget** (`HermesLiveActivityWidget`) shows streaming progress on the Lock Screen and Dynamic Island and routes taps back into the app. Both extensions are separate Xcode targets with their own membership of shared models and resources.
+**The Live Activity widget** (`ARCHermesLiveActivityWidget`) shows streaming progress on the Lock Screen and Dynamic Island and routes taps back into the app. Both extensions are separate Xcode targets with their own membership of shared models and resources.
 
 ## A note from Uzair
 
@@ -42,9 +42,9 @@ The rest of this document is meant to help you navigate the codebase and make ch
 
 We need to be on the same page with terminology. When communicating, use this language:
 
-- **you** means the agent reading this file and changing Hermex.
-- **we, us, and maintainer** mean Uzair and the people building Hermex. These are who you are talking to now.
-- **user** means the person using Hermex to direct their Hermes agent.
+- **you** means the agent reading this file and changing ARCHermes.
+- **we, us, and maintainer** mean Uzair and the people building ARCHermes. These are who you are talking to now.
+- **user** means the person using ARCHermes to direct their Hermes agent.
 - **agent** means the Hermes agent a user runs on their server. Depending on context, that may also include you.
 - **server** means the user-configured `hermes-webui` instance. **upstream** means the `hermes-webui` project itself, whose API can drift.
 - **active server** means the configured server whose auth, identity, cached data, and screens are currently selected.
@@ -110,7 +110,7 @@ closed and all intended changes are committed; preserve and report unique work.
 The most common defect in this repo is a change that works on the path you tested and is missing everywhere else. Before calling UI work done, walk this list and say which entries applied:
 
 - **Entry points.** A behavior reachable from the chat view is usually also reachable from the session list's context menus, Settings, hardware-keyboard shortcuts, deep links, App Intents, the share extension, and Live Activity taps. Fixing one is not fixing the feature.
-- **Targets.** Main app, `HermesShareExtension`, `HermesLiveActivityWidget`, and `ARCHermesTests`. A shared model or resource change needs a target-membership decision for every target that consumes it.
+- **Targets.** Main app, `ARCHermesShareExtension`, `ARCHermesLiveActivityWidget`, and `ARCHermesTests`. A shared model or resource change needs a target-membership decision for every target that consumes it.
 - **Servers.** Multiple configured servers are real. Switch between two and check that credentials, custom headers, cache, drafts, identity, selections, and defaults stay with their server. Read `docs/agents/multi-server-state-isolation.md` before touching auth, server switching, cache keying, or per-server settings.
 - **Contracts.** Anything crossing the wire goes through `Endpoint` and a tolerant `Codable` model. Change endpoint construction, request body, decode, and SSE handling together, and verify each against upstream (see Working with the server).
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Archive needs restore. Pin needs unpin. Start needs stop. Optimistic mutation needs rollback. A one-way door is a bug.
@@ -120,17 +120,17 @@ The most common defect in this repo is a change that works on the path you teste
 
 ## Working with the server
 
-- There is no in-repo dev server. Hermex is developed against a self-hosted `hermes-webui` reachable over real HTTPS; `curl https://<your-server>/health` before debugging the client. For simulator-only work `http://localhost:8787` works when the server runs on the same Mac. Setup options live in `DEVELOPMENT.md`.
+- There is no in-repo dev server. ARCHermes is developed against a self-hosted `hermes-webui` reachable over real HTTPS; `curl https://<your-server>/health` before debugging the client. For simulator-only work `http://localhost:8787` works when the server runs on the same Mac. Setup options live in `DEVELOPMENT.md`.
 - **Never invent an endpoint, header, SSE event, or JSON shape.** Verify in this precedence order: (a) `curl` a running server, the final arbiter; (b) the official API docs at https://get-hermes.ai/api-docs/ for endpoint intent, the auth contract, and SSE vocabulary (no version pin; tracks the latest release); (c) the pinned upstream copy at `.codex-tmp/hermes-webui/api/routes.py` for exact JSON shapes, which may lag the release the docs describe. Clone it if missing: `git clone https://github.com/nesquena/hermes-webui .codex-tmp/hermes-webui`. It is read-only; refreshing with `git pull` is fine.
 - `UPSTREAM_TESTED_SHA` is the compatibility pin and the only place the pinned commit is written down. To advance it: `curl` the read-only endpoints in `Endpoints.swift` against a live server, run the mutating ones against one disposable session, then edit the file and name the validating commit in the PR. When a contract changes, record the verified handler, shape, and upstream commit in the issue or PR. Validate volatile details just in time instead of copying them into long-lived docs.
 - `HERMES_AGENT_TESTED_SHA` is the same pin for the direct-Hermes Bot connection: line 1 the tested `hermes-agent` commit, line 2 the release `/api/status` reports as `version`. `BotConnection.testedHermesVersion` mirrors line 2 and a test keeps them equal; a host reporting a different release gets a non-blocking note in the Bot connection screen. To advance it: against a live host, `curl` `/api/status`, sign in and hit `/api/auth/me` and `/api/auth/ws-ticket`, run the read-only Bot RPCs (`profiles.list`, `session.list`, and `session.resume` on the disposable test bot), then edit both lines and the constant and name the validating commit in the PR.
 - Every server-facing `Codable` model decodes tolerantly: optionals for fields upstream might add, omit, or rename. Unknown fields never crash the app.
 - No new third-party dependency without approval. The locked list is LDSwiftEventSource, swift-markdown-ui, Splash, Highlightr, KeychainAccess, and SwiftMath; everything else is Apple frameworks (`URLSession`, SwiftData, Keychain, OSLog, XCTest).
-- A bug that also reproduces in the upstream web UI against the same server is a server bug. File it upstream and link it from a Hermex issue only if the app still needs a safer fallback.
+- A bug that also reproduces in the upstream web UI against the same server is a server bug. File it upstream and link it from a ARCHermes issue only if the app still needs a safer fallback.
 
 ## Test data
 
-A live server is not a test fixture. Unit tests run against `URLProtocol` mocks, Keychain doubles, in-memory SwiftData, and scripted SSE fixtures (`HermesMobileTests/ScriptedSSEStreamFixture.swift`); prefer the established pattern for the area you touch.
+A live server is not a test fixture. Unit tests run against `URLProtocol` mocks, Keychain doubles, in-memory SwiftData, and scripted SSE fixtures (`ARCHermesTests/ScriptedSSEStreamFixture.swift`); prefer the established pattern for the area you touch.
 
 - Read-only checks against a live server are fine when the maintainer has put one in scope. Mutation follows rule 2.
 - Real credentials, App Store Connect secrets, and tester data stay out of the repo and out of command output.
@@ -164,21 +164,21 @@ A live server is not a test fixture. Unit tests run against `URLProtocol` mocks,
 
 ## How it works
 
-`HermesMobileApp` owns the scene, `AuthManager`, and the SwiftData container. `ContentView` routes unconfigured, logged-out, and logged-in states; the logged-in subtree is keyed by the active server so a switch rebuilds server-bound views. Feature views own `@MainActor @Observable` _view models_, which call the `APIClient` actor through feature-specific extensions; `Endpoint` centralizes paths and query construction. `SSEClient` decodes chat events, `ChatStreamCoordinator` owns response lifecycle, reconnect, replay, and Live Activity updates, and `KanbanEventStreamClient` handles Kanban live updates. Keychain holds credentials, the server registry, and custom headers; SwiftData holds server-keyed cached sessions and messages; draft and attachment stores keep unsent composer work. The share extension stages imports through the app group; App Intents, deep links, notifications, and Live Activities route the user back into the app.
+`ARCHermesApp` owns the scene, `AuthManager`, and the SwiftData container. `ContentView` routes unconfigured, logged-out, and logged-in states; the logged-in subtree is keyed by the active server so a switch rebuilds server-bound views. Feature views own `@MainActor @Observable` _view models_, which call the `APIClient` actor through feature-specific extensions; `Endpoint` centralizes paths and query construction. `SSEClient` decodes chat events, `ChatStreamCoordinator` owns response lifecycle, reconnect, replay, and Live Activity updates, and `KanbanEventStreamClient` handles Kanban live updates. Keychain holds credentials, the server registry, and custom headers; SwiftData holds server-keyed cached sessions and messages; draft and attachment stores keep unsent composer work. The share extension stages imports through the app group; App Intents, deep links, notifications, and Live Activities route the user back into the app.
 
 Canonical vocabulary: `CONTEXT.md`.
 
 ## Where code lives
 
-- `HermesMobile/HermesMobileApp.swift` and `HermesMobile/ContentView.swift` - app entry and root routing.
-- `HermesMobile/Features/` - feature views, view models, and coordinators for Chat, SessionList, Settings, Workspace, Tasks, Skills, Memory, Insights, Kanban, Onboarding, and Share.
-- `HermesMobile/Networking/` - `Endpoint`, `APIClient` and its extensions, SSE, request encoding, API errors.
-- `HermesMobile/Models/` - server and presentation models, including the server registry.
-- `HermesMobile/Auth/` - authentication and Keychain access.
-- `HermesMobile/Persistence/` - SwiftData cache models and stores.
-- `HermesMobile/AppIntents/` and `HermesMobile/LiveActivities/` - system entry points and activity coordination.
-- `HermesShareExtension/` and `HermesLiveActivityWidget/` - separate targets. Shared files need target-membership checks.
-- `HermesMobileTests/` - the XCTest suite, one target directory. Keep tests near the behavior in name and scope.
+- `ARCHermes/ARCHermesApp.swift` and `ARCHermes/ContentView.swift` - app entry and root routing.
+- `ARCHermes/Features/` - feature views, view models, and coordinators for Chat, SessionList, Settings, Workspace, Tasks, Skills, Memory, Insights, Kanban, Onboarding, and Share.
+- `ARCHermes/Networking/` - `Endpoint`, `APIClient` and its extensions, SSE, request encoding, API errors.
+- `ARCHermes/Models/` - server and presentation models, including the server registry.
+- `ARCHermes/Auth/` - authentication and Keychain access.
+- `ARCHermes/Persistence/` - SwiftData cache models and stores.
+- `ARCHermes/AppIntents/` and `ARCHermes/LiveActivities/` - system entry points and activity coordination.
+- `ARCHermesShareExtension/` and `ARCHermesLiveActivityWidget/` - separate targets. Shared files need target-membership checks.
+- `ARCHermesTests/` - the XCTest suite, one target directory. Keep tests near the behavior in name and scope.
 - `Config/`, `ci/`, and `.github/workflows/` - signing, CI, and release configuration. Treat edits there as release-sensitive. App identity resolves through xcconfig and is not grep-able: bundle ID `com.martinezhermes.archermes`, tests `….tests`, Team `ACBA2466CM`, SKU `hermes-mobile-ios`.
 - `.codex-tmp/hermes-webui/` - the gitignored, read-only upstream reference. Prefer its patterns over invented ones. Never edit or import from it; refresh with `git pull` when advancing the pin.
 

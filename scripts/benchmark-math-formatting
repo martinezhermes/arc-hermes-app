@@ -4,11 +4,11 @@
 set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 source_root="${1:-$repo_root}"
-benchmark_dir="$(mktemp -d "${TMPDIR:-/tmp}/hermex-math-benchmark.XXXXXX")"
+benchmark_dir="$(mktemp -d "${TMPDIR:-/tmp}/archermes-math-benchmark.XXXXXX")"
 trap 'rm -f "$benchmark_dir/benchmark"; rmdir "$benchmark_dir"' EXIT
 xcrun swiftc -O -swift-version 5 \
-  "$source_root"/HermesMobile/Features/Chat/MarkdownMathFormatter*.swift \
-  "$source_root/HermesMobile/Features/Chat/MarkdownMathSegmenter.swift" \
+  "$source_root"/ARCHermes/Features/Chat/MarkdownMathFormatter*.swift \
+  "$source_root/ARCHermes/Features/Chat/MarkdownMathSegmenter.swift" \
   "$repo_root/scripts/benchmarks/MathFormatting.swift" \
   -o "$benchmark_dir/benchmark"
 "$benchmark_dir/benchmark"
