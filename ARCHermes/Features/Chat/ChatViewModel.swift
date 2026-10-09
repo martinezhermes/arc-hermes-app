@@ -2713,6 +2713,12 @@ final class ChatViewModel {
     /// A Hermes session's draft key: the new-session key until the host names the session.
     var hermesDraftKey: ChatDraftKey? { hermesTurn?.currentDraftKey }
 
+    /// The host's current saved key, including a new session or a compression-chain move.
+    var hermesSessionTarget: ConversationTarget? {
+        guard let engine = hermesTurn?.engine, case .session(let profile, let key) = engine.target else { return nil }
+        return .session(profile: profile, key: engine.storedKey ?? key)
+    }
+
     /// Stop asks first on a Hermes session holding a queued prompt or an open request,
     /// which the stop would discard or deny.
     var stopNeedsConfirmation: Bool { hermesTurn?.stopNeedsConfirmation == true }

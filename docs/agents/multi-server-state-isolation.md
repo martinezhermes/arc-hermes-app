@@ -147,8 +147,10 @@ server-specific: connections pool per host, auth cookies live in the shared jar
 server. Never invalidate these sessions or give them a session delegate.
 `CrossOriginRedirectHeaderTests` covers the sharing and the per-task guard.
 
-"Which server am I on" is surfaced only by the avatar + Settings (+ the #283
-long-press menu) — there is no separate on-screen server label.
+The native home reads the active server's pixel wordmark and color directly from its
+registry entry. Its Settings button retains the server-switch menu; server rows use initials.
+Server-avatar photo data is no longer decoded or encoded, so old saved records remain
+readable without retaining the retired field on their next save. Bot artwork is unchanged.
 
 ## Clear-cache behavior (issue #18 change)
 

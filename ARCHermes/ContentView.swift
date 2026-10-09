@@ -325,21 +325,12 @@ enum WebuiEntryRoute: Equatable {
     }
 }
 
-/// A signed-in Hermes server's whole app (#899, #709): one navigation stack, full width on iPad
-/// too, where chats push, rooted on either side of the home's `[Bots | Sessions]` switch. Each
-/// side leads with the session list's header, whose avatar opens Settings on a tap and switches
-/// servers on a hold, and takes the home's bar (`HermesHomeChrome`). The home keeps both sides'
-/// state, so a switch shows the last roster or rows at once while they refresh. It opens on the
-/// side last shown, Sessions at first, and a Bot link (a push tap, a search hit) turns it to Bots,
-/// where the inbox opens it.
+/// The signed-in native Agent home uses ARC's adaptive sidebar and sheet Settings.
+/// Session and chat execution remain owned by the integrated Hermes clients.
 struct HermesServerHome: View {
     @Bindable var authManager: AuthManager
     let server: URL
     @Binding var pendingBotDestination: BotDestination?
-    @SceneStorage("hermesHome.tab") private var tab = HermesHomeTab.sessions
-    @State private var inbox: BotInbox
-    /// The Sessions side's list on the saved Bot connection, read again each time a side shows,
-    /// so a sign-in changed in Settings or the inbox gets a fresh list.
     @State private var sessions: HermesSessionsSide?
     @State private var isShowingSettings = false
     @State private var settingsTarget: SettingsScrollAnchor?
@@ -349,60 +340,57 @@ struct HermesServerHome: View {
         self.authManager = authManager
         self.server = server
         _pendingBotDestination = pendingBotDestination
-        _inbox = State(initialValue: BotInbox(server: server))
         _sessions = State(initialValue: HermesSessionsSide(server: server))
     }
 
     var body: some View {
         let identity = HermesServerIdentity(account: authManager.activeServer, server: server)
-        let home = HermesHome(title: identity.title, avatar: avatar(identity), tab: $tab)
-        NavigationStack {
-            Group {
-                // Without a saved connection the inbox's welcome sets one up.
-                if tab == .sessions, let sessions {
-                    HermesSessionListView(entry: sessions.entry, model: sessions.model, home: home)
-                        .id(sessions.entry.id)
-                } else {
-                    BotsInboxView(server: server, pendingDestination: $pendingBotDestination, home: home, inbox: inbox)
-                }
-            }
-            .onAppear(perform: readConnection)
-            .navigationDestination(isPresented: $isShowingSettings) {
-                SettingsView(authManager: authManager, server: server, initialScrollTarget: settingsTarget)
+        let home = HermesHome(
+            logoText: authManager.activeServer?.headerLogoText ?? "",
+            colorHex: identity.colorHex,
+            servers: AvatarServerSwitcherModel(servers: authManager.servers, activeServerID: authManager.activeServerID),
+            openSettings: { settingsTarget = nil; isShowingSettings = true },
+            switchToServer: { authManager.switchActiveServer(to: $0) },
+            addServer: { isPresentingAddServer = true },
+            manageServers: { settingsTarget = .servers; isShowingSettings = true },
+            pendingBotDestination: $pendingBotDestination,
+            connectionChanged: readConnection
+        )
+        Group {
+            if let sessions {
+                HermesSessionListView(entry: sessions.entry, model: sessions.model, home: home)
+                    .id(sessions.entry.id)
+            } else {
+                HermesServerSignIn(authManager: authManager, server: server)
             }
         }
-        // A connection the inbox's sheet saved or changed closes no screen, so the switch reads too.
-        .onChange(of: tab, readConnection)
-        .onChange(of: pendingBotDestination, initial: true) {
-            if pendingBotDestination != nil { tab = .bots }
+        .onAppear(perform: readConnection)
+        .sheet(isPresented: $isShowingSettings, onDismiss: readConnection) {
+            NavigationStack {
+                SettingsView(authManager: authManager, server: server, initialScrollTarget: settingsTarget)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { isShowingSettings = false }
+                                .accessibilityIdentifier("settings.close")
+                        }
+                    }
+            }
+            .presentationSizing(.page)
+            .presentationDetents([.large])
+            .presentationCompactAdaptation(.sheet)
         }
         .sheet(isPresented: $isPresentingAddServer) {
             AddServerView(authManager: authManager)
         }
     }
 
-    /// A new list only when the saved record changed: a sign-in changed in Settings keeps its UUID.
     private func readConnection() {
         let saved = try? BotConnectionStore().load(server: server)
         if saved != sessions?.entry.connection { sessions = saved.map { HermesSessionsSide(server: server, connection: $0) } }
     }
-
-    private func avatar(_ identity: HermesServerIdentity) -> SessionsHeader.Avatar {
-        SessionsHeader.Avatar(
-            initials: identity.initials,
-            color: HeaderLogoColor.color(for: identity.colorHex),
-            foreground: HeaderLogoColor.prefersDarkForeground(for: identity.colorHex) ? .black : .white,
-            servers: AvatarServerSwitcherModel(servers: authManager.servers, activeServerID: authManager.activeServerID),
-            openSettings: { settingsTarget = nil; isShowingSettings = true },
-            switchToServer: { authManager.switchActiveServer(to: $0) },
-            addServer: { isPresentingAddServer = true },
-            manageServers: { settingsTarget = .servers; isShowingSettings = true }
-        )
-    }
 }
 
-/// The Hermes home's Sessions side: its list, opening on the server's pick, and the view model
-/// the home keeps across its switch.
+/// The native home retains its list model across sidebar gestures, opening on the host's Profile pick.
 @MainActor private struct HermesSessionsSide {
     let entry: HermesSessionListEntry
     let model: SessionListViewModel

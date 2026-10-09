@@ -1,64 +1,122 @@
 import SwiftUI
 
-/// The two sides of a Hermes server's home (#709): the Bots inbox and the session list.
-enum HermesHomeTab: String {
-    case bots, sessions
-}
-
-/// What both sides of a Hermes server's home share: the server's name, which titles a pushed
-/// screen's back button, the server's avatar in the header, and the switch between the sides.
+/// The native home's presentation inputs. Credentials and execution stay in the Agent clients.
 struct HermesHome {
-    let title: String
-    let avatar: SessionsHeader.Avatar
-    let tab: Binding<HermesHomeTab>
+    let logoText: String
+    let colorHex: String
+    let servers: AvatarServerSwitcherModel
+    let openSettings: () -> Void
+    let switchToServer: (ServerAccount) -> Void
+    let addServer: () -> Void
+    let manageServers: () -> Void
+    let pendingBotDestination: Binding<BotDestination?>
+    let connectionChanged: () -> Void
 }
 
-/// The Hermes home's bar chrome (#709), the same on both sides: no top bar, since each side's
-/// list leads with the session list's header (`SessionsHeader`), and a bottom bar of
-/// `(filter) [Bots | Sessions] (new chat)` whose ends each side fills. The title names a pushed
-/// screen's back button, and stays inline so a pushed screen such as Tasks keeps the one-line bar.
-struct HermesHomeChrome<Filter: View, NewChat: View>: ViewModifier {
-    let home: HermesHome
-    @ViewBuilder let filter: Filter
-    @ViewBuilder let newChat: NewChat
+/// One selected native surface; replacing it is deliberate, showing the sidebar is not.
+enum HermesHomeDestination: Hashable {
+    case chat(HermesSessionChat)
+    case bots
+    case tasks(HermesTasksEntry)
+    case skills(HermesSkillsEntry)
+    case memory(HermesMemoryEntry)
+    case insights(HermesInsightsEntry)
+    case kanban
+    case archived(String)
 
-    func body(content: Content) -> some View {
-        content
-            .navigationTitle(home.title)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar(.hidden, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .bottomBar) { filter }
-                if #available(iOS 26, *) {
-                    ToolbarSpacer(.flexible, placement: .bottomBar)
-                    // The segmented control is its own pill; a glass one around it would double it.
-                    ToolbarItem(placement: .bottomBar) { HermesHomeSwitch(tab: home.tab) }
-                        .sharedBackgroundVisibility(.hidden)
-                    ToolbarSpacer(.flexible, placement: .bottomBar)
-                } else {
-                    ToolbarItem(placement: .bottomBar) { HermesHomeSwitch(tab: home.tab) }
-                }
-                ToolbarItem(placement: .bottomBar) { newChat }
-            }
+    var chat: HermesSessionChat? {
+        if case .chat(let chat) = self { return chat }
+        return nil
     }
 }
 
-/// `[Bots | Sessions]`. It keeps a system bar's size at accessibility text sizes; a long press
-/// shows the Large Content Viewer instead.
-private struct HermesHomeSwitch: View {
-    @Binding var tab: HermesHomeTab
+/// Value state scoped to one server's home. Sidebar gestures never change the selected chat.
+struct HermesHomeNavigation {
+    var destination: HermesHomeDestination?
+    private(set) var activeTarget: ConversationTarget?
+    private(set) var lineageRootID: String?
+    var isSidebarPresented = true
+    var isCompact = true
+
+    init(destination: HermesHomeDestination? = nil, isSidebarPresented: Bool = true, isCompact: Bool = true) {
+        self.destination = destination
+        activeTarget = destination?.chat?.target
+        lineageRootID = nil
+        self.isSidebarPresented = isSidebarPresented
+        self.isCompact = isCompact
+    }
+
+    mutating func select(_ destination: HermesHomeDestination) {
+        self.destination = destination
+        activeTarget = destination.chat?.target
+        lineageRootID = nil
+        if isCompact { isSidebarPresented = false }
+    }
+
+    /// Selecting the already-visible saved session must not replace its stream or composer.
+    mutating func openChat(_ chat: HermesSessionChat, lineageRootID: String? = nil) {
+        if let current = destination?.chat, case .session = chat.target,
+           current.server == chat.server, current.connection.id == chat.connection.id,
+           (activeTarget ?? current.target).profile == chat.target.profile,
+           (activeTarget ?? current.target) == chat.target ||
+               (lineageRootID != nil && self.lineageRootID == lineageRootID) {
+            if self.lineageRootID == nil { self.lineageRootID = lineageRootID }
+            if isCompact { isSidebarPresented = false }
+            return
+        }
+        select(.chat(chat))
+        self.lineageRootID = lineageRootID
+    }
+
+    /// Metadata from the current chat does not replace its view or accept a departed chat's callback.
+    mutating func identify(_ target: ConversationTarget?, chatID: UUID) {
+        guard destination?.chat?.id == chatID, case .session(_, let key)? = target else { return }
+        activeTarget = target
+        if lineageRootID == nil { lineageRootID = key }
+    }
+
+    mutating func remove(_ session: SessionSummary, server: URL, connectionID: UUID, listedIn profile: String) {
+        guard let chat = destination?.chat, chat.server == server, chat.connection.id == connectionID,
+              case .session(let activeProfile, let activeKey) = activeTarget ?? chat.target,
+              case .session(let removedProfile, let removedKey)? = session.hermesTarget(listedIn: profile),
+              activeProfile == removedProfile,
+              activeKey == removedKey || lineageRootID == session.id else { return }
+        showSessions()
+    }
+
+    mutating func showSessions() {
+        destination = nil
+        activeTarget = nil
+        lineageRootID = nil
+        isSidebarPresented = true
+    }
+}
+
+/// ARC's native home keeps both columns mounted. Only selecting another surface resets detail navigation.
+struct HermesHomeShell<Sidebar: View, Detail: View>: View {
+    @Binding var navigation: HermesHomeNavigation
+    @ViewBuilder let sidebar: Sidebar
+    @ViewBuilder let detail: Detail
 
     var body: some View {
-        // The segments name themselves; the picker needs no label of its own.
-        Picker(selection: $tab) {
-            Text("Bots").tag(HermesHomeTab.bots)
-            Text("Sessions").tag(HermesHomeTab.sessions)
-        } label: {
-            EmptyView()
+        ChatNavigationShell(isPresented: $navigation.isSidebarPresented, isCompact: $navigation.isCompact) {
+            sidebar
+        } detail: {
+            NavigationStack {
+                detail
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                navigation.isSidebarPresented.toggle()
+                            } label: {
+                                Label(navigation.isSidebarPresented ? "Hide Sessions" : "Show Sessions", systemImage: "sidebar.leading")
+                            }
+                            .accessibilityIdentifier("detail-sidebar-toggle")
+                            .keyboardShortcut("s", modifiers: [.command, .control])
+                        }
+                    }
+            }
+            .id(navigation.destination)
         }
-        .pickerStyle(.segmented)
-        .fixedSize()
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-        .accessibilityShowsLargeContentViewer()
     }
 }

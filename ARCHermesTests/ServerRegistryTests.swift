@@ -35,21 +35,27 @@ final class ServerRegistryTests: XCTestCase {
 
     // MARK: - Duplicate prevention
 
-    func testNewServerDoesNotInheritCustomHeaderOrPhoto() throws {
+    func testNewServerDoesNotInheritCustomHeader() throws {
         let registry = makeRegistry()
         var first = registry.activate(url: try url("https://first.test"))
         first.headerLogoText = "PRIVATE HEADER"
-        first.avatarImageData = Data([1, 2, 3])
         registry.update(first)
         let second = registry.activate(url: try url("https://second.test"))
         XCTAssertEqual(second.headerLogoText, "")
-        XCTAssertNil(second.avatarImageData)
     }
 
-    func testLegacyServerIdentityDecodesWithDefaultHeaderAndNoPhoto() throws {
+    func testLegacyServerIdentityDecodesWithDefaultHeader() throws {
         let account = try JSONDecoder().decode(ServerAccount.self, from: Data(#"{"id":"https://legacy.test"}"#.utf8))
         XCTAssertEqual(account.headerLogoText, "")
-        XCTAssertNil(account.avatarImageData)
+    }
+
+    func testRetiredPhotoFieldDoesNotBreakSavedServerOrSurviveEncoding() throws {
+        let stored = Data(#"{"id":"https://legacy.test","headerLogoText":"HOME","avatarImageData":"AQID"}"#.utf8)
+        let account = try JSONDecoder().decode(ServerAccount.self, from: stored)
+        XCTAssertEqual(account.id, "https://legacy.test")
+        XCTAssertEqual(account.headerLogoText, "HOME")
+        let encoded = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(account)) as? [String: Any])
+        XCTAssertNil(encoded["avatarImageData"])
     }
 
     func testActivateDeduplicatesTheSameURL() throws {

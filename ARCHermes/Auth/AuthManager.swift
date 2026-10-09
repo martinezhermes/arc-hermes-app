@@ -533,18 +533,10 @@ final class AuthManager {
     }
 
     /// Mutate the latest record so an older detail-screen snapshot cannot undo
-    /// a newer avatar or header edit. Removed servers are never reinserted.
+    /// a newer header edit. Removed servers are never reinserted.
     func updateServerHeader(id: String, text: String) {
         guard var updated = servers.first(where: { $0.id == id }) else { return }
         updated.headerLogoText = HeaderLogoText.normalized(text)
-        serverRegistry.update(updated)
-        refreshServers()
-    }
-
-    func updateServerAvatar(id: String, data: Data?) {
-        guard var updated = servers.first(where: { $0.id == id }) else { return }
-        guard (data?.count ?? 0) <= AvatarPhoto.maximumStoredBytes else { return }
-        updated.avatarImageData = data
         serverRegistry.update(updated)
         refreshServers()
     }

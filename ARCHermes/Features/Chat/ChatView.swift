@@ -309,6 +309,7 @@ struct ChatView: View {
     /// and searching the query `/sessions` or `/resume` named (#1053). Nil pushes a list on top
     /// instead.
     let onOpenHermesSessions: ((HermesSessionListEntry) -> Void)?
+    let onHermesSessionIdentified: ((ConversationTarget?) -> Void)?
 
     /// The composer's draft. Never read it in `body` or wrap it in a get/set
     /// binding for the composer: either re-runs this whole screen on every
@@ -438,7 +439,8 @@ struct ChatView: View {
         onConversationStarted: @escaping () -> Void = {},
         hermesSession: HermesSessionChat? = nil,
         onReplaceHermesSession: ((HermesSessionChat) -> Void)? = nil,
-        onOpenHermesSessions: ((HermesSessionListEntry) -> Void)? = nil
+        onOpenHermesSessions: ((HermesSessionListEntry) -> Void)? = nil,
+        onHermesSessionIdentified: ((ConversationTarget?) -> Void)? = nil
     ) {
         self.session = session
         self.server = server
@@ -455,6 +457,7 @@ struct ChatView: View {
         self.onReplaceHermesSession = onReplaceHermesSession
         hermesTranscriber = hermesSession.map { HermesTranscription.transcriber(for: $0) }
         self.onOpenHermesSessions = onOpenHermesSessions
+        self.onHermesSessionIdentified = onHermesSessionIdentified
         _draftMessage = State(initialValue: initialDraft)
         _draftQuotes = State(initialValue: initialQuotes)
         _initialAttachments = State(initialValue: initialAttachments)
@@ -479,14 +482,16 @@ struct ChatView: View {
     /// A Hermes session on its Profile (#1010). It has no webui session, so nothing here
     /// reaches the webui API; connection errors show in the chat itself.
     init(hermesSession: HermesSessionChat, onReplace: ((HermesSessionChat) -> Void)? = nil,
-         onOpenSessions: ((HermesSessionListEntry) -> Void)? = nil) {
+         onOpenSessions: ((HermesSessionListEntry) -> Void)? = nil,
+         onIdentified: ((ConversationTarget?) -> Void)? = nil) {
         self.init(
             session: SessionSummary(profile: hermesSession.target.profile),
             server: hermesSession.server,
             onAPIError: { _ in },
             hermesSession: hermesSession,
             onReplaceHermesSession: onReplace,
-            onOpenHermesSessions: onOpenSessions
+            onOpenHermesSessions: onOpenSessions,
+            onHermesSessionIdentified: onIdentified
         )
     }
 
@@ -928,6 +933,9 @@ struct ChatView: View {
             }
             .onChange(of: NetworkPathMonitor.shared.changeCount) {
                 handleNetworkPathChange()
+            }
+            .onChange(of: viewModel.hermesSessionTarget, initial: true) {
+                onHermesSessionIdentified?(viewModel.hermesSessionTarget)
             }
             .onChange(of: viewModel.activeStreamID) {
                 handleActiveStreamChange()

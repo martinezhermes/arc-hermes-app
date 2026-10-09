@@ -27,17 +27,20 @@ URL>`, so every Bot store, draft, cache, section order and bot link keys by it a
 do by a webui server. `AuthManager.addHermesServer` saves a sign-in the form already
 verified and activates the server; it needs Bot Mode on and refuses an address already
 in the registry. Turning Bot Mode off later never locks a user out: an existing Hermes
-server still opens, and so do its bot links. Its home (#709) has two sides on one stack
-and one shared connection, the Bots inbox and the Sessions list, switched by a bottom bar
-of `(filter) [Bots | Sessions] (new chat)` that each side fills: on Bots the filter holds
-hidden bots and section order and new chat makes a bot or a group chat; on Sessions the
-filter picks a Profile or All Profiles and new chat starts a session. Both sides lead with
-webui's header (`SessionsHeader`): HERMEX, and one pill of search and the server's avatar
-(Settings on tap, switching on hold), with no top bar. On Sessions the pill grows into the
-search field; on Bots it opens the search sheet. The home keeps the inbox and the session
-list's view model across the switch, so a switch shows the last roster or rows at once. It
-reopens on the side last shown (`@SceneStorage`), Sessions at first, and a bot link turns it
-to Bots. The two sides keep their own read marks, live states and identities. Without a
+server still opens, and so do its bot links. Its native home uses ARC's adaptive sidebar
+around the integrated Hermes session list and chat. The sidebar stays mounted across
+selection, reveal and window resizing; only selecting another detail surface resets its
+navigation stack. Chats retain their own streaming lifecycle. The sidebar's session socket
+pauses while hidden and reopens when shown, with background/foreground handling retained.
+Bots, Tasks, Kanban, Skills, Memory and Usage open native clients from its utility rows;
+Bots keeps its own search, creation, roster and connection controls in the detail stack.
+The header uses the active server's pixel wordmark and color. The compact bottom controls
+hold New Session, Profile filtering and Settings; holding Settings switches, adds or manages
+servers. Settings is a sheet and dismissing it preserves the selected chat unless credentials
+changed. Bot links select the Bots detail on their own server and connection. /sessions
+still pushes a standalone native list from chat. Server-avatar photo import and storage
+are retired: older records decode tolerantly, and their removed photo field is omitted
+when saved. Bot profile artwork remains Agent-owned. Without a
 record (after Sign Out, which deletes the record and Bot data but keeps the server) or
 after the host refuses its saved password at the login step, including the one silent
 re-login a signed-in 401 starts (`HermesConnections.onSignInRejected`), the server is

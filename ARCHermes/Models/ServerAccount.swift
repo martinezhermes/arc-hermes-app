@@ -39,9 +39,8 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
     /// Per-server Header Logo Color (hex). Seeded from the global color on
     /// migration; editable per server in #17.
     var headerLogoColorHex: String
-    /// Empty text uses the app wordmark. The avatar is a bounded, local JPEG.
+    /// Empty text uses the app wordmark.
     var headerLogoText: String = ""
-    var avatarImageData: Data? = nil
     var createdAt: Date
     var updatedAt: Date
     /// Set when the server is added and never changed: a webui server and a Hermes
@@ -80,7 +79,6 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
         case initials
         case headerLogoColorHex
         case headerLogoText
-        case avatarImageData
         case createdAt
         case updatedAt
         case kind
@@ -107,7 +105,6 @@ struct ServerAccount: Codable, Identifiable, Equatable, Sendable {
         headerLogoColorHex = try container.decodeIfPresent(String.self, forKey: .headerLogoColorHex)
             ?? HeaderLogoColor.defaultHex
         headerLogoText = (try? container.decodeIfPresent(String.self, forKey: .headerLogoText)) ?? ""
-        avatarImageData = try? container.decodeIfPresent(Data.self, forKey: .avatarImageData)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date(timeIntervalSince1970: 0)
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? createdAt
         // Read as text so a kind from a newer build, or a value of the wrong type,

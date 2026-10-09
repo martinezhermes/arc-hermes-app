@@ -1,5 +1,7 @@
 import XCTest
 import Observation
+import SwiftUI
+import SwiftData
 @testable import ARCHermes
 
 /// A Hermes server's Sessions list (#1046): `SessionListViewModel` with a Hermes backend on a
@@ -448,6 +450,57 @@ import Observation
 
         XCTAssertEqual(wire.searches.map(\.profile).sorted(), ["default", "research"])
         XCTAssertEqual(list.visibleSessions(searchText: "nimbus", selectedProjectID: nil).compactMap(\.sessionId), ["far"])
+    }
+
+    /// Render the actual native sidebar on its scripted Agent wire, without a WebUI client or live data.
+    func testNativeHomeRendersOnPhoneAndTabletWithItsAgentRows() async throws {
+        let wire = HermesSessionListWire()
+        let now = Date().timeIntervalSince1970
+        wire.pages["default"] = [0: page([
+            HermesSessionRow(id: "review", title: "Review native navigation", lastActive: now - 60),
+            HermesSessionRow(id: "draft", title: "Prepare the next release", lastActive: now - 3600)
+        ])]
+        let list = makeList(wire)
+        await list.openHermes()
+        defer { list.closeHermes() }
+        let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
+                                          configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let entry = HermesSessionListEntry(server: server, connection: connection, profile: "default")
+        let home = HermesHome(logoText: "ARC HERMES", colorHex: "#FFD700",
+                              servers: AvatarServerSwitcherModel(servers: [], activeServerID: nil),
+                              openSettings: {}, switchToServer: { _ in }, addServer: {}, manageServers: {},
+                              pendingBotDestination: .constant(nil), connectionChanged: {})
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for (name, size) in [("phone", CGSize(width: 393, height: 852)), ("tablet", CGSize(width: 1194, height: 834))] {
+            let appeared = expectation(description: "native home appeared at \(name) width")
+            appeared.assertForOverFulfill = false
+            let view = HermesSessionListView(entry: entry, model: list, home: home)
+                .modelContainer(container)
+                .preferredColorScheme(.dark)
+                .tint(.yellow)
+                .transaction { $0.disablesAnimations = true }
+                .onAppear { appeared.fulfill() }
+            let host = UIHostingController(rootView: view)
+            let window = UIWindow(windowScene: scene)
+            window.traitOverrides.horizontalSizeClass = name == "tablet" ? .regular : .compact
+            window.frame = CGRect(origin: .zero, size: size)
+            window.rootViewController = host
+            window.makeKeyAndVisible()
+            host.view.frame = window.bounds
+            await fulfillment(of: [appeared], timeout: 5)
+            window.layoutIfNeeded()
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "Native ARC sidebar - " + name
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/arc50-native-sidebar-" + name + ".png"))
+            XCTAssertEqual(list.sessions.compactMap(\.sessionId), ["review", "draft"])
+            window.isHidden = true
+            window.rootViewController = nil
+        }
     }
 
     // MARK: Fixture

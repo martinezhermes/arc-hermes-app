@@ -8664,7 +8664,7 @@
 			fileRef = AC2100000000000000000004;
 		};
 		C0C67A56E689447CB01E9866 = {
-			path = Features/Settings/AvatarPhoto.swift;
+			path = Features/Settings/SessionAvatar.swift;
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";

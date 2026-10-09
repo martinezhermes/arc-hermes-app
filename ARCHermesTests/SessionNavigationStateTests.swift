@@ -711,13 +711,13 @@ private actor SessionInitialLoadEventRecorder {
     }
 }
 
-/// Hosts the regular-width shell in a real window. Creation counts show which
+/// Hosts the native ARC sidebar shell in a real window. Creation counts show which
 /// column a root selection re-identifies; the detail column's navigation stack
 /// shows what it pops and keeps; probe views entering and leaving the window mark
 /// when the sidebar and pushed screens actually change, so tests wait on those
 /// events rather than on a number of main-queue turns.
 @MainActor
-final class SessionSplitViewIdentityTests: XCTestCase {
+final class HermesHomeIdentityTests: XCTestCase {
     func testRootSelectionRebuildsOnlyTheDetailColumn() throws {
         let log = SplitColumnCreationLog()
         let (host, window) = try hostSplitView(log: log, size: CGSize(width: 1_194, height: 834))
@@ -732,15 +732,111 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         XCTAssertEqual(log.detail, 2, "A root selection must reset the detail stack")
     }
 
-    /// Pins the visibility policy the split view applies on a root selection. The
-    /// portrait close is not hosted: UISplitViewController's display-mode change did
-    /// not settle reliably on CI's parallel test clones, and a collapsed sidebar can't
-    /// be told apart from `.automatic` in an iPhone-idiom host anyway.
-    func testRootSelectionHidesAnOpenedSidebarButKeepsACollapsedOne() {
-        XCTAssertEqual(NavigationSplitViewVisibility.all.afterRootSelection, .automatic)
-        XCTAssertEqual(NavigationSplitViewVisibility.doubleColumn.afterRootSelection, .automatic)
-        XCTAssertEqual(NavigationSplitViewVisibility.automatic.afterRootSelection, .automatic)
-        XCTAssertEqual(NavigationSplitViewVisibility.detailOnly.afterRootSelection, .detailOnly)
+    func testSelectionClosesOnlyACompactSidebarAndReturnToSessionsOpensIt() {
+        var compact = HermesHomeNavigation()
+        compact.select(.bots)
+        XCTAssertFalse(compact.isSidebarPresented)
+        compact.showSessions()
+        XCTAssertNil(compact.destination)
+        XCTAssertTrue(compact.isSidebarPresented)
+        var wide = HermesHomeNavigation(isCompact: false)
+        wide.select(.kanban)
+        XCTAssertTrue(wide.isSidebarPresented)
+        wide.isSidebarPresented = false
+        wide.select(.bots)
+        XCTAssertFalse(wide.isSidebarPresented)
+    }
+
+    func testReopeningTheSameSessionKeepsItsIdentityButOtherProfilesAndConnectionsDoNot() throws {
+        let server = try XCTUnwrap(URL(string: "https://native.test"))
+        let connection = BotConnection(id: UUID(), name: "Test", address: server, username: "fixture", password: "fixture")
+        let first = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "one"))
+        var navigation = HermesHomeNavigation()
+        navigation.openChat(first)
+        navigation.isSidebarPresented = true
+        navigation.openChat(HermesSessionChat(server: server, connection: connection, target: first.target))
+        XCTAssertEqual(navigation.destination?.chat?.id, first.id)
+        XCTAssertFalse(navigation.isSidebarPresented)
+        let anotherProfile = HermesSessionChat(server: server, connection: connection, target: .session(profile: "research", key: "one"))
+        navigation.openChat(anotherProfile)
+        XCTAssertEqual(navigation.destination?.chat?.id, anotherProfile.id)
+        let replacement = BotConnection(id: UUID(), name: "Test", address: server, username: "fixture", password: "fixture")
+        let replaced = HermesSessionChat(server: server, connection: replacement, target: anotherProfile.target)
+        navigation.openChat(replaced)
+        XCTAssertEqual(navigation.destination?.chat?.id, replaced.id)
+        var anotherHome = HermesHomeNavigation()
+        anotherHome.select(.bots)
+        XCTAssertEqual(navigation.destination?.chat?.id, replaced.id, "Another server's navigation owns separate value state")
+    }
+
+    func testCompressionTipChangesKeepChatIdentityWhenTheListStillShowsTheOldTip() throws {
+        let server = try XCTUnwrap(URL(string: "https://native.test"))
+        let connection = BotConnection(id: UUID(), name: "Test", address: server, username: "fixture", password: "fixture")
+        let chat = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "old-tip"))
+        var navigation = HermesHomeNavigation()
+        navigation.openChat(chat, lineageRootID: "root")
+        navigation.identify(.session(profile: "default", key: "new-tip"), chatID: chat.id)
+        let staleRow = HermesSessionChat(server: server, connection: connection, target: chat.target)
+        navigation.openChat(staleRow, lineageRootID: "root")
+        XCTAssertEqual(navigation.destination?.chat?.id, chat.id)
+        XCTAssertEqual(navigation.activeTarget, .session(profile: "default", key: "new-tip"))
+        let unrelated = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "different-tip"))
+        navigation.openChat(unrelated, lineageRootID: "different-root")
+        XCTAssertEqual(navigation.destination?.chat?.id, unrelated.id)
+    }
+
+    func testConfirmedRemovalClearsOnlyTheMatchingNativeSessionScope() throws {
+        let server = try XCTUnwrap(URL(string: "https://native.test"))
+        let otherServer = try XCTUnwrap(URL(string: "https://other.test"))
+        let connection = BotConnection(id: UUID(), name: "Test", address: server, username: "fixture", password: "fixture")
+        let chat = HermesSessionChat(server: server, connection: connection, target: .new(profile: "default"))
+        var navigation = HermesHomeNavigation()
+        navigation.select(.chat(chat))
+        navigation.identify(.session(profile: "default", key: "created"), chatID: chat.id)
+        let row = HermesSessionRow(id: "created", profile: "default").summary(in: "default")
+        navigation.remove(row, server: otherServer, connectionID: connection.id, listedIn: "default")
+        navigation.remove(row, server: server, connectionID: UUID(), listedIn: "default")
+        navigation.remove(HermesSessionRow(id: "created", profile: "research").summary(in: "research"),
+                          server: server, connectionID: connection.id, listedIn: "research")
+        navigation.remove(HermesSessionRow(id: "other", profile: "default").summary(in: "default"),
+                          server: server, connectionID: connection.id, listedIn: "default")
+        XCTAssertEqual(navigation.destination?.chat?.id, chat.id)
+        navigation.remove(row, server: server, connectionID: connection.id, listedIn: "default")
+        XCTAssertNil(navigation.destination)
+        XCTAssertNil(navigation.activeTarget)
+        XCTAssertTrue(navigation.isSidebarPresented)
+    }
+
+    func testRemovedCompressionLineageClosesItsChatAndStaleIdentificationCannotSelectAnother() throws {
+        let server = try XCTUnwrap(URL(string: "https://native.test"))
+        let connection = BotConnection(id: UUID(), name: "Test", address: server, username: "fixture", password: "fixture")
+        let chat = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "old-tip"))
+        var navigation = HermesHomeNavigation()
+        navigation.openChat(chat, lineageRootID: "root")
+        let removed = HermesSessionRow(id: "new-tip", profile: "default", lineageRootID: "root").summary(in: "default")
+        navigation.remove(removed, server: server, connectionID: connection.id, listedIn: "default")
+        XCTAssertNil(navigation.destination)
+        let another = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "another"))
+        navigation.openChat(another)
+        navigation.identify(.session(profile: "default", key: "old-tip"), chatID: chat.id)
+        navigation.remove(removed, server: server, connectionID: connection.id, listedIn: "default")
+        XCTAssertEqual(navigation.destination?.chat?.id, another.id)
+        XCTAssertEqual(navigation.activeTarget, another.target)
+    }
+
+    func testSidebarRevealAndWindowResizeKeepTheActiveDetailMounted() throws {
+        let log = SplitColumnCreationLog()
+        let (host, window) = try hostSplitView(log: log, size: CGSize(width: 1_194, height: 834))
+        defer { tearDown(window) }
+        host.rootView = splitView(rootRevision: 0, log: log, presented: false)
+        host.view.layoutIfNeeded()
+        window.frame = CGRect(x: 0, y: 0, width: 500, height: 834)
+        host.view.frame = window.bounds
+        host.view.layoutIfNeeded()
+        host.rootView = splitView(rootRevision: 0, log: log, presented: true)
+        host.view.layoutIfNeeded()
+        XCTAssertEqual(log.sidebar, 1)
+        XCTAssertEqual(log.detail, 1, "Reveal, collapse and resizing must keep the active chat mounted")
     }
 
     /// Settings subpages (`NavigationLink`) and file or fork screens
@@ -754,6 +850,7 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         let detailStack = try waitForPushedScreen(log: log) { try push(from: log, in: host) }
         XCTAssertEqual(detailStack.viewControllers.count, 2)
 
+        log.oldPushedScreen = log.pushedScreen
         let oldScreenLeft = expectation(description: "old root's screen left the window")
         oldScreenLeft.assertForOverFulfill = false
         log.pushedScreenMoved = { isOnScreen in
@@ -768,12 +865,12 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         log.pushedScreenMoved = { _ in }
         log.rootDidAppear = {}
 
-        XCTAssertEqual(detailStack.viewControllers.count, 1, "A root selection must pop screens pushed inside the old detail")
+        XCTAssertNil(log.oldPushedScreen?.window, "A root selection must remove the old pushed screen")
         XCTAssertEqual(log.roots, 2, "A root selection must reset the detail stack")
         XCTAssertEqual(log.sidebar, 1, "A root selection must not rebuild the sidebar")
 
-        _ = try waitForPushedScreen(log: log) { try push(from: log, in: host) }
-        XCTAssertEqual(detailStack.viewControllers.count, 2, "The new root must still push")
+        let replacementStack = try waitForPushedScreen(log: log) { try push(from: log, in: host) }
+        XCTAssertEqual(replacementStack.viewControllers.count, 2, "The new root must still push")
     }
 
     /// A deep link can select a root that pushes as soon as it appears, even while the
@@ -786,7 +883,7 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         let detailStack = try waitForPushedScreen(log: log) { try push(from: log, in: host) }
         let oldScreen = try XCTUnwrap(detailStack.topViewController)
 
-        _ = try waitForPushedScreen(log: log) {
+        let replacementStack = try waitForPushedScreen(log: log) {
             host.rootView = pushingSplitView(rootRevision: 1, log: log, pushesOnAppear: true)
             host.view.layoutIfNeeded()
         }
@@ -795,8 +892,8 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         DispatchQueue.main.async { deferredWorkRan.fulfill() }
         wait(for: [deferredWorkRan], timeout: 1)
 
-        XCTAssertFalse(detailStack.viewControllers.contains(oldScreen), "A root selection must pop the old root's screen")
-        XCTAssertEqual(detailStack.viewControllers.count, 2, "A root selection must keep the new root's own push")
+        XCTAssertFalse(replacementStack.viewControllers.contains(oldScreen), "A root selection must pop the old root's screen")
+        XCTAssertEqual(replacementStack.viewControllers.count, 2, "A root selection must keep the new root's own push")
     }
 
     /// Runs `change` and returns the detail column's navigation controller once the
@@ -836,7 +933,7 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         log: DetailPushLog,
         pushesOnAppear: Bool = false
     ) -> PushingSplitView {
-        SessionSplitView(rootRevision: rootRevision) {
+        HermesHomeShell(navigation: .constant(HermesHomeNavigation(destination: .archived(String(rootRevision)), isCompact: false))) {
             SplitColumnProbe { log.sidebar += 1 }
         } detail: {
             PushingDetailProbe(log: log, pushesOnAppear: pushesOnAppear)
@@ -867,13 +964,8 @@ final class SessionSplitViewIdentityTests: XCTestCase {
         window.rootViewController = nil
     }
 
-    private func splitViewController(in root: UIViewController) -> UISplitViewController? {
-        if let split = root as? UISplitViewController { return split }
-        return root.children.lazy.compactMap { self.splitViewController(in: $0) }.first
-    }
-
-    private func splitView(rootRevision: Int, log: SplitColumnCreationLog) -> ProbeSplitView {
-        SessionSplitView(rootRevision: rootRevision) {
+    private func splitView(rootRevision: Int, log: SplitColumnCreationLog, presented: Bool = true) -> ProbeSplitView {
+        HermesHomeShell(navigation: .constant(HermesHomeNavigation(destination: .archived(String(rootRevision)), isSidebarPresented: presented, isCompact: false))) {
             SplitColumnProbe(onCreate: { log.sidebar += 1 })
         } detail: {
             SplitColumnProbe { log.detail += 1 }
@@ -881,8 +973,8 @@ final class SessionSplitViewIdentityTests: XCTestCase {
     }
 }
 
-private typealias ProbeSplitView = SessionSplitView<SplitColumnProbe, SplitColumnProbe>
-private typealias PushingSplitView = SessionSplitView<SplitColumnProbe, PushingDetailProbe>
+private typealias ProbeSplitView = HermesHomeShell<SplitColumnProbe, SplitColumnProbe>
+private typealias PushingSplitView = HermesHomeShell<SplitColumnProbe, PushingDetailProbe>
 
 @MainActor
 private final class DetailPushLog {
@@ -892,6 +984,7 @@ private final class DetailPushLog {
     var push: (() -> Void)?
     var rootDidAppear: () -> Void = {}
     weak var pushedScreen: UIView?
+    weak var oldPushedScreen: UIView?
     var pushedScreenMoved: (Bool) -> Void = { _ in }
 }
 

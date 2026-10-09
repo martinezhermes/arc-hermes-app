@@ -1,14 +1,10 @@
 import SwiftUI
 
-/// The Bots inbox: pushed from a webui server's session list, or the Bots side of a Hermes
-/// server's home (`HermesServerHome`), where it leads with the session list's header, whose
-/// avatar replaces the Bot connection gear, and takes the home's bar (`HermesHomeChrome`): the
-/// filter holds hidden bots and section order, and new chat makes a bot or a group chat.
+/// Native Bots opened from the sidebar, with roster, search and connection controls.
 @MainActor struct BotsInboxView: View {
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(HeaderLogoColor.storageKey) private var headerLogoColorHex = HeaderLogoColor.defaultHex
     let server: URL
-    private let home: HermesHome?
+    private let onConnectionChanged: () -> Void
     /// The bot a deep link named, resolved here because this is where the live roster
     /// is. Cleared once this inbox has settled, whether or not it matched (#554).
     @Binding private var pendingDestination: BotDestination?
@@ -45,25 +41,20 @@ import SwiftUI
 
     init(
         server: URL,
-        pendingDestination: Binding<BotDestination?> = .constant(nil)
+        pendingDestination: Binding<BotDestination?> = .constant(nil),
+        onConnectionChanged: @escaping () -> Void = {}
     ) {
-        self.init(server: server, pendingDestination: pendingDestination, home: nil, inbox: BotInbox(server: server))
-    }
-
-    /// A Hermes server's home, which keeps `inbox` across its switch, so a switch back shows the
-    /// roster at once (#709). Its sign-in form is reached through Settings there.
-    init(server: URL, pendingDestination: Binding<BotDestination?>, home: HermesHome?, inbox: BotInbox) {
         self.server = server
-        self.home = home
         _pendingDestination = pendingDestination
-        _inbox = State(initialValue: inbox)
+        self.onConnectionChanged = onConnectionChanged
+        _inbox = State(initialValue: BotInbox(server: server))
     }
 
     /// An inbox the caller built, such as one on scripted wires.
     init(server: URL, inbox: BotInbox) {
         self.server = server
-        home = nil
         _pendingDestination = .constant(nil)
+        onConnectionChanged = {}
         _inbox = State(initialValue: inbox)
     }
 
@@ -88,7 +79,6 @@ import SwiftUI
     /// own expression: together they were too much for the CI type-checker.
     private var list: some View {
         List {
-            homeHeader
             if inbox.connection != nil {
                 if let message = inbox.errorMessage ?? inbox.routeAdvice {
                     Text(message).font(.callout)
@@ -108,7 +98,7 @@ import SwiftUI
                             .accessibilityHidden(index > 0)
                     }
                 } else if inbox.profiles.isEmpty && inbox.link == .live {
-                    home == nil ? Text("No bots yet. Tap + to create one.") : Text("No bots yet. Tap New Chat to create one.")
+                    Text("No bots yet. Tap + to create one.")
                 }
                 if let notice = inbox.notice {
                     Text(notice).font(.callout).foregroundStyle(.secondary).listRowSeparator(.hidden)
@@ -146,8 +136,7 @@ import SwiftUI
                     .listRowSeparator(.hidden)
                 }
                 chatSections(inbox.sections)
-                // The home's filter holds this instead.
-                if home == nil && inbox.hiddenCount > 0 {
+                if inbox.hiddenCount > 0 {
                     Button(inbox.showsHidden ? "Hide hidden" : "Show hidden (\(inbox.hiddenCount))") {
                         inbox.showsHidden.toggle()
                     }
@@ -163,12 +152,8 @@ import SwiftUI
             if inbox.connection == nil {
                 GeometryReader { geometry in
                     ScrollView {
-                        // The home's header stays, so Settings and the server switcher do too.
-                        VStack(spacing: 0) {
-                            homeHeader
-                            BotConnectionWelcomeView(isCovered: showingSetup) { showingSetup = true }
-                        }
-                        .frame(minHeight: geometry.size.height)
+                        BotConnectionWelcomeView(isCovered: showingSetup) { showingSetup = true }
+                            .frame(minHeight: geometry.size.height)
                     }
                     .background(Color(uiColor: .systemBackground))
                 }
@@ -177,24 +162,12 @@ import SwiftUI
         .modifier(chrome)
     }
 
-    /// The session list's header, leading the home's Bots side. Its search opens the inbox's
-    /// search sheet.
-    @ViewBuilder private var homeHeader: some View {
-        if let home {
-            SessionsHeader(logoColor: HeaderLogoColor.color(for: headerLogoColorHex), avatar: home.avatar,
-                           searchLabel: "Search bots and messages", isSearchDisabled: inbox.connection == nil,
-                           openSearch: { showingSearch = true })
-                .sessionsTopChromeListRow()
-        }
-    }
-
-    /// The home's chrome, or the pushed inbox's own toolbar.
     private var chrome: some ViewModifier {
-        BotsInboxChrome(home: home, isOffline: inbox.connection == nil, search: { showingSearch = true },
-                        openSetup: { showingSetup = true }, filter: { filterMenu }, newChat: { newChatMenu })
+        BotsInboxChrome(isOffline: inbox.connection == nil, search: { showingSearch = true },
+                        openSetup: { showingSetup = true }, newChat: { newChatMenu })
     }
 
-    /// New Bot and New Group Chat: the pushed inbox's + menu, and the home's new chat.
+    /// New Bot and New Group Chat, with section ordering in the same compact menu.
     private var newChatMenu: some View {
         Menu {
             Button("New Bot", systemImage: "plus.bubble") { creation = .new }
@@ -204,27 +177,12 @@ import SwiftUI
                     onReconciled: { inbox.reconcileRooms($0, connectionID: connection.id) })
             }
             .disabled(!inbox.roomCapabilities.enabled || !inbox.roomCapabilities.methods.contains("groups.create"))
-            if home == nil && inbox.reorderableSectionNames.count >= 2 {
+            if inbox.reorderableSectionNames.count >= 2 {
                 Divider()
                 Button("Reorder Sections…", systemImage: "arrow.up.arrow.down") { showingSectionOrder = true }
             }
-        } label: { Label("New chat", systemImage: home == nil ? "plus" : "square.and.pencil") }
+        } label: { Label("New chat", systemImage: "plus") }
         .disabled(inbox.link != .live)
-    }
-
-    /// The home's filter: hidden bots and groups, and the order of Desktop's sections.
-    private var filterMenu: some View {
-        Menu {
-            Toggle(isOn: $inbox.showsHidden) {
-                Label("Show hidden (\(inbox.hiddenCount))", systemImage: "eye")
-            }
-            .disabled(inbox.hiddenCount == 0 && !inbox.showsHidden)
-            Button("Reorder Sections…", systemImage: "arrow.up.arrow.down") { showingSectionOrder = true }
-                .disabled(inbox.reorderableSectionNames.count < 2)
-        } label: {
-            Label("Filter", systemImage: "line.3.horizontal.decrease")
-        }
-        .disabled(inbox.connection == nil)
     }
 
     /// Opens the bot a deep link named, once this inbox has a roster to resolve it
@@ -569,7 +527,10 @@ extension BotsInboxView {
             .sheet(isPresented: $showingSectionOrder) {
                 BotSectionOrderView(inbox: inbox)
             }
-            .sheet(isPresented: $showingSetup, onDismiss: { updatingSignIn = false; revision = UUID() }) {
+            .sheet(isPresented: $showingSetup, onDismiss: {
+                updatingSignIn = false; revision = UUID()
+                onConnectionChanged()
+            }) {
                 NavigationStack {
                     BotConnectionView(server: server, focusesPassword: updatingSignIn) { inbox.signInSaved() }
                 }
@@ -613,51 +574,32 @@ extension BotsInboxView {
     }
 }
 
-/// The inbox's title and toolbar. As a Hermes server's home it takes the home's bar. Pushed from
-/// the session list's Bots row, the back button and the toolbar are the whole header, so the
-/// pinned tiles sit at the top; the title still names the screen for VoiceOver and for a pushed
-/// chat's back button, with only its visible text removed.
-private struct BotsInboxChrome<Filter: View, NewChat: View>: ViewModifier {
-    let home: HermesHome?
-    /// No Bot connection is saved, so there is nothing to search.
+/// Bots keeps native search, creation and connection controls in the detail navigation stack.
+private struct BotsInboxChrome<NewChat: View>: ViewModifier {
     let isOffline: Bool
     let search: () -> Void
     let openSetup: () -> Void
-    @ViewBuilder let filter: Filter
     @ViewBuilder let newChat: NewChat
 
-    init(home: HermesHome?, isOffline: Bool, search: @escaping () -> Void, openSetup: @escaping () -> Void,
-         @ViewBuilder filter: () -> Filter, @ViewBuilder newChat: () -> NewChat) {
-        self.home = home; self.isOffline = isOffline; self.search = search; self.openSetup = openSetup
-        self.filter = filter(); self.newChat = newChat()
-    }
-
     func body(content: Content) -> some View {
-        if let home {
-            content.modifier(HermesHomeChrome(home: home, filter: { filter }, newChat: { newChat }))
-        } else {
-            content
-                .navigationTitle("Bots")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar(removing: .title)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Search bots and messages", systemImage: "magnifyingglass", action: search)
-                            .disabled(isOffline)
-                    }
-                    ToolbarItem(placement: .topBarTrailing) { newChat }
-                    if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Bot connection", systemImage: "gearshape", action: openSetup)
-                    }
+        content
+            .navigationTitle("Bots")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(removing: .title)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Search bots and messages", systemImage: "magnifyingglass", action: search)
+                        .disabled(isOffline)
                 }
-        }
+                ToolbarItem(placement: .topBarTrailing) { newChat }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Bot connection", systemImage: "gearshape", action: openSetup)
+                }
+            }
     }
 }
 
-/// Places Desktop's named sections for this phone's inbox. Every drag saves the
-/// whole list at once; Reset to A–Z forgets the placement. The unfiled block is
-/// not listed because it always stays last, nor is a section the list never heads.
 private struct BotSectionOrderView: View {
     @Environment(\.dismiss) private var dismiss
     let inbox: BotInbox
