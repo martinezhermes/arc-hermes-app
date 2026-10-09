@@ -2,6 +2,21 @@ import XCTest
 @testable import ARCHermes
 
 final class SharedDraftStoreTests: XCTestCase {
+    func testShareExtensionRequestsOnlyItsStagingAppGroup() throws {
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ARCHermesShareExtension/Resources/ARCHermesShareExtension.entitlements")
+        guard let data = try? Data(contentsOf: source) else {
+            throw XCTSkip("The source checkout is unavailable on this destination")
+        }
+        let entitlements = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: data, format: nil) as? [String: Any])
+        XCTAssertEqual(Set(entitlements.keys), ["com.apple.security.application-groups"],
+                       "Share staging must not inherit the main app's push or credential capabilities")
+        XCTAssertEqual(entitlements["com.apple.security.application-groups"] as? [String],
+                       ["$(APP_GROUP_IDENTIFIER)"])
+    }
+
     func testDraftTextCombinesTextAndURLsInOrder() {
         let draft = ARCHermesShareDraft.draftText(
             textSnippets: [
