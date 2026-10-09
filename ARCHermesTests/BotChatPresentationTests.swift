@@ -684,6 +684,8 @@ import XCTest
 
     @discardableResult
     private func screenshot(_ window: UIWindow, name: String) throws -> String {
+        // Literal copy must retain queries and filenames such as Report.pdf;
+        // language correction can rewrite what the fixture actually rendered.
         let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -692,6 +694,8 @@ import XCTest
         attachment.lifetime = .keepAlways
         add(attachment)
         let request = VNRecognizeTextRequest()
+        request.recognitionLanguages = ["en-US"]
+        request.usesLanguageCorrection = false
         try VNImageRequestHandler(cgImage: XCTUnwrap(image.cgImage)).perform([request])
         return request.results?.compactMap { $0.topCandidates(1).first?.string }.joined(separator: " ") ?? ""
     }

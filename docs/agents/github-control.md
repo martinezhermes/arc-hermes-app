@@ -79,15 +79,51 @@ human owner. No repository-specific skill bundle or custom policy engine is
 needed.
 
 `scripts/validate` is the local/CI entry point. `.github/workflows/validation.yml`
-uses GitHub's `xcode-27` public-preview hosted image, a 25-minute timeout, and
-seven-day test artifacts. The public repository uses standard hosted runners;
-private forks must account for their own Actions minute allowance and billing.
-Preview-image availability and Xcode updates remain external dependencies. CI
+uses GitHub's `xcode-27` public-preview hosted image until Temporal Loom routing
+is explicitly enabled, a 25-minute timeout, and seven-day test artifacts.
+First-party branches can use the app-specific Temporal Loom registration;
+external fork PRs retain hosted routing. The public repository uses standard
+hosted runners; private forks must account for their own Actions minute allowance
+and billing. Preview-image availability and Xcode updates remain external dependencies. CI
 uses no private Apple certificate, App Store key, production server or test
 account. It validates Simulator behavior and all built targets; it cannot prove
 physical microphone, haptics, lock-screen presentation, or device provisioning.
 
 Runner source: https://github.com/actions/runner-images/blob/main/images/macos/xcode-27-arm64-Readme.md
+
+## Temporal Loom activation
+
+The existing `temporal-loom-arc-hermes-agent` registration cannot accept this
+personal-account repository's jobs. Add a separate
+`temporal-loom-arc-hermes-app` registration with label `arc-hermes-app-macos`
+through Endurance's reviewed native-node declarations. Reuse the standard
+`endurance-ci` account and shared Xcode installation, with separate runner
+credentials, workspace, caches and CI-owned simulator. Keep operator and release
+signing credentials outside that account.
+
+Before activation, review eligibility for this public repository and the host's
+LAN access. The workflow's fork routing is useful policy, not a sandbox for
+arbitrary modified workflows. GitHub workflow approval controls and reviewed
+runner scope must own that boundary. Simulator/XCTest execution under the CI
+account must be demonstrated; the existing headless Agent smoke is insufficient.
+
+After an app-specific smoke and the complete XCTest suite pass on the runner,
+set repository variables:
+
+- `ARC_APP_MACOS_RUNNER=arc-hermes-app-macos`.
+- `ARC_APP_SIMULATOR_DESTINATION` to the verified iOS 27+ simulator destination
+  owned by the CI account.
+
+Leave the runner variable unset until those gates pass. The required check stays
+`Apple validation`, with the same full-suite entry point, normal simulator
+signing and test artifacts. Verify a published run identifies Temporal Loom,
+`endurance-ci`, ARM64, the expected Xcode/SDK and the tested commit. Roll back
+routing by deleting `ARC_APP_MACOS_RUNNER`; hosted validation resumes. Withdraw
+the separate runner through Endurance's standard procedure after active work
+finishes, preserving its logs and work until reviewed.
+
+Upstream application integration follows
+[upstream-integration.md](upstream-integration.md).
 
 ## Activate enforcement after a green published check
 
