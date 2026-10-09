@@ -136,7 +136,17 @@ enum ShareInputReader {
             return nil
         }
 
-        let data = await loadData(from: provider, typeIdentifier: typeIdentifier)
+        let data: Data?
+        switch await loadMappedFile(from: provider, typeIdentifier: typeIdentifier) {
+        case .loaded(let fileData):
+            data = fileData
+        case .oversized:
+            return nil
+        case .unavailable:
+            // Providers that only vend in-memory data; these are usually small.
+            data = await loadData(from: provider, typeIdentifier: typeIdentifier)
+        }
+
         guard let data, data.count <= ARCHermesShareDraft.maximumSharedAttachmentBytes else {
             return nil
         }
@@ -156,13 +166,7 @@ enum ShareInputReader {
             }
         }
 
-        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-           size > ARCHermesShareDraft.maximumSharedAttachmentBytes {
-            return nil
-        }
-
-        let data = try Data(contentsOf: url)
-        guard data.count <= ARCHermesShareDraft.maximumSharedAttachmentBytes else {
+        guard let data = try mappedAttachmentData(at: url) else {
             return nil
         }
 
@@ -172,6 +176,25 @@ enum ShareInputReader {
             : url.lastPathComponent
 
         return SharedAttachmentImport(filename: filename, typeIdentifier: typeIdentifier, data: data)
+    }
+
+    /// Maps a shared file's bytes instead of copying them into the extension's
+    /// memory, or returns nil when the file exceeds the share limit. Mapped pages
+    /// are clean and file-backed, so they are not charged to the extension's
+    /// footprint, and the mapping stays valid after security-scoped access ends
+    /// or a provider deletes its temporary copy.
+    private static func mappedAttachmentData(at url: URL) throws -> Data? {
+        if let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+           size > ARCHermesShareDraft.maximumSharedAttachmentBytes {
+            return nil
+        }
+
+        let data = try Data(contentsOf: url, options: .alwaysMapped)
+        guard data.count <= ARCHermesShareDraft.maximumSharedAttachmentBytes else {
+            return nil
+        }
+
+        return data
     }
 
     private static func fileURL(from item: NSSecureCoding?) -> URL? {
@@ -284,6 +307,33 @@ enum ShareInputReader {
             if let text { return text as NSString }
         }
         return data.map { $0 as NSData }
+    }
+
+    private enum MappedFileLoad {
+        case loaded(Data)
+        case oversized
+        case unavailable
+    }
+
+    /// Loads an image or PDF through its file representation so an oversized
+    /// item is rejected by size before any of its bytes are read.
+    private static func loadMappedFile(from provider: NSItemProvider, typeIdentifier: String) async -> MappedFileLoad {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: typeIdentifier) { url, _ in
+                // The provider deletes this file when the handler returns, so map it here.
+                guard let url else {
+                    continuation.resume(returning: .unavailable)
+                    return
+                }
+
+                do {
+                    let data = try mappedAttachmentData(at: url)
+                    continuation.resume(returning: data.map(MappedFileLoad.loaded) ?? .oversized)
+                } catch {
+                    continuation.resume(returning: .unavailable)
+                }
+            }
+        }
     }
 
     private static func loadData(from provider: NSItemProvider, typeIdentifier: String) async -> Data? {

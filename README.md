@@ -8,23 +8,23 @@
 
 Your server. Your iPhone. No middleman.
 
-[![iOS 27+](https://img.shields.io/badge/iOS-27%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/id6767006319)
+[![iOS 27+](https://img.shields.io/badge/iOS-27%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/id6816211053)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Follow on X](https://img.shields.io/badge/Follow-%40uzairansar-000000?logo=x&logoColor=white)](https://x.com/uzairansar)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/callmeuzi)
 
-<a href="https://apps.apple.com/app/id6767006319">
+<a href="https://apps.apple.com/app/id6816211053">
   <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us" alt="Download on the App Store" height="50" />
 </a>
 
-[Website](https://hermexapp.com) · [App Store](https://apps.apple.com/app/id6767006319) · [Report a bug](https://github.com/uzairansaruzi/hermex/issues) · [Contributing](CONTRIBUTING.md)
+[Website](https://hermexapp.com) · [App Store](https://apps.apple.com/app/id6816211053) · [Report a bug](https://github.com/martinezhermes/arc-hermes-app/issues) · [Contributing](CONTRIBUTING.md)
 
 <img src="docs/assets/readme/hero-devices.png" alt="ARCHermes running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
 
 </div>
 
-ARCHermes is a native SwiftUI iPhone app for driving a self-hosted [hermes-webui](https://github.com/nesquena/hermes-webui) server — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
+ARC Hermes is a native SwiftUI iPhone and iPad client for a self-hosted [Hermes Agent](https://github.com/NousResearch/hermes-agent), with legacy [hermes-webui](https://github.com/nesquena/hermes-webui) connections retained for recovery — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
@@ -56,11 +56,24 @@ More screenshots at [website](https://hermexapp.com).
 
 ## Getting started
 
+For a direct Agent connection, run a Hermes dashboard on your own host and enter its
+base address in Connect. The form detects Hermes and offers the upstream Bot Mode
+beta opt-in, then uses the dashboard's username/password sign-in. Native Sessions
+and Bots share that connection. Hermes releases below `0.21.3` are refused before
+sending credentials; browser-only sign-in is not supported yet.
+
+The beta does not yet replace every WebUI feature. Workspace/Git UI and several
+share, App Intent and session-link entry points still require a WebUI connection.
+The separate fork-owned Agent onboarding/session prototype is superseded and is
+not part of this app. ARC icons, themes and identity remain app-owned.
+
+For legacy WebUI recovery:
+
 ARCHermes is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/nesquena/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
 
 1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
 2. **Make it reachable from your phone** (see options below).
-3. **Connect.** [Download ARCHermes](https://apps.apple.com/app/id6767006319), enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
+3. **Connect.** [Download ARCHermes](https://apps.apple.com/app/id6816211053), enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
 
 Self-hosting the server, securing it, and keeping it reachable are your responsibility.
 
@@ -81,7 +94,7 @@ If connection testing fails, check these first:
 
 ## Building from source
 
-Prefer the [App Store build](https://apps.apple.com/app/id6767006319) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 27+, or a matching simulator.
+Prefer the [App Store build](https://apps.apple.com/app/id6816211053) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 27+, or a matching simulator.
 
 Clone the repo, open `ARCHermes.xcodeproj`, and run the `ARCHermes` scheme on an iPhone simulator (the Xcode target is `ARCHermes`; the on-device display name remains `ARC Hermes`). Dependencies are resolved automatically via Swift Package Manager.
 
@@ -107,7 +120,7 @@ Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config
 
 The app is developed and tested against the `hermes-webui` commit pinned in [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA). Upstream does not yet guarantee API stability (its README declares version skew unsupported pending their stable-API work), so newer or older server versions may break individual features — please include your server version in bug reports. The app decodes tolerantly (unknown fields never crash it) and endpoint shapes are verified against upstream source, never invented.
 
-Bot Mode's direct-Hermes connection has its own pin, [`HERMES_AGENT_TESTED_SHA`](HERMES_AGENT_TESTED_SHA): line 1 is the tested `hermes-agent` commit and line 2 the release string its `/api/status` reports. When a host reports a different release, the Bot connection screen shows a one-line "Untested Hermes version" note. It never blocks signing in.
+Bot Mode's direct-Hermes connection has its own pin, [`HERMES_AGENT_TESTED_SHA`](HERMES_AGENT_TESTED_SHA): line 1 is the tested `hermes-agent` commit and line 2 the release string its `/api/status` reports. When a host reports a different release, the Bot connection screen shows a one-line "Untested Hermes version" note. That historical note is informational, but the new native connection also enforces its separate minimum release (`0.21.3`). Imported upstream fixtures are recorded in `ARCHermesTests/Fixtures/HermesAgent/UPSTREAM_TESTED_SHA`; they do not advance ARC’s live-validation pins.
 
 ## Documentation map
 
@@ -116,7 +129,7 @@ Bot Mode's direct-Hermes connection has its own pin, [`HERMES_AGENT_TESTED_SHA`]
 - [`TESTFLIGHT.md`](TESTFLIGHT.md): maintainer-only TestFlight/App Store Connect operations.
 - [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
 - [`docs/agents/`](docs/agents): repo-local agent workflow conventions (issues, triage labels, domain notes).
-- [GitHub Issues](https://github.com/uzairansaruzi/hermex/issues): source of truth for active bugs, polish notes, and feature requests.
+- [GitHub Issues](https://github.com/martinezhermes/arc-hermes-app/issues): source of truth for active bugs, polish notes, and feature requests.
 
 ## Contributing
 
@@ -128,6 +141,8 @@ Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how t
 - Do not modify the upstream `hermes-webui` server from this repo.
 
 ## Support the project
+
+The links to Uzair below support Hermex, the application upstream.
 
 ARCHermes is free and built in the open. If it's useful to you:
 

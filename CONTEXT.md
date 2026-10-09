@@ -2,6 +2,20 @@
 
 Canonical language for ARCHermes concepts that need consistent names across the product, planning, and support.
 
+## Servers
+
+**Webui server**:
+A configured `hermes-webui` server. ARC Hermes signs in to it with its password and cookie, and it opens on the session list.
+_Avoid_: server (alone, when the kind matters), WebUI
+
+**Hermes server**:
+A configured Hermes dashboard that ARC Hermes reaches directly. Its sign-in is its own Hermes connection, and it opens on the last selected Bots or Sessions side, with Sessions selected initially.
+_Avoid_: Hermes connection (that is the sign-in), bot server
+
+**Connection mode**:
+How this iPhone reaches the server, chosen in the connect form: Same Wi-Fi, Private network or Cloudflare Tunnel. It changes only the form's placeholder, help and header rows, and is not saved.
+_Avoid_: network type, connection type
+
 ## Kanban
 
 **Kanban**:
@@ -17,8 +31,16 @@ An individual unit of work on a Board.
 _Avoid_: Task, Kanban task, work item
 
 **Status**:
-The workflow state of a Card: Triage, To Do, Ready, Running, Blocked, Done, or Archived.
+The workflow state of a Card: Triage, To Do, Scheduled, Ready, Running, Blocked, Review, Done, or Archived. Scheduled and Review exist only on a Hermes server.
 _Avoid_: Column, lane, stage
+
+**Scheduled**:
+The Status of a Card parked until a time or condition, waiting on the clock rather than a person. The Dispatcher skips it.
+_Avoid_: Delayed, snoozed
+
+**Review**:
+The Status of a Card whose work is finished and waits for a person to check it before Done.
+_Avoid_: Awaiting approval, QA
 
 **Column**:
 A visual grouping of Cards that share a Status.
@@ -79,3 +101,29 @@ _Avoid_: Bulk update, batch operation
 **Select Cards**:
 The mode for choosing Cards before applying a Bulk Action.
 _Avoid_: Multi-select, bulk mode
+
+## Tasks
+
+**Task Run**:
+One execution of a Task. On a Hermes server it is a session `cron_<task>_<time>`, and its output is that session's final reply; on a webui server it is an output file.
+_Avoid_: job run, execution
+
+## Sessions
+
+**Project**:
+A named group of sessions in the session list. On a webui server it is a tag the session carries, which Move to Project sets. On a Hermes server it is a set of host folders: a session belongs to the project with the deepest folder its working folder sits in, the host groups the rest into automatic per-repository projects, and Move to Project changes the session's working folder.
+_Avoid_: tag (for a Hermes project), workspace
+
+## Chat
+
+**Fork**:
+A chat created from another chat's history by Fork From Here or `/branch` (`/api/session/branch`). The server marks it `session_source: fork` with a `parent_session_id`, and ARC Hermes shows a "Forked from" row that opens the parent. Agent child sessions (subagents, cron, CLI `/new`) also carry a parent but are not Forks. On a Hermes host it is `session.branch`'s copy, marked by `_branched_from` in its row's `model_config`; a Hermes Duplicate is an independent copy with no parent, and no Fork.
+_Avoid_: Branch (for the chat), child session
+
+**Conversation target**:
+Which Hermes session a conversation attaches to: a bot's canonical Bot Chat, found by its title; a stored session, by its stored key; or a new session, created on first attach. Each target has its own draft and recent transcript (`ConversationTarget`).
+_Avoid_: chat target, session kind
+
+**Turn identity**:
+Which run a chat is following: a webui stream id, or for a Hermes session its stored key and the host's `turn_started_at`. A Hermes turn ends once `message.complete` and `session.info {running: false}` have both arrived.
+_Avoid_: stream id (for a Hermes turn), run id

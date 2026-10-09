@@ -119,12 +119,12 @@ final class AudioSessionCoordinatorTests: XCTestCase {
         var captureStates: [Bool] = []
         let coordinator = AudioSessionCoordinator(driver: driver) { captureStates.append($0) }
         let controller = ComposerVoiceInputController(
-            speechRecognizerFactory: { nil },
-            microphonePermissionRequester: { true },
-            appIsActive: { true },
-            audioSession: coordinator
+            speechRecognizerFactory: { _ in nil },
+            microphonePermission: { true },
+            audioSession: coordinator,
+            mayRecord: { true }
         )
-        controller.apiClient = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.invalid")))
+        controller.transcribe = APIClient(baseURL: try XCTUnwrap(URL(string: "https://example.invalid"))).dictationTranscriber
 
         let began = expectation(description: "composer audio activation started")
         let ended = expectation(description: "cancelled composer audio released")

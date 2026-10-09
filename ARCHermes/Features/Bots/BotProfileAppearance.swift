@@ -52,6 +52,29 @@ struct BotProfileAppearance: Equatable, Sendable {
     }
 }
 
+/// The swatches the editor and the create sheet offer for a drawn face. The first,
+/// stored as Desktop's `#ffffff`, is the adaptive one: white on a dark screen and
+/// black on a light one, so it never disappears into the background.
+struct BotAvatarColor: Identifiable {
+    let hex: String
+    let name: LocalizedStringResource
+    var id: String { hex }
+    var localizedName: String { String(localized: name) }
+    /// What the swatch and the face paint for this entry.
+    var swatch: Color { Color.botBody(hex) }
+
+    static let adaptiveHex = "#ffffff"
+
+    static let palette = [
+        BotAvatarColor(hex: adaptiveHex, name: "Auto"), BotAvatarColor(hex: "#a9703d", name: "Brown"),
+        BotAvatarColor(hex: "#ef4444", name: "Red"), BotAvatarColor(hex: "#f97316", name: "Orange"),
+        BotAvatarColor(hex: "#f59e0b", name: "Amber"), BotAvatarColor(hex: "#22c55e", name: "Green"),
+        BotAvatarColor(hex: "#14b8a6", name: "Teal"), BotAvatarColor(hex: "#38bdf8", name: "Blue"),
+        BotAvatarColor(hex: "#8b5cf6", name: "Purple"), BotAvatarColor(hex: "#ec4899", name: "Pink"),
+        BotAvatarColor(hex: "#8e8e93", name: "Gray")
+    ]
+}
+
 enum BotAvatarShape: String, CaseIterable, Identifiable, Sendable {
     case circle, blob, squircle, pill, triangle, hexagon, cloud, drop
     var id: String { rawValue }
@@ -153,6 +176,8 @@ struct BotAvatarMarkView: View {
             .offset(x: size * (0.12 + pose.gazeX), y: size * (-0.08 + pose.gazeY))
         }
         .rotationEffect(.degrees(pose.roll))
+        .scaleEffect(x: pose.scaleX, y: pose.scaleY, anchor: .bottom)
+        .offset(y: -size * pose.lift)
         .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
@@ -174,6 +199,8 @@ struct BotAvatarView: View {
     let size: CGFloat
     /// Photos never move; a drawn face blinks unless the caller asks for a frozen frame.
     var motion: BotFaceMotion = .idle
+    /// Replaces the pinned expression on a drawn face, for a state the title shows; photos ignore it.
+    var expression: BotAvatarExpression? = nil
 
     var body: some View {
         if let avatar {
@@ -181,8 +208,14 @@ struct BotAvatarView: View {
                 .frame(width: size, height: size)
                 .accessibilityHidden(true)
         } else {
-            BotAnimatedFaceView(name: profile.id, appearance: BotProfileAppearance(profile: profile), size: size, motion: motion)
+            BotAnimatedFaceView(name: profile.id, appearance: appearance, size: size, motion: motion)
         }
+    }
+
+    private var appearance: BotProfileAppearance {
+        var appearance = BotProfileAppearance(profile: profile)
+        if let expression { appearance.expression = expression.rawValue }
+        return appearance
     }
 }
 
@@ -203,8 +236,8 @@ private struct BotAvatarPresentation {
         let colors = ["#8b5cf6", "#38bdf8", "#14b8a6", "#22c55e", "#f59e0b", "#f97316", "#ef4444", "#ec4899"]
         shape = appearance.shape.flatMap(BotAvatarShape.init(rawValue:)) ?? shapes[Int(hash % UInt64(shapes.count))]
         let hex = appearance.color ?? colors[Int(hash % UInt64(colors.count))]
-        color = Color(botHex: hex) ?? .purple
-        eyeColor = Color.botHexIsDark(hex) ? .white.opacity(0.9) : .black.opacity(0.85)
+        color = Color.botBody(hex)
+        eyeColor = Color.botEyes(on: hex)
     }
 }
 
@@ -280,6 +313,24 @@ private struct BotAvatarBody: Shape {
 }
 
 extension Color {
+    /// The body color for a stored hex. Desktop's white is drawn adaptively here:
+    /// white in dark appearance, black in light.
+    static func botBody(_ hex: String) -> Color {
+        if hex.lowercased() == BotAvatarColor.adaptiveHex {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark ? .white : .black })
+        }
+        return Color(botHex: hex) ?? .purple
+    }
+
+    /// Eyes that contrast with `botBody(hex)` in both appearances.
+    static func botEyes(on hex: String) -> Color {
+        if hex.lowercased() == BotAvatarColor.adaptiveHex {
+            return Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+                ? UIColor.black.withAlphaComponent(0.85) : UIColor.white.withAlphaComponent(0.9) })
+        }
+        return botHexIsDark(hex) ? .white.opacity(0.9) : .black.opacity(0.85)
+    }
+
     init?(botHex: String) {
         let value = botHex.trimmingCharacters(in: .whitespacesAndNewlines)
         guard value.count == 7, value.first == "#", let rgb = UInt64(value.dropFirst(), radix: 16) else { return nil }

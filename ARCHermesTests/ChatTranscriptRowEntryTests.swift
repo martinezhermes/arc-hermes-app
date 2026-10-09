@@ -27,6 +27,23 @@ final class ChatTranscriptRowEntryTests: XCTestCase {
         XCTAssertFalse(ChatTranscriptRowFreshness.isFresh(timestamp: .nan, now: now))
         XCTAssertFalse(ChatTranscriptRowFreshness.isFresh(timestamp: .infinity, now: now))
     }
+    // Tool rows: only the newest row of a live group fades in (#873).
+
+    func testALiveGroupsNewestToolRowAnimatesIn() {
+        XCTAssertTrue(ToolActivityEntrance.animatesNewestRow(isLive: true, isReplaying: false, reduceMotion: false))
+    }
+
+    func testASettledGroupsToolRowsDrawInPlace() {
+        XCTAssertFalse(ToolActivityEntrance.animatesNewestRow(isLive: false, isReplaying: false, reduceMotion: false))
+    }
+
+    func testReduceMotionTurnsTheToolRowEntranceOff() {
+        XCTAssertFalse(ToolActivityEntrance.animatesNewestRow(isLive: true, isReplaying: false, reduceMotion: true))
+    }
+
+    func testToolRowsAReattachedStreamReplaysDrawInPlace() {
+        XCTAssertFalse(ToolActivityEntrance.animatesNewestRow(isLive: true, isReplaying: true, reduceMotion: false))
+    }
 }
 
 @MainActor
@@ -47,11 +64,12 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             messages: messages,
             displayedTranscriptMessages: displayed,
             compressionReferenceCard: nil,
-            reasoningGroups: [],
+            reasoningGroupsByAnchorID: [:],
             completedToolCallGroupsForAnchor: { _ in [] },
             liveReasoningText: "",
             reasoningAnchorMessageID: nil,
             liveToolCalls: [],
+            isReplayingLiveToolCalls: false,
             toolCallAnchorMessageID: nil,
             streamingAssistantMessageID: nil,
             liveTokensPerSecond: nil,
@@ -60,14 +78,16 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             hidesRunStatusAccessibility: false,
             showsThinkingAndToolCards: false,
             workingRowStartedAt: nil,
+            requestWithdrawal: nil,
             showsScrollToBottomButton: false,
             shouldFollowLatestMessage: true,
             isDisclosureSettling: false,
             latestTranscriptMessageRole: "assistant",
             isScrolledNearBottom: true,
             activeStreamID: nil,
-            streamingScrollTrigger: 0,
+            streamingScrollTrigger: { 0 },
             transcriptRelayoutScrollToken: 0,
+            completedResponseRenderID: nil,
             bottomAnchorID: "bottom",
             transcriptSpacing: 8,
             transcriptBottomInsetHeight: 0,

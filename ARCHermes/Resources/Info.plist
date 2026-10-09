@@ -35,6 +35,12 @@
 	<false/>
 	<key>ARCHermesAppGroupIdentifier</key>
 	<string>$(APP_GROUP_IDENTIFIER)</string>
+	<key>HermesAPSEnvironment</key>
+	<string>$(APS_ENVIRONMENT)</string>
+	<key>HermesKeychainAccessGroup</key>
+	<string>$(KEYCHAIN_ACCESS_GROUP)</string>
+	<key>HermesKeychainService</key>
+	<string>$(KEYCHAIN_SERVICE)</string>
 	<key>ARCHermesKeychainService</key>
 	<string>$(KEYCHAIN_SERVICE)</string>
 	<key>ARCHermesURLScheme</key>
@@ -50,18 +56,69 @@
 	     supported ATS form; that premise is empirically false and removing the
 	     entry regresses device connectivity. -->
 	<key>NSAppTransportSecurity</key>
+<dict>
+	<key>NSAllowsLocalNetworking</key>
+	<true/>
+	<key>NSExceptionDomains</key>
 	<dict>
-		<key>NSExceptionDomains</key>
+		<key>10.0.0.0/8</key>
 		<dict>
-			<key>100.64.0.0/10</key>
-			<dict>
-				<key>NSExceptionAllowsInsecureHTTPLoads</key>
-				<true/>
-			</dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>100.64.0.0/10</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>127.0.0.0/8</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>169.254.0.0/16</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>172.16.0.0/12</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>192.168.0.0/16</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>::1</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>fc00::/7</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>fe80::/10</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+		</dict>
+		<key>ts.net</key>
+		<dict>
+			<key>NSExceptionAllowsInsecureHTTPLoads</key>
+			<true/>
+			<key>NSIncludesSubdomains</key>
+			<true/>
 		</dict>
 	</dict>
+</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>ARC Hermes connects to your Hermes backend on your local network to load bots and chat.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>ARC Hermes uses Face ID to unlock the app when the lock is on.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>ARC Hermes needs microphone access to dictate text into the message composer.</string>
 	<key>NSCameraUsageDescription</key>
