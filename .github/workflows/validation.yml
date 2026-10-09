@@ -13,13 +13,23 @@ concurrency:
 jobs:
   apple-validation:
     name: Apple validation
-    runs-on: xcode-27
+    # Enable the app-specific Temporal Loom registration only after its smoke
+    # and full XCTest run pass. External fork PRs retain hosted execution.
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'xcode-27' || vars.ARC_APP_MACOS_RUNNER || 'xcode-27' }}
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Record runner identity
+        run: |
+          printf 'Runner: %s / %s / %s\n' "$RUNNER_NAME" "$RUNNER_OS" "$RUNNER_ARCH"
+          id -un
+          hostname
       - name: Build app and extensions and run the complete XCTest suite
         env:
           ARCHERMES_VALIDATION_DIR: ${{ runner.temp }}/archermes-validation
+          # A self-hosted simulator belongs to the CI account. Hosted runners
+          # continue using the destination declared in scripts/validate.
+          ARCHERMES_DESTINATION: ${{ runner.environment == 'self-hosted' && vars.ARC_APP_SIMULATOR_DESTINATION || 'platform=iOS Simulator,name=iPhone 17,OS=27.0' }}
         run: scripts/validate
       - name: Preserve test evidence
         if: always()
