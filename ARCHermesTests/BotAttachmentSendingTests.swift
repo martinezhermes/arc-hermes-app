@@ -20,6 +20,52 @@ import UIKit
         }
     }
 
+    private var transparentPhoto: Data {
+        let format = UIGraphicsImageRendererFormat.default()
+        format.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4), format: format).pngData { context in
+            UIColor.red.withAlphaComponent(0.5).setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+    }
+
+    func testSharedRetentionProtectsOpenBotAndReclaimsItOnlyAfterSuspending() async throws {
+        let copies = BotAttachmentCopies()
+        let drafts = ChatDraftStore(persistence: BotMemoryDrafts(), attachmentStore: copies, retainedByteLimit: 4)
+        let model = make(BotFixtureWire(), drafts: drafts, copies: copies)
+        await model.recover()
+        model.editDraft("Keep typed text")
+        await model.attachments.stage(data: Data([1, 2, 3, 4]), filename: "note.txt")
+        XCTAssertEqual(model.attachments.items.count, 1)
+        let webui = drafts.makeAttachmentLease()
+        do {
+            _ = try await drafts.stageAttachment(data: Data([5]), filename: "webui", lease: webui)
+            XCTFail("An open Bot composer shares the same protected budget")
+        } catch {}
+        model.suspend()
+        _ = try await drafts.stageAttachment(data: Data([5]), filename: "webui", lease: webui)
+        await model.recover()
+        XCTAssertEqual(model.attachments.items, [], "Resuming a retained model must reload evicted attachment records")
+        XCTAssertEqual(model.draft, "Keep typed text")
+        let inventory = try await copies.retainedFileBytes()
+        XCTAssertEqual(inventory.values.reduce(0, +), 1)
+        model.suspend()
+    }
+
+    func testTransparentImageStaysPNGWhenStaged() async throws {
+        let copies = BotAttachmentCopies()
+        let model = make(BotFixtureWire(), drafts: store(), copies: copies)
+        await model.recover()
+        await model.attachments.stage(data: transparentPhoto, filename: "overlay.png")
+        let item = try XCTUnwrap(model.attachments.items.first)
+        XCTAssertEqual(item.name, "overlay.png")
+        XCTAssertEqual(item.mime, "image/png")
+        let file = try XCTUnwrap(item.draftFileName)
+        let bytes = try await copies.data(named: file)
+        XCTAssertTrue(bytes.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+        model.suspend()
+    }
+
     func testPickerStagesLocallyRestoresOnlyItsConnectionAndRemovalDeletesCopy() async throws {
         let drafts = store(); let copies = BotAttachmentCopies(); let id = UUID(); let wire = BotFixtureWire()
         let model = make(wire, connectionID: id, drafts: drafts, copies: copies)
@@ -192,6 +238,7 @@ import UIKit
 actor BotAttachmentCopies: ChatDraftAttachmentStoring {
     private var values: [String: Data] = [:]
     var count: Int { values.count }
+    func retainedFileBytes() async throws -> [String: Int] { values.mapValues(\.count) }
     func save(data: Data, suggestedFilename: String) -> String {
         let name = UUID().uuidString + "-" + suggestedFilename; values[name] = data; return name
     }
@@ -199,10 +246,30 @@ actor BotAttachmentCopies: ChatDraftAttachmentStoring {
         guard let data = values[fileName] else { throw BotAttachmentFailure.unreadable }; return data
     }
     func delete(named fileName: String) { values[fileName] = nil }
+    func fileURL(named fileName: String) throws -> URL { throw CocoaError(.fileNoSuchFile) }
     func sweep(keepingReferenced fileNames: Set<String>, olderThan maxAge: TimeInterval) {}
 }
 
 extension BotAttachmentSendingTests {
+    func testPNGImageHTTPUploadUsesPNGDataURL() async throws {
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [BotArtifactHTTPFixture.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel(); BotArtifactHTTPFixture.handler = nil }
+        BotArtifactHTTPFixture.handler = { request in
+            let payload = apiTestBodyData(from: request).flatMap {
+                (try? JSONSerialization.jsonObject(with: $0)) as? [String: String]
+            }
+            XCTAssertEqual(payload?["filename"], "overlay.png")
+            XCTAssertTrue(payload?["data_url"]?.hasPrefix("data:image/png;base64,") == true)
+            return (200, [:], Data(#"{"ok":true,"path":"/profile/images/overlay.png"}"#.utf8))
+        }
+        let path = try await BotAttachmentUpload.send(try BotAttachmentUpload.request(
+            data: transparentPhoto, filename: "overlay.png", profile: "inbox-triage", base: URL(string: "https://bot.example")!
+        ), on: session)
+        XCTAssertEqual(path, "/profile/images/overlay.png")
+    }
+
     func testImageHTTPUploadUsesProfileAndReturnedPathAndRejectsMissingAcknowledgment() async throws {
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [BotArtifactHTTPFixture.self]
@@ -215,14 +282,14 @@ extension BotAttachmentSendingTests {
                            [URLQueryItem(name: "profile", value: "inbox-triage")])
             return (200, [:], Data(#"{"ok":true,"path":"/profile/images/photo.jpg","future":42}"#.utf8))
         }
-        let path = try await BotAttachmentUpload.image(session: session, base: URL(string: "https://bot.example")!,
-                                                      data: photo, filename: "photo.jpg", profile: "inbox-triage")
+        let request = try BotAttachmentUpload.request(data: photo, filename: "photo.jpg", profile: "inbox-triage",
+                                                      base: URL(string: "https://bot.example")!)
+        let path = try await BotAttachmentUpload.send(request, on: session)
         XCTAssertEqual(path, "/profile/images/photo.jpg")
         for body in [#"{"path":"/images/photo.jpg"}"#, #"{"ok":true,"path":"https://other.example/photo.jpg"}"#] {
             BotArtifactHTTPFixture.handler = { _ in (200, [:], Data(body.utf8)) }
             do {
-                _ = try await BotAttachmentUpload.image(session: session, base: URL(string: "https://bot.example")!,
-                                                       data: photo, filename: "photo.jpg", profile: "inbox-triage")
+                _ = try await BotAttachmentUpload.send(request, on: session)
                 XCTFail("Missing or invalid acknowledgment accepted")
             } catch { XCTAssertEqual(error as? BotFailure, .unsupported) }
         }

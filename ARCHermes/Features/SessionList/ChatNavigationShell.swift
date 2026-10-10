@@ -1,5 +1,20 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var navigationSurfaceIsActive = true
+}
+
+/// A mounted pane keeps its draft and stream while only its local interaction pauses.
+struct ChatPaneActivity: Equatable {
+    let sidebar: Bool
+    let detail: Bool
+
+    init(wide: Bool, sidebarPresented: Bool, isRevealing: Bool) {
+        sidebar = sidebarPresented && !isRevealing
+        detail = wide || (!sidebarPresented && !isRevealing)
+    }
+}
+
 /// Layout policy shared by the live container and its regression tests.
 enum ChatSidebarLayout {
     static func allowsReveal(startLocation: CGPoint, shellFrame: CGRect, excludedFrame: CGRect) -> Bool {
@@ -18,6 +33,14 @@ enum ChatSidebarLayout {
         }
         // Leave a tappable portion of the chat visible on narrow windows.
         return max(0, min(available * 0.8, available - 44))
+    }
+
+    /// GestureState may be gone at release; commit the final total translation from the saved base.
+    static func completedResizeWidth(drag: ChatSidebarDrag?, baseWidth: CGFloat,
+                                     translation: CGFloat, direction: CGFloat, available: CGFloat) -> CGFloat {
+        width(available: available,
+              preferred: (drag?.startWidth ?? baseWidth) + translation * (drag?.direction ?? direction),
+              wide: true)
     }
 
     static func reveal(width: CGFloat, presented: Bool, translation: CGFloat) -> CGFloat {
@@ -110,6 +133,8 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
         GeometryReader { geometry in
             let available = geometry.size.width
             let wide = ChatSidebarLayout.isWide(available: available, regularSizeClass: sizeClass == .regular)
+            let activity = ChatPaneActivity(wide: wide, sidebarPresented: isPresented,
+                                            isRevealing: revealDrag?.isHorizontal == true)
             let baseWidth = ChatSidebarLayout.width(available: available, preferred: preferredWidth, wide: wide)
             let width = ChatSidebarLayout.width(available: available,
                 preferred: resizeDrag.map { $0.startWidth + $0.translation } ?? baseWidth, wide: wide)
@@ -123,6 +148,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
 
             ZStack(alignment: .leading) {
                 sidebar
+                    .environment(\.navigationSurfaceIsActive, activity.sidebar)
+                    .disabled(!activity.sidebar)
+                    .scrollDisabled(!activity.sidebar)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
                     .offset(x: sign * (reveal - width))
@@ -131,6 +159,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .simultaneousGesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)), isEnabled: !wide && isPresented)
 
                 detail
+                    .environment(\.navigationSurfaceIsActive, activity.detail)
+                    .disabled(!activity.detail)
+                    .scrollDisabled(!activity.detail)
                     .frame(width: wide ? max(0, available - reveal) : available)
                     .frame(maxHeight: .infinity)
                     .background(.background)
@@ -185,11 +216,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                                     state?.update(value.translation)
                                 }
                                 .onEnded { value in
-                                    guard let drag = resizeDrag else { return }
-                                    preferredWidth = ChatSidebarLayout.width(
-                                        available: available,
-                                        preferred: drag.startWidth + value.translation.width * drag.direction,
-                                        wide: true
+                                    preferredWidth = ChatSidebarLayout.completedResizeWidth(
+                                        drag: resizeDrag, baseWidth: baseWidth,
+                                        translation: value.translation.width, direction: sign, available: available
                                     )
                                 }
                         )

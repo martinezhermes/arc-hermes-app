@@ -25,18 +25,39 @@ enum BotAttachmentFailure: Error, LocalizedError {
     private let drafts: ChatDraftStore
     private let key: ChatDraftKey
     private var generation = 0
+    private var composerLease: ChatDraftAttachmentLease?
 
     init(key: ChatDraftKey, drafts: ChatDraftStore, copies: any ChatDraftAttachmentStoring) {
         self.key = key; self.drafts = drafts; self.copies = copies
+        composerLease = drafts.makeAttachmentLease(key: key)
     }
 
     func cancelImport() { generation += 1 }
+    func activate() {
+        if composerLease == nil { composerLease = drafts.makeAttachmentLease(key: key) }
+        syncProtection()
+    }
+    func deactivate() { composerLease = nil }
+
+    func protectOperation() -> ChatDraftAttachmentLease {
+        let lease = drafts.makeAttachmentLease()
+        lease.files = Set(items.compactMap(\.draftFileName))
+        return lease
+    }
+    private func syncProtection() {
+        composerLease?.files = Set(items.compactMap(\.draftFileName))
+    }
+
     func report(_ error: Error) { errorMessage = error.localizedDescription }
 
     func restore(_ records: [ChatDraftAttachment]) async {
+        let lease = drafts.makeAttachmentLease()
+        lease.files = Set(records.compactMap(\.file))
+        defer { withExtendedLifetime(lease) {} }
         let owner = generation
         items = records.map { PendingAttachment(id: $0.id, name: $0.name, path: "", mime: $0.mime,
                                                size: $0.size, isImage: $0.isImage, draftFileName: $0.file) }
+        syncProtection()
         for record in records where record.isImage {
             guard let file = record.file, let data = try? await copies.data(named: file) else { continue }
             let thumbnail = await ImagePreviewDownsampler.previewDataAsync(from: data, maxPixelSize: 512)
@@ -52,7 +73,9 @@ enum BotAttachmentFailure: Error, LocalizedError {
         guard !isImporting else { return }
         isImporting = true; errorMessage = nil
         let owner = generation
-        defer { isImporting = false }
+        let lease = protectOperation()
+        lease.key = key
+        defer { isImporting = false; withExtendedLifetime(lease) {} }
         var saved: String?
         do {
             guard items.count < 8, !data.isEmpty, data.count <= Self.maximumFileBytes,
@@ -62,11 +85,22 @@ enum BotAttachmentFailure: Error, LocalizedError {
             guard owner == generation, !Task.isCancelled else { return }
             guard prepared.data.count <= Self.maximumTotalBytes - items.reduce(0, { $0 + ($1.size ?? Self.maximumFileBytes) })
             else { throw BotAttachmentFailure.limit }
-            let file = try await copies.save(data: prepared.data, suggestedFilename: prepared.name)
+            let file = try await drafts.stageAttachment(
+                data: prepared.data, filename: prepared.name, lease: lease,
+                maximumFileBytes: Self.maximumFileBytes, in: copies
+            )
             saved = file
-            guard owner == generation, !Task.isCancelled else { await copies.delete(named: file); return }
+            guard owner == generation, !Task.isCancelled else {
+                lease.files.remove(file)
+                await drafts.deleteAttachmentIfUnreferenced(file, from: copies)
+                return
+            }
             let thumbnail = prepared.image ? await ImagePreviewDownsampler.previewDataAsync(from: prepared.data, maxPixelSize: 512) : nil
-            guard owner == generation, !Task.isCancelled else { await copies.delete(named: file); return }
+            guard owner == generation, !Task.isCancelled else {
+                lease.files.remove(file)
+                await drafts.deleteAttachmentIfUnreferenced(file, from: copies)
+                return
+            }
             let item = PendingAttachment(name: prepared.name, path: "", mime: prepared.mime, size: prepared.data.count,
                                          isImage: prepared.image, thumbnailData: thumbnail, draftFileName: file)
             let next = items + [item]
@@ -74,9 +108,13 @@ enum BotAttachmentFailure: Error, LocalizedError {
             try await drafts.flush()
             // The durable record owns the file even if navigation happened during flush.
             items = next
+            syncProtection()
         } catch {
             drafts.setAttachments(items.map(ChatDraftAttachment.init(pending:)), for: key)
-            if let saved { await copies.delete(named: saved) }
+            if let saved {
+                lease.files.remove(saved)
+                await drafts.deleteAttachmentIfUnreferenced(saved, from: copies)
+            }
             if owner == generation { errorMessage = error.localizedDescription }
         }
     }
@@ -91,8 +129,9 @@ enum BotAttachmentFailure: Error, LocalizedError {
         do {
             try await drafts.flush()
             items = next
+            syncProtection()
             for item in previous where item.id == id {
-                if let file = item.draftFileName { await copies.delete(named: file) }
+                if let file = item.draftFileName { await drafts.deleteAttachmentIfUnreferenced(file, from: copies) }
             }
         } catch {
             drafts.setAttachments(previous.map(ChatDraftAttachment.init(pending:)), for: key)
@@ -110,10 +149,15 @@ enum BotAttachmentFailure: Error, LocalizedError {
     /// Called only after the cleared draft has reached disk.
     func consumed() async {
         let old = items; items = []; errorMessage = nil
-        for item in old { if let file = item.draftFileName { await copies.delete(named: file) } }
+        syncProtection()
+        for item in old { if let file = item.draftFileName { await drafts.deleteAttachmentIfUnreferenced(file, from: copies) } }
     }
 
-    nonisolated private static func prepare(data: Data, filename: String) throws -> (data: Data, name: String, mime: String, image: Bool) {
+    /// A file as Hermes receives it: an image re-encoded as JPEG, or PNG when it has
+    /// transparency, at most 4096 px on its longest edge; a PDF, text, audio or common
+    /// document as it is. Throws for any other type. Slow on large images, so callers
+    /// run it off the main actor. A Hermes session's chat stages with it too (#1012).
+    nonisolated static func prepare(data: Data, filename: String) throws -> (data: Data, name: String, mime: String, image: Bool) {
         let name = URL(fileURLWithPath: filename).lastPathComponent
         guard let type = UTType(filenameExtension: URL(fileURLWithPath: name).pathExtension) else { throw BotAttachmentFailure.type }
         if type.conforms(to: .image) {
@@ -123,11 +167,17 @@ enum BotAttachmentFailure: Error, LocalizedError {
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceThumbnailMaxPixelSize: 4096
                   ] as CFDictionary) else { throw BotAttachmentFailure.unreadable }
+            let alpha = image.alphaInfo
+            let hasAlpha = alpha == .first || alpha == .last || alpha == .premultipliedFirst
+                || alpha == .premultipliedLast || alpha == .alphaOnly
+            let format = hasAlpha ? UTType.png : UTType.jpeg
             let output = NSMutableData()
-            guard let destination = CGImageDestinationCreateWithData(output, UTType.jpeg.identifier as CFString, 1, nil) else { throw BotAttachmentFailure.unreadable }
-            CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.9] as CFDictionary)
+            guard let destination = CGImageDestinationCreateWithData(output, format.identifier as CFString, 1, nil) else { throw BotAttachmentFailure.unreadable }
+            let options: [CFString: Any] = hasAlpha ? [:] : [kCGImageDestinationLossyCompressionQuality: 0.9]
+            CGImageDestinationAddImage(destination, image, options as CFDictionary)
             guard CGImageDestinationFinalize(destination), output.length <= maximumFileBytes else { throw BotAttachmentFailure.limit }
-            return (output as Data, URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent + ".jpg", "image/jpeg", true)
+            let base = URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent
+            return (output as Data, base + (hasAlpha ? ".png" : ".jpg"), hasAlpha ? "image/png" : "image/jpeg", true)
         }
         let ext = URL(fileURLWithPath: name).pathExtension.lowercased()
         guard type.conforms(to: .text) || type.conforms(to: .pdf) || type.conforms(to: .audio)

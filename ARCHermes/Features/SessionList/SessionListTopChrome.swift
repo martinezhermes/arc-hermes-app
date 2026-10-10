@@ -1,5 +1,21 @@
 import SwiftUI
 
+/// The sidebar's action controls share one glyph, hit target and interactive glass shape.
+struct SessionsChromeCircleButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .labelStyle(.iconOnly)
+            .font(.system(size: 24, weight: .medium))
+            .foregroundStyle(.tint)
+            .opacity(isEnabled ? 1 : 0.45)
+            .frame(width: 48, height: 48)
+            .sessionsChromeGlass(isInteractive: true, in: Circle())
+            .contentShape(Circle())
+    }
+}
+
 /// Production-owned mutation model for the search chrome (#21): expand,
 /// filter, and close all operate on one query. `SessionListView` owns an
 /// instance and derives its `@State` flags from it, so the open/type/clear/
@@ -45,6 +61,7 @@ struct SessionListSearchChrome: Equatable {
 /// Controls for the session list's native safe-area bar. The enclosing bar
 /// supplies the scroll-edge treatment; this view supplies no backdrop.
 struct SessionListTopChrome: View {
+    @Environment(\.navigationSurfaceIsActive) private var navigationSurfaceIsActive
     static let headerAccessibilityIdentifier = "session-list-top-chrome"
     static let searchFieldAccessibilityIdentifier = "session-list-search-field"
     static let searchToggleAccessibilityIdentifier = "session-list-search-toggle"
@@ -88,6 +105,9 @@ struct SessionListTopChrome: View {
         .onChange(of: searchFieldIsFocused.wrappedValue) { _, newValue in
             onSearchFocusChange(newValue)
         }
+        .onChange(of: navigationSurfaceIsActive) { _, active in
+            if !active { searchFieldIsFocused.wrappedValue = false }
+        }
     }
 
     private var searchChrome: some View {
@@ -101,7 +121,7 @@ struct SessionListTopChrome: View {
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(searchChromeIsExpanded ? .secondary : .primary)
+                    .foregroundStyle(headerLogoColor)
                     .frame(width: Self.iconVisualSize, height: Self.iconVisualSize)
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
@@ -125,6 +145,7 @@ struct SessionListTopChrome: View {
             }
         }
         .frame(maxWidth: searchChromeIsExpanded ? .infinity : nil, alignment: .trailing)
+        .tint(headerLogoColor)
         .sessionsChromeGlass(
             isInteractive: true,
             in: Capsule()
@@ -169,7 +190,7 @@ struct SessionListTopChrome: View {
         HapticButton(feedbackStyle: .medium, action: onCloseSearch) {
             Image(systemName: "xmark")
                 .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(headerLogoColor)
                 .frame(width: Self.iconHitTarget, height: Self.iconHitTarget)
                 .contentShape(Rectangle())
         }

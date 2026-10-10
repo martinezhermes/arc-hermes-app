@@ -9,6 +9,7 @@ struct SessionRowView: View {
     var showsMessageCount = true
     var showsWorkspace = true
     var isViewingCachedData = false
+    var isUnread = false
     /// The resolved attention state for this row, supplied by the screen that
     /// polls the server (`SessionListViewModel`). Screens that do not poll pass
     /// nothing and the row falls back to what the session itself reports.
@@ -16,12 +17,20 @@ struct SessionRowView: View {
     /// Set only while a remote content search is showing this row, so the row
     /// can say why it matched.
     var searchExcerpt: SessionSearchExcerpt?
+    /// Labels an archived row "Archived": set on the Sessions list, where only a Hermes search
+    /// shows one (#1053), and not on the Archived screen, whose rows all are.
+    var labelsArchived = false
+    /// The Profile the row belongs to, tagged on a Hermes list of every Profile's sessions (#709).
+    var profileTag: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            if Self.isActiveStreaming(session) {
-                ActiveSessionStreamingIndicator()
-                    .padding(.top, streamingIndicatorTopPadding)
+            if isUnread && effectiveAttentionState == nil {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 10, height: 10)
+                    .padding(.top, unreadDotTopPadding)
+                    .accessibilityHidden(true)
             }
 
             rowContent
@@ -34,12 +43,12 @@ struct SessionRowView: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
+    /// The row's title; an untitled Hermes row shows its first prompt (`preview`, #1046).
     static func displayTitle(for session: SessionSummary) -> String {
-        let title = session.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let title, !title.isEmpty else {
-            return String(localized: "Untitled Session")
-        }
-        return title
+        let title = [session.title, session.hermes?.preview]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        return title ?? String(localized: "Untitled Session")
     }
 
     static func isActiveStreaming(_ session: SessionSummary) -> Bool {
@@ -87,7 +96,9 @@ struct SessionRowView: View {
     static func accessibilityStateLabels(
         for session: SessionSummary,
         isViewingCachedData: Bool,
-        attentionState: SessionRowAttentionState? = nil
+        attentionState: SessionRowAttentionState? = nil,
+        isUnread: Bool = false,
+        labelsArchived: Bool = false
     ) -> [String] {
         var labels: [String] = []
 
@@ -97,6 +108,8 @@ struct SessionRowView: View {
             isViewingCachedData: isViewingCachedData
         ) {
             labels.append(state.accessibilityLabel)
+        } else if isUnread {
+            labels.append(String(localized: "Unread"))
         }
 
         if session.pinned == true {
@@ -113,6 +126,10 @@ struct SessionRowView: View {
 
         if session.isSessionReadOnly {
             labels.append(String(localized: "Read-only"))
+        }
+
+        if labelsArchived && session.archived == true {
+            labels.append(String(localized: "Archived"))
         }
 
         return labels
@@ -186,18 +203,23 @@ struct SessionRowView: View {
 
     /// One line, one meaning: the attention state when the session wants
     /// something, otherwise the relative time. Never both, so the row keeps its
-    /// height in every state.
+    /// height in every state. Only the time text ticks, once a minute, so an
+    /// idle list stays current without re-rendering whole rows.
     @ViewBuilder
     private var trailingStatusSlot: some View {
         if let effectiveAttentionState {
             attentionStateText(effectiveAttentionState)
-        } else if let relativeDate {
-            relativeDateText(relativeDate)
+        } else if Self.lastActivityDate(for: session) != nil {
+            // The timeline is only the once-a-minute trigger. `context.date` is the
+            // minute's start, so a mid-minute render would read "in 38s".
+            TimelineView(.everyMinute) { _ in
+                relativeDateText(Self.relativeDateLabel(for: session, now: .now) ?? "")
+            }
         }
     }
 
     private var showsTrailingStatus: Bool {
-        effectiveAttentionState != nil || relativeDate != nil
+        effectiveAttentionState != nil || Self.lastActivityDate(for: session) != nil
     }
 
     private var effectiveAttentionState: SessionRowAttentionState? {
@@ -263,6 +285,10 @@ struct SessionRowView: View {
         if dynamicTypeSize.isAccessibilitySize {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
+                    if let profileTag {
+                        SessionProfileTag(profile: profileTag)
+                    }
+
                     if !visibleStateBadges.isEmpty {
                         stateBadgesRow
                     }
@@ -280,6 +306,10 @@ struct SessionRowView: View {
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
+                if let profileTag {
+                    SessionProfileTag(profile: profileTag)
+                }
+
                 if !visibleStateBadges.isEmpty {
                     stateBadgesRow
                 }
@@ -315,8 +345,7 @@ struct SessionRowView: View {
     }
 
     private var visibleStateBadges: [SessionRowStateBadgeKind] {
-        // Streaming has no badge: the trailing "Working" label and the pulsing
-        // dot already say it, and a third marker only added noise.
+        // Streaming has no badge: the trailing "Working" label already says it.
         var badges: [SessionRowStateBadgeKind] = []
 
         if isViewingCachedData {
@@ -327,6 +356,10 @@ struct SessionRowView: View {
             badges.append(.readOnly)
         }
 
+        if labelsArchived && session.archived == true {
+            badges.append(.archived)
+        }
+
         return badges
     }
 
@@ -335,7 +368,7 @@ struct SessionRowView: View {
     }
 
     private var showsSupplementalContent: Bool {
-        metadataLabel != nil || showsStateBadges
+        metadataLabel != nil || showsStateBadges || profileTag != nil
     }
 
     private var rowContentSpacing: CGFloat {
@@ -359,18 +392,22 @@ struct SessionRowView: View {
         dynamicTypeSize.isAccessibilitySize ? 3 : 1
     }
 
-    private var streamingIndicatorTopPadding: CGFloat {
+    private var unreadDotTopPadding: CGFloat {
         dynamicTypeSize.isAccessibilitySize ? 8 : 7
     }
 
-    private var relativeDate: String? {
+    /// The row's "2h ago" text measured against `now`: the wall clock at each
+    /// `TimelineView` tick for the visible label, render time for VoiceOver.
+    /// Nil without a timestamp.
+    static func relativeDateLabel(for session: SessionSummary, now: Date) -> String? {
+        guard let lastActivity = lastActivityDate(for: session) else { return nil }
+        return SessionRelativeDateFormatter.shared.localizedString(for: lastActivity, relativeTo: now)
+    }
+
+    private static func lastActivityDate(for session: SessionSummary) -> Date? {
         let timestamp = session.lastMessageAt ?? session.updatedAt ?? session.createdAt
         guard let timestamp, timestamp > 0 else { return nil }
-
-        return SessionRelativeDateFormatter.shared.localizedString(
-            for: Date(timeIntervalSince1970: timestamp),
-            relativeTo: Date()
-        )
+        return Date(timeIntervalSince1970: timestamp)
     }
 
     private var accessibilitySummary: String {
@@ -380,17 +417,25 @@ struct SessionRowView: View {
             parts.append(String(localized: "Matched: \(searchExcerpt.text)"))
         }
 
+        if let profileTag {
+            parts.append(String(localized: "Profile: \(profileTag)"))
+        }
+
         parts.append(contentsOf: Self.accessibilityStateLabels(
             for: session,
             isViewingCachedData: isViewingCachedData,
-            attentionState: attentionState
+            attentionState: attentionState,
+            isUnread: isUnread,
+            labelsArchived: labelsArchived
         ))
 
         if let metadataLabel {
             parts.append(metadataLabel)
         }
 
-        if let relativeDate {
+        // Render time, not the minute tick: the label can lag until the row
+        // next re-renders (#876 Decision 6).
+        if let relativeDate = Self.relativeDateLabel(for: session, now: Date()) {
             parts.append(relativeDate)
         }
 
@@ -399,8 +444,8 @@ struct SessionRowView: View {
 }
 
 /// What one session row is asking of the user, shown where the relative time
-/// otherwise sits. `nil` means ready: nothing is waiting and the row shows its
-/// time as usual.
+/// otherwise sits. `nil` means no attention is pending: the row shows its
+/// time, with an unread dot when a newer settled reply exists.
 enum SessionRowAttentionState: String, Equatable {
     case approval
     case input
@@ -462,6 +507,7 @@ enum SessionRowAttentionState: String, Equatable {
 private enum SessionRowStateBadgeKind: String, Identifiable {
     case cached
     case readOnly
+    case archived
 
     var id: String { rawValue }
 
@@ -471,6 +517,8 @@ private enum SessionRowStateBadgeKind: String, Identifiable {
             return String(localized: "Cached")
         case .readOnly:
             return String(localized: "Read-only")
+        case .archived:
+            return String(localized: "Archived")
         }
     }
 
@@ -478,7 +526,7 @@ private enum SessionRowStateBadgeKind: String, Identifiable {
         switch self {
         case .cached:
             return .orange
-        case .readOnly:
+        case .readOnly, .archived:
             return .gray
         }
     }
@@ -498,6 +546,23 @@ private struct SessionSourceBadge: View {
     }
 }
 
+/// A row's Profile on a list of every Profile's sessions (#709). A Profile name is the user's own
+/// text, never a catalog key.
+private struct SessionProfileTag: View {
+    let profile: String
+
+    var body: some View {
+        Text(verbatim: profile)
+            .font(AppFont.caption2(weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(Color.secondary.opacity(0.12), in: Capsule())
+            .accessibilityHidden(true)
+    }
+}
+
 private struct SessionRowStateBadge: View {
     let badge: SessionRowStateBadgeKind
 
@@ -509,40 +574,6 @@ private struct SessionRowStateBadge: View {
             .padding(.vertical, 2)
             .background(badge.tint.opacity(0.12), in: Capsule())
             .accessibilityHidden(true)
-    }
-}
-
-private struct ActiveSessionStreamingIndicator: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isExpanded = false
-
-    var body: some View {
-        Circle()
-            .fill(.green)
-            .frame(width: 9, height: 9)
-            .scaleEffect(reduceMotion ? 1 : (isExpanded ? 1.4 : 1.0))
-            .accessibilityHidden(true)
-            .onAppear {
-                updateAnimation()
-            }
-            .onChange(of: reduceMotion) {
-                updateAnimation()
-            }
-            .onDisappear {
-                isExpanded = false
-            }
-    }
-
-    private func updateAnimation() {
-        guard !reduceMotion else {
-            isExpanded = false
-            return
-        }
-
-        isExpanded = false
-        withAnimation(.easeInOut(duration: 0.4).repeatForever(autoreverses: true)) {
-            isExpanded = true
-        }
     }
 }
 

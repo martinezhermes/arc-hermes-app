@@ -6,6 +6,7 @@ sessionDefaults:
   projectPath: "./ARCHermes.xcodeproj"
   scheme: "ARCHermes"
   configuration: "Debug"
+  derivedDataPath: ".build/DerivedData"
   simulatorName: "iPhone 17"
   bundleId: "com.martinezhermes.archermes"
 sentryDisabled: true

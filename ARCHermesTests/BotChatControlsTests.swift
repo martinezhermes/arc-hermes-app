@@ -8,11 +8,11 @@ import XCTest
     private let next = ModelCatalogOption(id: "model-b", displayName: "model-b", providerID: "provider")
 
     func testCatalogToleratesUnknownFieldsAndDeduplicatesRows() {
-        let catalog = BotModelCatalog(SettingsWire.catalog)
+        let catalog = HermesModelCatalog(SettingsWire.catalog)
         XCTAssertEqual(catalog.groups.count, 1)
         XCTAssertEqual(catalog.groups[0].models.count, 2)
         XCTAssertEqual(catalog.active?.id, "model-a")
-        XCTAssertTrue(BotModelCatalog(.object([:])).groups.isEmpty)
+        XCTAssertTrue(HermesModelCatalog(.object([:])).groups.isEmpty)
     }
 
     func testMissingContextDoesNotUseCumulativeInputAsCurrentUsage() {
@@ -26,9 +26,9 @@ import XCTest
     }
 
     func testModelWireValueAlwaysPinsSessionAndRejectsFlags() {
-        XCTAssertEqual(BotModelCatalog.sessionModelValue(next), "model-b --provider provider --session")
+        XCTAssertEqual(HermesModelCatalog.sessionModelValue(next), "model-b --provider provider --session")
         for id in ["m --global", "m\n--once", "—global", "--global"] {
-            XCTAssertNil(BotModelCatalog.sessionModelValue(.init(id: id, displayName: id, providerID: "provider")))
+            XCTAssertNil(HermesModelCatalog.sessionModelValue(.init(id: id, displayName: id, providerID: "provider")))
         }
     }
 
@@ -133,6 +133,29 @@ import XCTest
         await settings.apply(try XCTUnwrap(settings.prepare(.workspace("/new"))))
         XCTAssertEqual(settings.workspace, "/new")
         XCTAssertEqual(wire.writes.last?.0, "session.cwd.set")
+    }
+
+    /// A method the host lacks is the connection's to remember: a second chat on it never
+    /// sends the call, and a new connection starts with the control on.
+    func testAMissingMethodStaysOffForEveryChatOnTheConnection() async throws {
+        let wire = SettingsWire(), connection = UUID()
+        let first = BotChatControls(), second = BotChatControls()
+        await first.connect(context(connection), wire: wire)
+        first.snapshot(.object([:]), idle: true)
+        wire.failure = BotSettingFailure.rejected(-32601, "unknown method")
+        await first.apply(try XCTUnwrap(first.prepare(.workspace("/new"))))
+        XCTAssertFalse(first.mayChangeWorkspace)
+
+        await second.connect(.init(connectionID: connection, profile: "same-profile", runtime: "second", generation: 1), wire: wire)
+        second.snapshot(.object([:]), idle: true)
+        XCTAssertFalse(second.mayChangeWorkspace)
+        XCTAssertNil(second.prepare(.workspace("/new")))
+        XCTAssertEqual(wire.writes.map(\.0), ["session.cwd.set"])
+
+        let fresh = BotChatControls()
+        await fresh.connect(context(), wire: SettingsWire())
+        fresh.snapshot(.object([:]), idle: true)
+        XCTAssertTrue(fresh.mayChangeWorkspace)
     }
 
     func testSessionControlsUseKnownStatesAndOfferReverseAction() async throws {
@@ -241,9 +264,12 @@ import XCTest
     var afterDispatch: (() async -> Void)?
     var afterControlRead: (() async -> Void)?
     var writes: [(String, [String: BotJSON])] = []
+    /// The connection's missing methods: like the gateway, a -32601 adds its method.
+    var unavailableMethods: Set<String> = []
     func connect() async throws {}
     func close() {}
-    func call(_ method: String, _ params: [String: BotJSON], validateDispatch: (() throws -> Void)?) async throws -> BotJSON {
+    func call(_ call: HermesCall, validateDispatch: (() throws -> Void)?) async throws -> BotJSON {
+        let method = call.method, params = try call.params()
         if method == "model.options" {
             var fields = Self.catalog.fields!; fields["model"] = .string(active)
             return .object(fields)
@@ -256,6 +282,7 @@ import XCTest
         beforeDispatch?(); try validateDispatch?()
         writes.append((method, params))
         await afterDispatch?()
+        if case BotSettingFailure.rejected(-32601, _)? = failure { unavailableMethods.insert(method) }
         if let failure { throw failure }
         return response
     }

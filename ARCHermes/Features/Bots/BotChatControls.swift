@@ -25,7 +25,7 @@ import Observation
         var id: UUID { action.id }
     }
 
-    private(set) var catalog = BotModelCatalog(.null)
+    private(set) var catalog = HermesModelCatalog(.null)
     private(set) var workspace: String?
     private(set) var effort: String?
     private(set) var fast: Bool?
@@ -37,7 +37,9 @@ import Observation
     private(set) var isApplying = false
     private(set) var isLoading = false
     private(set) var context: Context?
-    private(set) var unavailable: Set<String> = []
+    /// Methods this chat stopped calling after a 403 or an unusable reply. A method the
+    /// host lacks (-32601) is the connection's to remember, for every chat on it.
+    private var refused: Set<String> = []
     private var readTask: Task<Void, Never>?
     private var readAgain = false
     private var readRevision = 0
@@ -47,6 +49,13 @@ import Observation
     private var lastContext: Context?
     private var idle = false
     private(set) var snapshotRevision = 0
+    /// False for a Hermes session's composer (#1015), which reads only the model catalog:
+    /// its goal and side work read `session.control` on their own (`HermesChatSideTasks`).
+    private let readsSessionControl: Bool
+
+    init(readsSessionControl: Bool = true) {
+        self.readsSessionControl = readsSessionControl
+    }
 
     var showsFast: Bool {
         guard fast != nil, let active = catalog.active else { return false }
@@ -57,6 +66,8 @@ import Observation
         guard let active = catalog.active else { return false }
         return catalog.capabilities[active.favoriteKey]?["reasoning"].flag != false
     }
+    /// Methods this chat won't call: its own refusals and the connection's missing methods.
+    private var unavailable: Set<String> { refused.union(wire?.unavailableMethods ?? []) }
     var mayChangeEffort: Bool { mayChangeModel && supportsEffort }
     var mayChangeFast: Bool { mayChangeModel && showsFast }
 
@@ -67,11 +78,11 @@ import Observation
     func connect(_ context: Context, wire: any BotTransport) async {
         disconnect()
         if lastContext?.connectionID != context.connectionID || lastContext?.profile != context.profile {
-            pendingModel = nil; unavailable = []; errorMessage = nil
+            pendingModel = nil; refused = []; errorMessage = nil
         }
         if lastContext?.runtime != context.runtime { pendingModel = nil }
         lastContext = context
-        catalog = BotModelCatalog(.null); controls = []
+        catalog = HermesModelCatalog(.null); controls = []
         workspace = nil; effort = nil; fast = nil; usage = BotChatUsage(.null); idle = false
         self.context = context; self.wire = wire
         await reload()
@@ -121,14 +132,15 @@ import Observation
         let revision = readRevision
         isLoading = true
         defer { if context == owner && revision == readRevision { isLoading = false } }
-        let params = parameters(owner)
-        for method in ["model.options", "session.control.read"] where !unavailable.contains(method) {
+        var reads: [HermesCall] = [.modelOptions(sessionID: owner.runtime, profile: owner.profile)]
+        if readsSessionControl { reads.append(.sessionControlRead(sessionID: owner.runtime, profile: owner.profile)) }
+        for call in reads where !unavailable.contains(call.method) {
             do {
-                let result = try await wire.call(method, params)
+                let result = try await wire.call(call)
                 guard context == owner, revision == readRevision, !Task.isCancelled else { return }
-                if method == "model.options" {
+                if case .modelOptions = call {
                     guard result["providers"].list != nil else { throw BotFailure.unsupported }
-                    catalog = BotModelCatalog(result)
+                    catalog = HermesModelCatalog(result)
                     if let pendingModel, catalog.active?.matchesSelection(modelID: pendingModel.id, providerID: pendingModel.providerID) == true {
                         self.pendingModel = nil
                     }
@@ -138,8 +150,9 @@ import Observation
                 }
             } catch {
                 guard context == owner, revision == readRevision, !Task.isCancelled else { return }
-                if isUnsupported(error) { unavailable.insert(method) }
-                else { errorMessage = error.localizedDescription }
+                // A -32601 needs nothing here: the connection has recorded it.
+                if isRefused(error) { refused.insert(call.method) }
+                else if !isUnsupported(error) { errorMessage = error.localizedDescription }
             }
         }
     }
@@ -158,34 +171,27 @@ import Observation
 
     func apply(_ action: Action, confirmed: Bool = false) async {
         guard action.context == context, let wire, allowed(action.change), !consumed.contains(action.id) else { return }
-        var params = parameters(action.context)
-        let method: String
+        let (runtime, profile) = (action.context.runtime, action.context.profile)
+        let call: HermesCall
         switch action.change {
         case .model(let option):
             guard action.expectedModel == catalog.active else {
                 errorMessage = BotFailure.stale.localizedDescription; return
             }
-            guard let value = BotModelCatalog.sessionModelValue(option) else {
+            guard let value = HermesModelCatalog.sessionModelValue(option) else {
                 errorMessage = String(localized: "This model identifier cannot be safely sent to this host."); return
             }
-            method = "config.set"
-            params["key"] = .string("model"); params["value"] = .string(value)
-            params["scope"] = .string("session")
-            params["confirm_expensive_model"] = .bool(confirmed)
+            call = .configSet(sessionID: runtime, profile: profile, setting: .model(value: value, confirmExpensive: confirmed))
         case .effort(let value):
-            method = "config.set"
-            params["key"] = .string("reasoning"); params["value"] = .string(value)
-            params["scope"] = .string("session")
+            call = .configSet(sessionID: runtime, profile: profile, setting: .reasoning(value))
         case .fast(let enabled):
-            method = "config.set"
-            params["key"] = .string("fast"); params["value"] = .string(enabled ? "fast" : "normal")
-            params["scope"] = .string("session")
+            call = .configSet(sessionID: runtime, profile: profile, setting: .fast(enabled))
         case .workspace(let path):
             guard !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-            method = "session.cwd.set"; params["cwd"] = .string(path)
+            call = .sessionCwdSet(sessionID: runtime, profile: profile, cwd: path)
         case .control(let control):
             guard let name = control.action else { return }
-            method = "session.control"; params["action"] = .string(name)
+            call = .sessionControl(sessionID: runtime, profile: profile, action: name)
         }
         errorMessage = nil; confirmation = nil; isApplying = true; activeAction = action.id
         // A read started before this write must not overwrite its authoritative response.
@@ -193,12 +199,12 @@ import Observation
         var dispatched = false
         defer { if activeAction == action.id { isApplying = false; activeAction = nil } }
         do {
-            let result = try await wire.call(method, params, validateDispatch: { [weak self] in
+            let result = try await wire.call(call, validateDispatch: { [weak self] in
                 guard let self, self.context == action.context, self.activeAction == action.id,
                       !Task.isCancelled else { throw BotFailure.stale }
                 if case .workspace = action.change, !self.idle { throw BotFailure.stale }
                 if case .control(let control) = action.change, !self.controls.contains(control) { throw BotFailure.stale }
-                if method == "config.set", self.catalog.active != action.expectedModel { throw BotFailure.stale }
+                if case .configSet = call, self.catalog.active != action.expectedModel { throw BotFailure.stale }
                 dispatched = true
                 self.consumed.insert(action.id)
             })
@@ -230,7 +236,7 @@ import Observation
             }
         } catch {
             guard context == action.context, activeAction == action.id, !Task.isCancelled else { return }
-            if isUnsupported(error) { unavailable.insert(method) }
+            if isRefused(error) { refused.insert(call.method) }
             if case BotSettingFailure.rejected = error { errorMessage = error.localizedDescription }
             else if !dispatched || isUnsupported(error) { errorMessage = error.localizedDescription }
             else { errorMessage = BotSettingFailure.unknownOutcome.localizedDescription }
@@ -240,18 +246,21 @@ import Observation
     private func allowed(_ change: Change) -> Bool {
         switch change {
         case .model: return mayChangeModel
-        case .effort(let value): return mayChangeEffort && BotModelCatalog.effortLevels.contains(value)
+        case .effort(let value): return mayChangeEffort && HermesModelCatalog.effortLevels.contains(value)
         case .fast: return mayChangeFast
         case .workspace: return mayChangeWorkspace
         case .control(let control): return mayControl && controls.contains(control) && control.action != nil
         }
     }
-    private func parameters(_ owner: Context) -> [String: BotJSON] {
-        ["session_id": .string(owner.runtime), "profile": .string(owner.profile)]
-    }
+    /// The host can't do this here: it refused (`isRefused`) or lacks the method (-32601).
     private func isUnsupported(_ error: Error) -> Bool {
-        if let failure = error as? BotFailure { return failure == .unsupported || failure == .rejected(-32601) }
-        if case BotSettingFailure.rejected(let code, _) = error { return code == -32601 || code == 403 }
+        if isRefused(error) || error as? BotFailure == .rejected(-32601) { return true }
+        if case BotSettingFailure.rejected(-32601, _) = error { return true }
         return false
+    }
+    /// A 403 or an unusable reply, which turns the method off for this chat alone.
+    private func isRefused(_ error: Error) -> Bool {
+        if case BotSettingFailure.rejected(403, _) = error { return true }
+        return error as? BotFailure == .unsupported
     }
 }

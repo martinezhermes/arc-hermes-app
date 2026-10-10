@@ -21,7 +21,7 @@ struct AppIconSettingsSection: View {
 
                 if let appIconErrorMessage {
                     Text(appIconErrorMessage)
-                        .font(AppFont.caption())
+                        .font(AppFont.footnote())
                         .foregroundStyle(.red)
                         .fixedSize(horizontal: false, vertical: true)
                 }

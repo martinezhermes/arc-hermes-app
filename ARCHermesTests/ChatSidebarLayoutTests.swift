@@ -2,6 +2,25 @@ import XCTest
 @testable import ARCHermes
 
 final class ChatSidebarLayoutTests: XCTestCase {
+    func testPaneActivityPausesCompactTransitionsAndPreservesWideInteraction() {
+        XCTAssertEqual(ChatPaneActivity(wide: false, sidebarPresented: false, isRevealing: false),
+                       ChatPaneActivity(wide: true, sidebarPresented: false, isRevealing: false))
+        let shown = ChatPaneActivity(wide: false, sidebarPresented: true, isRevealing: false)
+        XCTAssertTrue(shown.sidebar)
+        XCTAssertFalse(shown.detail)
+        for presented in [true, false] {
+            let moving = ChatPaneActivity(wide: false, sidebarPresented: presented, isRevealing: true)
+            XCTAssertFalse(moving.sidebar)
+            XCTAssertFalse(moving.detail)
+        }
+        let wide = ChatPaneActivity(wide: true, sidebarPresented: true, isRevealing: false)
+        XCTAssertTrue(wide.sidebar)
+        XCTAssertTrue(wide.detail)
+        let canceled = ChatPaneActivity(wide: false, sidebarPresented: false, isRevealing: false)
+        XCTAssertFalse(canceled.sidebar)
+        XCTAssertTrue(canceled.detail)
+    }
+
     func testComposerToolbarSwipeDoesNotRevealSidebar() {
         let shell = CGRect(x: 20, y: 40, width: 390, height: 800)
         let toolbar = CGRect(x: 36, y: 680, width: 300, height: 44)
@@ -77,6 +96,37 @@ final class ChatSidebarLayoutTests: XCTestCase {
         drag.update(CGSize(width: 40, height: 0))
         drag.update(CGSize(width: 60, height: 0))
         XCTAssertEqual(drag.startWidth + drag.translation, 360)
+    }
+
+    func testResizeReleaseCommitsEvenAfterTransientStateHasReset() {
+        let saved = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 330,
+            translation: 45, direction: 1, available: 1000)
+        XCTAssertEqual(saved, 375)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 1000, preferred: saved, wide: true), 375)
+        let next = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: saved,
+            translation: -60, direction: 1, available: 1000)
+        XCTAssertEqual(next, 315, "The next gesture starts at the committed width")
+    }
+
+    func testResizeReleaseMatchesLastRenderedWidthWithoutDoubleCountingTranslation() {
+        var drag = ChatSidebarDrag(width: 300, presented: true, direction: 1,
+                                   initialTranslation: .zero, resizing: true)
+        drag.update(CGSize(width: 50, height: 0))
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: drag, baseWidth: 300,
+            translation: 50, direction: 1, available: 1000), drag.startWidth + drag.translation)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 300,
+            translation: 50, direction: 1, available: 1000), 350)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 300,
+            translation: -50, direction: -1, available: 1000), 350)
+    }
+
+    func testSavedSidebarWidthSurvivesTemporaryWindowClamping() {
+        let preferred = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 350,
+            translation: 50, direction: 1, available: 1100)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 700, preferred: preferred, wide: true), 380)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 1100, preferred: preferred, wide: true), 400)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 350,
+            translation: 500, direction: 1, available: 700), 380)
     }
 
     func testRightToLeftCloseUsesCapturedDirection() {

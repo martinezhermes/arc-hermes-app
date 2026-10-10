@@ -2,6 +2,21 @@ import XCTest
 @testable import ARCHermes
 
 final class SharedDraftStoreTests: XCTestCase {
+    func testShareExtensionRequestsOnlyItsStagingAppGroup() throws {
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("ARCHermesShareExtension/Resources/ARCHermesShareExtension.entitlements")
+        guard let data = try? Data(contentsOf: source) else {
+            throw XCTSkip("The source checkout is unavailable on this destination")
+        }
+        let entitlements = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: data, format: nil) as? [String: Any])
+        XCTAssertEqual(Set(entitlements.keys), ["com.apple.security.application-groups"],
+                       "Share staging must not inherit the main app's push or credential capabilities")
+        XCTAssertEqual(entitlements["com.apple.security.application-groups"] as? [String],
+                       ["$(APP_GROUP_IDENTIFIER)"])
+    }
+
     func testDraftTextCombinesTextAndURLsInOrder() {
         let draft = ARCHermesShareDraft.draftText(
             textSnippets: [
@@ -97,6 +112,31 @@ final class SharedDraftStoreTests: XCTestCase {
                 atPath: directory.appendingPathComponent(ARCHermesShareDraft.pendingAttachmentsDirectoryName).path
             )
         )
+    }
+
+    // Reserving runs on the main actor during share handoff, so staged files
+    // are mapped there and only paged in when the upload reads them.
+    func testReservedAttachmentsAreMappedFromStagedFiles() throws {
+        let directory = try temporaryDirectory()
+        let attachmentData = Data(repeating: 0x42, count: 1_024 * 1_024)
+
+        try ARCHermesShareDraft.savePendingImport(
+            draft: "",
+            attachments: [
+                SharedAttachmentImport(filename: "scan.pdf", typeIdentifier: "com.adobe.pdf", data: attachmentData)
+            ],
+            in: directory
+        )
+
+        let reservation = try XCTUnwrap(try ARCHermesShareDraft.reserveNextPendingImport(from: directory))
+        let attachment = try XCTUnwrap(reservation.sharedImport.attachments.first)
+
+        XCTAssertTrue(isFileBacked(attachment.data), "staged files must be mapped, not read into memory")
+
+        // The app consumes the reservation before uploading, so the first read
+        // of the mapped bytes happens after their staged file is removed.
+        try ARCHermesShareDraft.consume(reservation, from: directory)
+        XCTAssertEqual(attachment.data, attachmentData, "the mapping outlives the consumed reservation")
     }
 
     func testPendingImportSupportsAttachmentOnlyShare() throws {

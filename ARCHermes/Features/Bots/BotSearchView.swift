@@ -8,6 +8,7 @@ import SwiftUI
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let inbox: BotInbox
     let onSelect: (BotProfile) -> Void
+    let onSelectRoom: (BotGroupRoom, Int?) -> Void
     @State private var query = ""
     @State private var scope: Scope = .all
     @FocusState private var searchFocused: Bool
@@ -18,8 +19,8 @@ import SwiftUI
     @State private var selectedHit: BotHistoryCache.Hit?
     let cache: BotHistoryCache
 
-    init(inbox: BotInbox, cache: BotHistoryCache = .shared, query: String = "", onSelect: @escaping (BotProfile) -> Void) {
-        self.inbox = inbox; self.cache = cache; self.onSelect = onSelect
+    init(inbox: BotInbox, cache: BotHistoryCache = .shared, query: String = "", onSelectRoom: @escaping (BotGroupRoom, Int?) -> Void = { _, _ in }, onSelect: @escaping (BotProfile) -> Void) {
+        self.inbox = inbox; self.cache = cache; self.onSelect = onSelect; self.onSelectRoom = onSelectRoom
         _query = State(initialValue: query)
     }
 
@@ -27,13 +28,14 @@ import SwiftUI
         let query: String
         let connectionID: UUID?
         let profiles: [String]
+        let roomIDs: Set<String>?
         let hasLiveRoster: Bool
         let includesMessages: Bool
         let active: Bool
     }
     private var request: SearchRequest {
         SearchRequest(query: query.trimmingCharacters(in: .whitespacesAndNewlines),
-                      connectionID: inbox.connection?.id, profiles: inbox.profiles.map(\.id), hasLiveRoster: inbox.link == .live,
+                      connectionID: inbox.connection?.id, profiles: inbox.profiles.map(\.id), roomIDs: inbox.searchableRoomIDs, hasLiveRoster: inbox.link == .live,
                       includesMessages: scope != .bots, active: scenePhase == .active)
     }
     private var visibleHits: [BotHistoryCache.Hit] { hitRequest == request ? hits : [] }
@@ -68,7 +70,16 @@ import SwiftUI
                         }
                         .buttonStyle(.plain)
                     }
-                    if matches.isEmpty && scope == .bots {
+                    ForEach(inbox.rooms(matching: request.query), id: \.id) { room in
+                        Button {
+                            searchFocused = false; onSelectRoom(room, nil); dismiss()
+                        } label: {
+                            BotRoomInboxRow(room: room, roster: inbox.profiles, avatars: inbox.avatars)
+                                .padding(.horizontal, 20)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if matches.isEmpty && inbox.rooms(matching: request.query).isEmpty && scope == .bots {
                         ContentUnavailableView("No bots found", systemImage: "magnifyingglass")
                     }
                 }
@@ -79,7 +90,13 @@ import SwiftUI
                         .padding(.horizontal, 20).padding(.top, 16)
                     if !request.query.isEmpty {
                         ForEach(visibleHits) { hit in
-                            if let profile = profile(for: hit) {
+                            if let room = inbox.roomForSearch(hit) {
+                                Button {
+                                    guard let selected = inbox.selectRoomSearchHit(hit) else { return }
+                                    searchFocused = false; onSelectRoom(selected, hit.message.seq); dismiss()
+                                } label: { roomMessageResult(hit, room: room) }
+                                .buttonStyle(.plain)
+                            } else if hit.snapshot.roomID == nil, let profile = profile(for: hit) {
                                 Button {
                                     searchFocused = false
                                     selectedHit = hit
@@ -115,10 +132,8 @@ import SwiftUI
         }
     }
 
-    @ViewBuilder private var searchBar: some View {
-        if #available(iOS 26, *) {
-            GlassEffectContainer(spacing: 8) { searchControls }
-        } else { searchControls }
+    private var searchBar: some View {
+        AdaptiveGlassContainer(spacing: 8) { searchControls }
     }
 
     private var searchControls: some View {
@@ -127,7 +142,7 @@ import SwiftUI
                 .labelStyle(.iconOnly)
                 .font(.title3)
                 .frame(width: 44, height: 44)
-                .modifier(BotSearchGlass(shape: .circle))
+                .adaptiveGlass(isInteractive: true, in: Circle())
                 .keyboardShortcut(.cancelAction)
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
@@ -150,7 +165,7 @@ import SwiftUI
             }
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
-            .modifier(BotSearchGlass(shape: .capsule))
+            .adaptiveGlass(in: Capsule())
             Menu {
                 Picker("Search filter", selection: $scope) {
                     ForEach(Scope.allCases, id: \.self) { item in
@@ -163,7 +178,7 @@ import SwiftUI
             }
             .accessibilityLabel("Search filter")
             .accessibilityValue(Text(scope.title))
-            .modifier(BotSearchGlass(shape: .circle))
+            .adaptiveGlass(isInteractive: true, in: Circle())
         }
         .buttonStyle(.plain)
         .foregroundStyle(.primary)
@@ -203,6 +218,25 @@ import SwiftUI
         .accessibilityElement(children: .combine)
     }
 
+    private func roomMessageResult(_ hit: BotHistoryCache.Hit, room: BotGroupRoom) -> some View {
+        HStack(spacing: 14) {
+            BotRoomAvatars(room: room, roster: inbox.profiles, avatars: inbox.avatars, size: 32).frame(width: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(verbatim: [room.name, hit.message.sender].compactMap { $0 }.joined(separator: " · "))
+                        .font(.body).lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    Spacer(minLength: 8)
+                    Text("Message").font(.subheadline).foregroundStyle(.tertiary)
+                }
+                Text(SessionSearchExcerpt(text: hit.excerpt, query: request.query).highlighted)
+                    .font(.body).foregroundStyle(.secondary)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 3 : 1)
+            }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 16)
+        .contentShape(Rectangle()).accessibilityElement(children: .combine)
+    }
+
     private func searchMessages() async {
         let captured = request
         hits = []; hitRequest = captured; searchError = false; isSearching = false
@@ -212,7 +246,7 @@ import SwiftUI
         do {
             try await Task.sleep(for: .milliseconds(200))
             let found = try await cache.search(captured.query,
-                scope: .init(server: inbox.server, connectionID: connectionID), profileIDs: captured.hasLiveRoster ? Set(captured.profiles) : nil)
+                scope: .init(server: inbox.server, connectionID: connectionID), profileIDs: captured.hasLiveRoster ? Set(captured.profiles) : nil, roomIDs: captured.roomIDs)
             guard !Task.isCancelled, captured == request else { return }
             hits = found; hitRequest = captured; isSearching = false
         } catch {
@@ -241,20 +275,5 @@ import SwiftUI
         .padding(.horizontal, 20).padding(.vertical, 16)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-    }
-}
-
-private struct BotSearchGlass: ViewModifier {
-    enum Shape { case circle, capsule }
-    let shape: Shape
-
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(iOS 26, *) {
-            if shape == .circle { content.glassEffect(.regular.interactive(), in: Circle()) }
-            else { content.glassEffect(.regular, in: Capsule()) }
-        } else {
-            if shape == .circle { content.background(.regularMaterial, in: Circle()) }
-            else { content.background(.regularMaterial, in: Capsule()) }
-        }
     }
 }
