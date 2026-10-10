@@ -244,11 +244,11 @@ final class ComposerVoiceInputServerRecordingTests: APIClientTestCase {
         let recorder = DictationTestRecorder()
         var authorizations = 0
         let controller = ComposerVoiceInputController(
-            speechRecognizerFactory: { locale in
-                let recognizer = SFSpeechRecognizer(locale: locale)
-                recognizer?.supportsOnDeviceRecognition = true
-                return recognizer
+            speechRecognizerFactory: { _ in
+                XCTFail("Denied speech permission must not create a recognizer")
+                return nil
             },
+            onDeviceAvailability: { true },
             microphonePermission: { true },
             speechAuthorization: { authorizations += 1; return .denied },
             serverRecorder: recorder, mayRecord: { true })

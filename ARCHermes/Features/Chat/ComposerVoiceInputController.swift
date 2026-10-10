@@ -34,6 +34,7 @@ final class ComposerVoiceInputController {
     private(set) var liveTranscript = ""
 
     private let speechRecognizerFactory: (Locale) -> SFSpeechRecognizer?
+    private let onDeviceAvailability: (() -> Bool)?
     private let audioEngineFactory: () -> AVAudioEngine
     private var speechRecognizer: SFSpeechRecognizer?
     private var audioEngine: AVAudioEngine?
@@ -69,6 +70,7 @@ final class ComposerVoiceInputController {
 
     init(
         speechRecognizerFactory: @escaping (Locale) -> SFSpeechRecognizer? = { SFSpeechRecognizer(locale: $0) },
+        onDeviceAvailability: (() -> Bool)? = nil,
         audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() },
         microphonePermission: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() },
         speechAuthorization: @escaping () async -> SFSpeechRecognizerAuthorizationStatus = {
@@ -85,6 +87,7 @@ final class ComposerVoiceInputController {
         }
     ) {
         self.speechRecognizerFactory = speechRecognizerFactory
+        self.onDeviceAvailability = onDeviceAvailability
         self.audioEngineFactory = audioEngineFactory
         self.microphonePermission = microphonePermission
         self.speechAuthorization = speechAuthorization
@@ -223,7 +226,7 @@ final class ComposerVoiceInputController {
         state = .requestingPermission
 
         let canUseServer = transcribe != nil
-        let canUseOnDevice = onDeviceSpeechRecognizerForRecording() != nil
+        let canUseOnDevice = canUseOnDeviceSpeech
         let providers = ComposerSTTProviderPolicy.orderedProviders(
             preference: providerPreference,
             serverConfigured: canUseServer,
@@ -349,7 +352,7 @@ final class ComposerVoiceInputController {
             after: failedProvider,
             preference: providerPreference,
             serverConfigured: transcribe != nil,
-            onDeviceSupported: onDeviceSpeechRecognizerForRecording() != nil
+            onDeviceSupported: canUseOnDeviceSpeech
         )
 
         guard let fallback else {
@@ -566,10 +569,8 @@ final class ComposerVoiceInputController {
             after: .server,
             preference: providerPreference,
             serverConfigured: transcribe != nil,
-            onDeviceSupported: onDeviceSpeechRecognizerForRecording() != nil
-        ) == .onDevice,
-              let speechRecognizer = onDeviceSpeechRecognizerForRecording()
-        else {
+            onDeviceSupported: canUseOnDeviceSpeech
+        ) == .onDevice else {
             cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
             fail(message, logCategory: .speechUnavailable)
             return
@@ -585,6 +586,12 @@ final class ComposerVoiceInputController {
         guard speechStatus == .authorized else {
             cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
             fail(Self.speechAuthorizationMessage(for: speechStatus), logCategory: .speechAuthorization)
+            return
+        }
+
+        guard let speechRecognizer = onDeviceSpeechRecognizerForRecording() else {
+            cleanupRecordingFile(recordingURL, transcriptionID: transcriptionID)
+            fail(message, logCategory: .speechUnavailable)
             return
         }
 
@@ -839,6 +846,12 @@ final class ComposerVoiceInputController {
             try? FileManager.default.removeItem(at: recordingURL)
             self.recordingURL = nil
         }
+    }
+
+    /// Availability can be described without creating a recognizer in provider-policy tests.
+    /// Live controllers keep the actual locale/model check, then recheck after permission resolves.
+    private var canUseOnDeviceSpeech: Bool {
+        onDeviceAvailability?() ?? (onDeviceSpeechRecognizerForRecording() != nil)
     }
 
     /// The on-device recognizer for the first dictation locale candidate that

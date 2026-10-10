@@ -496,7 +496,6 @@ import SwiftData
             attachment.name = "Native ARC sidebar - " + name
             attachment.lifetime = .keepAlways
             add(attachment)
-            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/arc50-native-sidebar-" + name + ".png"))
             XCTAssertEqual(list.sessions.compactMap(\.sessionId), ["review", "draft"])
             window.isHidden = true
             window.rootViewController = nil
