@@ -6,6 +6,38 @@ require "tempfile"
 require_relative "select_testflight_build_number"
 
 class TestFlightBuildNumberSelectorTest < Minitest::Test
+  def test_zero_patch_aliases_preserve_legacy_release_spelling
+    assert_equal(["1.9.0", "1.9"], TestFlightBuildNumberSelector.marketing_version_spellings("1.9.0"))
+    assert_equal(["1.9", "1.9.0"], TestFlightBuildNumberSelector.marketing_version_spellings("1.9"))
+    assert_equal(["1.9.1"], TestFlightBuildNumberSelector.marketing_version_spellings("1.9.1"))
+    assert_equal(["2.0.0", "2.0"], TestFlightBuildNumberSelector.marketing_version_spellings("2.0.0"))
+  end
+
+  def test_normalized_train_selects_above_existing_legacy_builds
+    selector = TestFlightBuildNumberSelector.new(env: {})
+    queried = []
+    selector.define_singleton_method(:app_id_for_bundle_id) { |_bundle_id| "app-123" }
+    selector.define_singleton_method(:fetch_paginated_json) do |path, params|
+      version = params.fetch("filter[preReleaseVersion.version]")
+      queried << [path, version]
+      numbers = version == "1.9" ? ["20261010131021"] : ["12"]
+      numbers.map { |number| { "attributes" => { "version" => number } } }
+    end
+    latest = selector.send(:latest_uploaded_build_number, bundle_id: "com.martinezhermes.archermes",
+                           marketing_version: "1.9.0")
+    assert_equal([["/v1/builds", "1.9.0"], ["/v1/builds", "1.9"]], queried)
+    assert_equal("20261010131021", latest)
+    assert_equal("20261010131022", TestFlightBuildNumberSelector.select_build_number(
+      requested_build_number: "", latest_build_number: latest
+    ))
+  end
+
+  def test_normalized_train_is_closed_by_equivalent_legacy_app_store_version
+    assert_equal("1.9", TestFlightBuildNumberSelector.closed_train_version(
+      marketing_version: "1.9.0", approved_versions: ["1.9"]
+    ))
+  end
+
   def test_selects_one_when_app_store_connect_has_no_builds_for_version
     assert_equal(
       "1",
