@@ -10,17 +10,22 @@ Security sections per release.
 ## [1.9.0] - Unreleased
 
 ### Added
-- Lock Hermex with Face ID or the device passcode. The lock is off until
+- Connect native sessions and chat directly to the Hermes Agent dashboard,
+  with its username/password sign-in and custom connection headers.
+- Native Agent screens for Profiles, Projects, Tasks, Kanban, Skills, Memory,
+  Usage and Bots inside ARC's adaptive sidebar.
+- ARC onboarding, app icon choices, pixel wordmark, logo color and per-server
+  identity alongside the native Agent connection.
+- Browse cached native sessions by Profile or across all Profiles while offline.
+- Lock ARC Hermes with Face ID or the device passcode. The lock is off until
   enabled, and the app switcher hides chats while it is on.
-- PDFs, Office and iWork documents, and other files Hermex can't preview open
+- PDFs, Office and iWork documents, and other files ARC Hermes can't preview open
   in Quick Look, up to 25 MB, from Files, chat file links, and attachments.
 - Chat settings to dismiss the keyboard after sending and to start reading a
   completed response from its beginning.
 - Press ↑ on a hardware keyboard to recall your last message; staged documents
   show a preview instead of a generic icon.
 - Approval cards say what Allow session and Always allow cover.
-- Push: Settings offers hermex-push plugin updates and can restart Hermes from
-  the phone after one. Banners name the bot and use the phone's language.
 - Bot Mode: answer password-vault, save-login, and 2FA prompts on the phone;
   open and reply inside room threads; see who is in a new group chat; copy a
   reply from its footer; and save or share a previewed attachment.
@@ -28,15 +33,37 @@ Security sections per release.
   with custom headers for hosts behind Cloudflare Access or another proxy.
 
 ### Changed
+- Keep the active chat and draft mounted while revealing or resizing the
+  sidebar. Compact covered panes pause input and scrolling; visible wide
+  panes stay interactive.
+- Search, Close Search and the search cursor follow the header logo color.
+  New Session, Filter and Settings share matching circular glass controls
+  and the same per-server accent color.
+- Larger Dynamic Type text for Settings controls, values and supporting copy.
+- Display the reasoning level as "Extra High" while retaining the server's
+  existing reasoning setting.
+- Settings opens as a sheet. Remove duplicate native home navigation and
+  obsolete parallel Agent screens; server identity uses initials instead of photos.
 - Tapping a finished Live Activity removes it.
 - Listen uses the server's saved text-to-speech voice and provider. Very long
   responses, or a failed server request, still fall back to on-device speech.
 - Retained draft attachments share a 200 MB storage budget, reclaiming the
   oldest unused copies first.
 - Bot Mode keeps its connection through Control Center and banners, and closes
-  it when Hermex moves to the background.
+  it when ARC Hermes moves to the background.
 
 ### Fixed
+- Profile filtering opens reliably, keeps offline choices available and uses
+  full tappable rows.
+- Content scrolling beneath the sharp, pinned wordmark gets the native soft
+  scroll-edge effect.
+- Landscape sidebar resizing retains the chosen width after release and
+  restores it after temporary window constraints.
+- Revealing the compact sidebar releases keyboard focus without losing the
+  draft. Superseded focus requests cannot restore a covered editor's keyboard.
+- Reopening the selected session, including a compressed session lineage,
+  preserves its chat instead of replacing it. Confirmed archive/delete clears
+  only the matching selected session.
 - After a Hermes Agent update, sends refused until Hermes WebUI restarts
   explain the problem and offer a fix prompt instead of a raw HTTP 409.
 - A long /goal notice no longer hides the newest tool calls and replies.
@@ -52,8 +79,12 @@ Security sections per release.
   pasted dashboard link is accepted. Reattaching mid-turn keeps the running
   turn's tool rows and reasoning. Hosts older than Hermes 0.21.3 are refused
   with an explanation.
-- Push plugin updates work on current Hermes without a terminal prompt, and a
-  slow plugin check no longer overwrites an update's result.
+
+### Beta limitations
+- Bot Mode remains a preview. Some share, system new-chat/session-link and
+  workspace/Git flows still depend on a configured legacy WebUI server.
+- ARC push pairing is not configured in this build. Live Activities and local
+  response-completion alerts remain separate features.
 
 ## [1.8.0] - 2026-10-01
 

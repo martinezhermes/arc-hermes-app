@@ -121,7 +121,7 @@ struct SessionListTopChrome: View {
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 22, weight: .semibold))
-                    .foregroundStyle(searchChromeIsExpanded ? .secondary : .primary)
+                    .foregroundStyle(headerLogoColor)
                     .frame(width: Self.iconVisualSize, height: Self.iconVisualSize)
                     .frame(width: 48, height: 48)
                     .contentShape(Circle())
@@ -145,6 +145,7 @@ struct SessionListTopChrome: View {
             }
         }
         .frame(maxWidth: searchChromeIsExpanded ? .infinity : nil, alignment: .trailing)
+        .tint(headerLogoColor)
         .sessionsChromeGlass(
             isInteractive: true,
             in: Capsule()
@@ -189,7 +190,7 @@ struct SessionListTopChrome: View {
         HapticButton(feedbackStyle: .medium, action: onCloseSearch) {
             Image(systemName: "xmark")
                 .font(.system(size: 22, weight: .medium))
-                .foregroundStyle(.primary)
+                .foregroundStyle(headerLogoColor)
                 .frame(width: Self.iconHitTarget, height: Self.iconHitTarget)
                 .contentShape(Rectangle())
         }
