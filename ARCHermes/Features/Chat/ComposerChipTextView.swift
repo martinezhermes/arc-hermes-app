@@ -10,11 +10,16 @@ final class ComposerChipTextView: UITextView, UIGestureRecognizerDelegate {
     /// land. UIKit's own restoration can re-request focus after a bound blur in
     /// the same pop (#831), so a cancel alone cannot guarantee the blur wins.
     var wantsDeferredFocus: () -> Bool = { true }
+    /// A covered pane refuses system restoration before its queued editability update lands.
+    var isInputFocusEnabled = true {
+        didSet { if !isInputFocusEnabled { cancelDeferredFocus() } }
+    }
 
     /// UIKit re-promotes the last editor while a navigation pop is still animating,
     /// before SwiftUI's keyboard safe area can follow, which leaves the composer
     /// behind the keyboard (#810). Defer focus until the transition finishes.
     override func becomeFirstResponder() -> Bool {
+        guard isInputFocusEnabled else { cancelDeferredFocus(); return false }
         guard let coordinator = owningViewController?.transitionCoordinator else {
             cancelDeferredFocus()
             return super.becomeFirstResponder()

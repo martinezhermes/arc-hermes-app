@@ -1537,10 +1537,10 @@ private struct SessionIdentitySettingsEditor: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Server Avatar")
-                        .font(AppFont.subheadline(weight: .medium))
+                        .font(AppFont.body(weight: .medium))
 
                     Text("Stored on this device only.")
-                        .font(AppFont.caption())
+                        .font(AppFont.footnote())
                         .foregroundStyle(.secondary)
                 }
             }
@@ -1594,7 +1594,7 @@ private struct SettingsTextFieldRow: View {
 
     private var titleLabel: some View {
         Text(title)
-            .font(AppFont.subheadline())
+            .font(AppFont.body())
     }
 
     @ViewBuilder
@@ -1606,7 +1606,7 @@ private struct SettingsTextFieldRow: View {
                 TextField(placeholder, text: $text)
             }
         }
-        .font(AppFont.subheadline())
+        .font(AppFont.body())
         .textInputAutocapitalization(autocapitalization)
         .autocorrectionDisabled()
         .keyboardType(keyboardType)
@@ -1633,10 +1633,10 @@ private struct HeaderLogoColorSettings: View {
                 Spacer(minLength: 12)
 
                 Text(selectedColorName)
-                    .font(.caption.weight(.medium))
+                    .font(.footnote.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            .font(.subheadline)
+            .font(.body)
 
             SettingsTextFieldRow(
                 title: String(localized: "Header Text"),
@@ -1645,7 +1645,7 @@ private struct HeaderLogoColorSettings: View {
                 autocapitalization: .characters
             )
             Text("A–Z, 0–9, spaces and hyphens; up to 16 characters.")
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.footnote).foregroundStyle(.secondary)
             if !headerText.isEmpty {
                 Button("Reset Header") { headerText = "" }
                     .frame(minHeight: 44)
@@ -1675,7 +1675,7 @@ private struct HeaderLogoColorSettings: View {
             }
 
             ColorPicker("Custom", selection: customColor, supportsOpacity: false)
-                .font(.subheadline)
+                .font(.body)
         }
     }
 }
@@ -1729,7 +1729,7 @@ private struct SettingsCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
                 .textCase(.uppercase)
-                .font(AppFont.caption(weight: .semibold))
+                .font(AppFont.footnote(weight: .semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
                 .padding(.bottom, 8)
@@ -1826,13 +1826,13 @@ private struct SettingsRowLabel: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
-                .font(AppFont.subheadline(weight: .medium))
+                .font(AppFont.body(weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
 
             Text(title)
-                .font(AppFont.subheadline(weight: .medium))
+                .font(AppFont.body(weight: .medium))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1848,7 +1848,7 @@ private struct SettingsFootnote: View {
 
     var body: some View {
         Text(text)
-            .font(AppFont.caption())
+            .font(AppFont.footnote())
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -1866,11 +1866,11 @@ private struct SettingsErrorFootnote: View {
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
             Image(systemName: "exclamationmark.triangle")
-                .font(AppFont.caption())
+                .font(AppFont.footnote())
                 .foregroundStyle(.orange)
 
             Text(text)
-                .font(AppFont.caption())
+                .font(AppFont.footnote())
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1903,7 +1903,7 @@ private struct SettingsValueRow<Trailing: View>: View {
                 }
             }
         }
-        .font(AppFont.subheadline())
+        .font(AppFont.body())
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
     }
 
@@ -1958,7 +1958,7 @@ private struct SettingsAccessoryRow: View {
                     }
 
                     Text(value)
-                        .font(AppFont.caption(weight: .medium))
+                        .font(AppFont.footnote(weight: .medium))
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                         .multilineTextAlignment(.leading)
@@ -1972,7 +1972,7 @@ private struct SettingsAccessoryRow: View {
 
                     if let value {
                         Text(value)
-                            .font(AppFont.caption(weight: .medium))
+                            .font(AppFont.footnote(weight: .medium))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
@@ -1993,13 +1993,13 @@ private struct SettingsAccessoryRow: View {
     private var leadingLabel: some View {
         HStack(spacing: 10) {
             Image(systemName: systemImage)
-                .font(AppFont.subheadline(weight: .medium))
+                .font(AppFont.body(weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
                 .accessibilityHidden(true)
 
             Text(title)
-                .font(AppFont.subheadline(weight: .medium))
+                .font(AppFont.body(weight: .medium))
                 .layoutPriority(1)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2007,7 +2007,7 @@ private struct SettingsAccessoryRow: View {
 
     private var accessoryIcon: some View {
         Image(systemName: accessorySystemImage)
-            .font(AppFont.caption(weight: .semibold))
+            .font(AppFont.footnote(weight: .semibold))
             .foregroundStyle(.tertiary)
             .accessibilityHidden(true)
     }
@@ -2128,7 +2128,7 @@ private struct SettingsButton: View {
                     Text(title)
                 }
             }
-            .font(AppFont.subheadline(weight: .medium))
+            .font(AppFont.body(weight: .medium))
             .foregroundStyle(role == .destructive ? .red : .primary)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 46)
@@ -2163,7 +2163,7 @@ private struct SettingsStatusPill: View {
 
     var body: some View {
         Text(label)
-            .font(AppFont.caption(weight: .semibold))
+            .font(AppFont.footnote(weight: .semibold))
             .foregroundStyle(tint)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
@@ -2224,11 +2224,11 @@ private struct SettingsServerRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(name)
-                    .font(AppFont.subheadline(weight: .medium))
+                    .font(AppFont.body(weight: .medium))
                     .lineLimit(1)
 
                 Text(account.urlString)
-                    .font(AppFont.caption())
+                    .font(AppFont.footnote())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -2241,7 +2241,7 @@ private struct SettingsServerRow: View {
             }
 
             Image(systemName: "chevron.forward")
-                .font(AppFont.caption(weight: .semibold))
+                .font(AppFont.footnote(weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }
@@ -2293,10 +2293,10 @@ private struct ServerIdentityEditor: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Server Avatar")
-                        .font(AppFont.subheadline(weight: .medium))
+                        .font(AppFont.body(weight: .medium))
 
                     Text("Stored on this device only.")
-                        .font(AppFont.caption())
+                        .font(AppFont.footnote())
                         .foregroundStyle(.secondary)
                 }
             }
@@ -2602,7 +2602,7 @@ struct AddServerView: View {
         // IPv6 literal's "]", in one left-to-right run inside right-to-left text.
         if let preview = form.addressPreview {
             Text("Will connect to \(preview.absoluteString + "\u{200E}")")
-                .font(AppFont.caption())
+                .font(AppFont.footnote())
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2652,15 +2652,15 @@ struct AddServerView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "person.badge.key.fill")
-                            .font(AppFont.subheadline(weight: .medium))
+                            .font(AppFont.body(weight: .medium))
                             .foregroundStyle(Color.accentColor)
                             .frame(width: 24)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Use the sign-in saved on \(saved.serverName)")
-                                .font(AppFont.subheadline(weight: .medium))
+                                .font(AppFont.body(weight: .medium))
                                 .foregroundStyle(Color.accentColor)
                             Text("Fills in the username, password and headers.")
-                                .font(AppFont.caption())
+                                .font(AppFont.footnote())
                                 .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2690,7 +2690,7 @@ struct AddServerView: View {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Hermes dashboard found")
-                        .font(AppFont.subheadline(weight: .semibold))
+                        .font(AppFont.body(weight: .semibold))
                     Text("Adding one needs Bot Mode (beta), which is off. Bot Mode is unfinished, and you can turn it off again in Settings.")
                         .font(AppFont.footnote())
                         .foregroundStyle(.secondary)

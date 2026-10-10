@@ -233,7 +233,10 @@ private struct ComposerTextView: UIViewRepresentable {
         let textView = ComposerChipTextView()
         textView.delegate = context.coordinator
         textView.textDropDelegate = context.coordinator
-        textView.wantsDeferredFocus = { [weak coordinator = context.coordinator] in coordinator?.isFocused == true }
+        context.coordinator.updateFocusIntent(shouldFocus: isFocused,
+            isDisabled: isDisabled || !context.environment.isEnabled)
+        textView.isInputFocusEnabled = !isDisabled && context.environment.isEnabled
+        textView.wantsDeferredFocus = { [weak coordinator = context.coordinator] in coordinator?.mayFocus == true }
         textView.backgroundColor = .clear
         textView.font = .preferredFont(forTextStyle: .body)
         textView.adjustsFontForContentSizeCategory = true
@@ -261,13 +264,15 @@ private struct ComposerTextView: UIViewRepresentable {
 
     func updateUIView(_ textView: ComposerChipTextView, context: Context) {
         context.coordinator.onHeightChange = onHeightChange
+        let editingIsDisabled = isDisabled || !context.environment.isEnabled
+        textView.isInputFocusEnabled = !editingIsDisabled
         // Mirror the chat RTL toggle onto the text view itself (#259): SwiftUI's
         // layoutDirection environment does not propagate into a wrapped UITextView,
         // so set the base direction directly so the cursor/empty-field rests on the
         // trailing edge. `.natural` keeps the LTR default untouched, and per-run
         // bidi still resolves mixed Arabic+Latin/URL content within the line.
         let isRTL = context.environment.layoutDirection == .rightToLeft
-        textView.applyPresentationStyle(isRightToLeft: isRTL, isDisabled: isDisabled)
+        textView.applyPresentationStyle(isRightToLeft: isRTL, isDisabled: editingIsDisabled)
         textView.acceptsAttachments = acceptsAttachments
         textView.accessibilityLabel = accessibilityLabel
         let pasteTypes = acceptsAttachments
@@ -277,7 +282,7 @@ private struct ComposerTextView: UIViewRepresentable {
             textView.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: pasteTypes)
         }
         context.coordinator.acceptsAttachments = acceptsAttachments
-        context.coordinator.syncEditing(for: textView, isDisabled: isDisabled)
+        context.coordinator.syncEditing(for: textView, isDisabled: editingIsDisabled)
         textView.isKeyboardSendEnabled = isKeyboardSendEnabled
         textView.onKeyboardSend = onKeyboardSend
         textView.recallLastSentText = recallLastSentText
@@ -300,7 +305,7 @@ private struct ComposerTextView: UIViewRepresentable {
         // just asked for rather than the one the edit happened to leave behind.
         context.coordinator.applyingBoundValue { textView.refreshChipsIfNeeded() }
         context.coordinator.publishRenderedChips(of: textView)
-        context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: isDisabled)
+        context.coordinator.syncFocus(for: textView, shouldFocus: isFocused, isDisabled: editingIsDisabled)
         context.coordinator.reportHeight(for: textView)
     }
 
@@ -315,6 +320,9 @@ private struct ComposerTextView: UIViewRepresentable {
         var onDropFileProviders: ([NSItemProvider]) -> Void = { _ in }
         var onDropImageProviders: ([NSItemProvider]) -> Void = { _ in }
         private var pendingFocusTarget: Bool?
+        private var desiredFocus = false
+        private var focusIsDisabled = false
+        private var focusRevision = 0
         private var pendingEditingTarget: Bool?
         /// Set while we push a bound value into the editor, so the delegate
         /// callbacks it provokes do not write the bindings back mid-update.
@@ -492,10 +500,24 @@ private struct ComposerTextView: UIViewRepresentable {
             }
         }
 
+        var mayFocus: Bool { desiredFocus && !focusIsDisabled && isFocused }
+
+        func updateFocusIntent(shouldFocus: Bool, isDisabled: Bool) {
+            let target = shouldFocus && !isDisabled
+            if desiredFocus != target || focusIsDisabled != isDisabled {
+                focusRevision += 1
+                pendingFocusTarget = nil
+            }
+            desiredFocus = target
+            focusIsDisabled = isDisabled
+        }
+
         func syncFocus(for textView: ComposerChipTextView, shouldFocus: Bool, isDisabled: Bool) {
+            updateFocusIntent(shouldFocus: shouldFocus, isDisabled: isDisabled)
             if isDisabled, isFocused {
                 Task { @MainActor [weak self] in
-                    self?.isFocused = false
+                    guard let self, self.focusIsDisabled else { return }
+                    self.isFocused = false
                 }
             }
 
@@ -508,18 +530,20 @@ private struct ComposerTextView: UIViewRepresentable {
             guard pendingFocusTarget != target else { return }
 
             pendingFocusTarget = target
+            let revision = focusRevision
             Task { @MainActor [weak self, weak textView] in
                 await Task.yield()
-                guard let self, let textView else { return }
+                guard let self, let textView, self.focusRevision == revision else { return }
 
                 if target, textView.window == nil {
                     try? await Task.sleep(nanoseconds: 60_000_000)
                 }
 
+                guard self.focusRevision == revision else { return }
                 self.pendingFocusTarget = nil
 
                 if target {
-                    guard self.isFocused, textView.isEditable, textView.window != nil else { return }
+                    guard self.mayFocus, textView.isEditable, textView.window != nil else { return }
                     textView.becomeFirstResponder()
                 } else if !self.isFocused, textView.isFirstResponder {
                     // UIKit can begin a new editing session while this blur is

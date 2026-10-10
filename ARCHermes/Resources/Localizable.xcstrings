@@ -98795,24 +98795,24 @@
         }
       }
     },
-    "XHigh" : {"extractionState": "manual",
+    "Extra High" : {"extractionState": "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "مرتفع جدًا"
+            "value" : "مرتفع للغاية"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHoch"
+            "value" : "Sehr hoch"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XAlto"
+            "value" : "Muy alto"
           }
         },
         "fr" : {
@@ -98830,37 +98830,37 @@
         "it" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XAlto"
+            "value" : "Molto alto"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHigh"
+            "value" : "非常に高い"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHigh"
+            "value" : "매우 높음"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHigh"
+            "value" : "Extra hoog"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "B. wysoki"
+            "value" : "Bardzo wysoki"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XAlto"
+            "value" : "Muito alto"
           }
         },
         "ru" : {
@@ -98872,13 +98872,13 @@
         "tr" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHigh"
+            "value" : "Çok yüksek"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "needs_review",
-            "value" : "XHigh"
+            "value" : "بہت زیادہ"
           }
         },
         "zh-HK" : {

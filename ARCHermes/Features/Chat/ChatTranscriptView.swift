@@ -21,6 +21,7 @@ enum ChatReadingWidth {
 }
 
 struct ChatTranscriptView: View {
+    @Environment(\.navigationSurfaceIsActive) private var navigationSurfaceIsActive
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var scrollPositionController = ChatScrollPositionController()
@@ -180,7 +181,7 @@ struct ChatTranscriptView: View {
                     )
                     .defaultScrollAnchor(
                         ChatScrollPolicy.sizeChangeAnchor(
-                            shouldFollowLatestMessage: shouldFollowLatestMessage,
+                            shouldFollowLatestMessage: navigationSurfaceIsActive && shouldFollowLatestMessage,
                             isDisclosureSettling: isDisclosureSettling
                         ),
                         for: .sizeChanges
@@ -226,11 +227,11 @@ struct ChatTranscriptView: View {
                     }
                 }
                 .task(id: completedResponseRenderID) {
-                    guard let renderID = completedResponseRenderID else { return }
+                    guard navigationSurfaceIsActive, let renderID = completedResponseRenderID else { return }
                     // Let hydration's layout/pin pass settle before moving the
                     // viewport. A new run or reader action cancels this task.
                     await Task.yield()
-                    guard !Task.isCancelled else { return }
+                    guard !Task.isCancelled, navigationSurfaceIsActive else { return }
                     // No animation or accessibility-focus move: only the viewport
                     // changes, and Reduce Motion is respected automatically.
                     releasingHold { proxy.scrollTo(renderID, anchor: .top) }
@@ -244,7 +245,13 @@ struct ChatTranscriptView: View {
                         releasingHold { onScrollToLatestContent(proxy, true) }
                     }
                 }
+                .onChange(of: navigationSurfaceIsActive) { _, active in
+                    if active && isFollowingLatestContent {
+                        releasingHold { onScrollToLatestContent(proxy, false) }
+                    }
+                }
                 .onChange(of: transcriptRelayoutScrollToken) {
+                    guard navigationSurfaceIsActive else { return }
                     // The transcript just changed height without gaining a message —
                     // the server render replacing the cache-first one (#289), or sent
                     // references becoming chips (#388). A reader at the live edge is
@@ -263,7 +270,7 @@ struct ChatTranscriptView: View {
                     releasingHold { onScrollToBottom(proxy) }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
-                    if isScrolledNearBottom {
+                    if navigationSurfaceIsActive && isScrolledNearBottom {
                         releasingHold { onScrollToBottom(proxy) }
                     }
                 }
@@ -274,7 +281,7 @@ struct ChatTranscriptView: View {
     /// Follow-driven scrolls run only while the latch is on and no disclosure
     /// toggle is mid-animation.
     private var isFollowingLatestContent: Bool {
-        shouldFollowLatestMessage && !isDisclosureSettling
+        navigationSurfaceIsActive && shouldFollowLatestMessage && !isDisclosureSettling
     }
 
     /// Identifies the whole transcript content so a scroll to its top can be

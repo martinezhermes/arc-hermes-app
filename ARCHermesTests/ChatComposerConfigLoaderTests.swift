@@ -369,6 +369,7 @@ final class ReasoningEffortGatingTests: XCTestCase {
     func testHermesLadderTitlesMaxAndUltra() {
         let options = ReasoningEffortOption.options(forSupportedEfforts: HermesModelCatalog.effortLevels)
         XCTAssertEqual(options.suffix(2).map(\.title), ["Max", "Ultra"])
+        XCTAssertEqual(options.first { $0.id == "xhigh" }?.title, "Extra High")
         XCTAssertFalse(ReasoningEffortOption.allCases.map(\.id).contains("max"))
     }
 
@@ -380,11 +381,11 @@ final class ReasoningEffortGatingTests: XCTestCase {
                 effort: "xhigh", supportedEfforts: HermesModelCatalog.effortLevels, supportsEffort: true, sentEffort: sent
             )
         }
-        XCTAssertEqual(selection(sent: "high").title, "gpt-6 · XHigh · sent as High")
-        XCTAssertEqual(selection(sent: "high").accessibilityTitle, "gpt-6, XHigh effort, sent as High")
+        XCTAssertEqual(selection(sent: "high").title, "gpt-6 · Extra High · sent as High")
+        XCTAssertEqual(selection(sent: "high").accessibilityTitle, "gpt-6, Extra High effort, sent as High")
         for sent in [nil, "", "xhigh"] {
-            XCTAssertEqual(selection(sent: sent).title, "gpt-6 · XHigh")
-            XCTAssertEqual(selection(sent: sent).accessibilityTitle, "gpt-6 · XHigh")
+            XCTAssertEqual(selection(sent: sent).title, "gpt-6 · Extra High")
+            XCTAssertEqual(selection(sent: sent).accessibilityTitle, "gpt-6 · Extra High")
         }
     }
 }

@@ -260,18 +260,13 @@ struct HermesSessionListView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 HStack(spacing: 12) {
                     newSessionButton
-                        .labelStyle(.iconOnly)
-                        .frame(width: 48, height: 48)
-                        .sessionsChromeGlass(isInteractive: true, in: Circle())
+                        .buttonStyle(SessionsChromeCircleButtonStyle())
                     Spacer(minLength: 0)
                     profileFilter
                     Button(action: home.openSettings) {
                         Image(systemName: "gearshape")
-                            .font(.system(size: 24, weight: .medium))
-                            .frame(width: 48, height: 48)
-                            .sessionsChromeGlass(isInteractive: true, in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SessionsChromeCircleButtonStyle())
                     .accessibilityLabel("Settings")
                     .accessibilityHint("Opens Settings. Long press to switch servers.")
                     .contextMenu {
@@ -279,6 +274,7 @@ struct HermesSessionListView: View {
                                                  addServer: home.addServer, manageServers: home.manageServers)
                     }
                 }
+                .tint(HeaderLogoColor.color(for: home.colorHex))
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
             }
@@ -402,13 +398,8 @@ struct HermesSessionListView: View {
     private var profileFilter: some View {
         Button { isShowingProfileFilter = true } label: {
             Image(systemName: "line.3.horizontal.decrease")
-                .font(.system(size: 24, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(width: 48, height: 48)
-                .sessionsChromeGlass(isInteractive: true, in: Circle())
-                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SessionsChromeCircleButtonStyle())
         .accessibilityLabel("Filter")
         .accessibilityValue(viewModel.hermesShowsAllProfiles ? Text("All Profiles") : Text(verbatim: profile ?? ""))
         .accessibilityIdentifier("native-profile-filter")

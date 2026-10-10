@@ -2,6 +2,25 @@ import XCTest
 @testable import ARCHermes
 
 final class ChatSidebarLayoutTests: XCTestCase {
+    func testPaneActivityPausesCompactTransitionsAndPreservesWideInteraction() {
+        XCTAssertEqual(ChatPaneActivity(wide: false, sidebarPresented: false, isRevealing: false),
+                       ChatPaneActivity(wide: true, sidebarPresented: false, isRevealing: false))
+        let shown = ChatPaneActivity(wide: false, sidebarPresented: true, isRevealing: false)
+        XCTAssertTrue(shown.sidebar)
+        XCTAssertFalse(shown.detail)
+        for presented in [true, false] {
+            let moving = ChatPaneActivity(wide: false, sidebarPresented: presented, isRevealing: true)
+            XCTAssertFalse(moving.sidebar)
+            XCTAssertFalse(moving.detail)
+        }
+        let wide = ChatPaneActivity(wide: true, sidebarPresented: true, isRevealing: false)
+        XCTAssertTrue(wide.sidebar)
+        XCTAssertTrue(wide.detail)
+        let canceled = ChatPaneActivity(wide: false, sidebarPresented: false, isRevealing: false)
+        XCTAssertFalse(canceled.sidebar)
+        XCTAssertTrue(canceled.detail)
+    }
+
     func testComposerToolbarSwipeDoesNotRevealSidebar() {
         let shell = CGRect(x: 20, y: 40, width: 390, height: 800)
         let toolbar = CGRect(x: 36, y: 680, width: 300, height: 44)

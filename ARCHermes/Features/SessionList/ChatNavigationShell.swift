@@ -1,5 +1,20 @@
 import SwiftUI
 
+extension EnvironmentValues {
+    @Entry var navigationSurfaceIsActive = true
+}
+
+/// A mounted pane keeps its draft and stream while only its local interaction pauses.
+struct ChatPaneActivity: Equatable {
+    let sidebar: Bool
+    let detail: Bool
+
+    init(wide: Bool, sidebarPresented: Bool, isRevealing: Bool) {
+        sidebar = sidebarPresented && !isRevealing
+        detail = wide || (!sidebarPresented && !isRevealing)
+    }
+}
+
 /// Layout policy shared by the live container and its regression tests.
 enum ChatSidebarLayout {
     static func allowsReveal(startLocation: CGPoint, shellFrame: CGRect, excludedFrame: CGRect) -> Bool {
@@ -118,6 +133,8 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
         GeometryReader { geometry in
             let available = geometry.size.width
             let wide = ChatSidebarLayout.isWide(available: available, regularSizeClass: sizeClass == .regular)
+            let activity = ChatPaneActivity(wide: wide, sidebarPresented: isPresented,
+                                            isRevealing: revealDrag?.isHorizontal == true)
             let baseWidth = ChatSidebarLayout.width(available: available, preferred: preferredWidth, wide: wide)
             let width = ChatSidebarLayout.width(available: available,
                 preferred: resizeDrag.map { $0.startWidth + $0.translation } ?? baseWidth, wide: wide)
@@ -131,6 +148,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
 
             ZStack(alignment: .leading) {
                 sidebar
+                    .environment(\.navigationSurfaceIsActive, activity.sidebar)
+                    .disabled(!activity.sidebar)
+                    .scrollDisabled(!activity.sidebar)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
                     .offset(x: sign * (reveal - width))
@@ -139,6 +159,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .simultaneousGesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)), isEnabled: !wide && isPresented)
 
                 detail
+                    .environment(\.navigationSurfaceIsActive, activity.detail)
+                    .disabled(!activity.detail)
+                    .scrollDisabled(!activity.detail)
                     .frame(width: wide ? max(0, available - reveal) : available)
                     .frame(maxHeight: .infinity)
                     .background(.background)

@@ -265,6 +265,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.navigationSurfaceIsActive) private var navigationSurfaceIsActive
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(AppHaptics.streamingPulseIsEnabledKey) private var isStreamingPulseEnabled = false
     @AppStorage(SessionChatPreferences.dismissKeyboardKey) private var dismissKeyboardAfterSend = false
@@ -930,6 +931,15 @@ struct ChatView: View {
             }
             .onChange(of: scenePhase) {
                 handleScenePhaseChange(scenePhase)
+            }
+            .onChange(of: navigationSurfaceIsActive) { _, active in
+                if active {
+                    applyInitialComposerFocusPolicyIfNeeded()
+                } else {
+                    composerFocusRevision += 1
+                    composerIsFocused = false
+                    shouldRestoreComposerFocusAfterPreview = false
+                }
             }
             .onChange(of: NetworkPathMonitor.shared.changeCount) {
                 handleNetworkPathChange()
@@ -3504,7 +3514,8 @@ struct ChatView: View {
     }
 
     private var canFocusComposer: Bool {
-        !viewModel.isViewingCachedData
+        navigationSurfaceIsActive
+            && !viewModel.isViewingCachedData
             && !viewModel.isUploadingAttachment
             && viewModel.uploadAttachmentErrorMessage == nil
     }
@@ -3543,11 +3554,11 @@ struct ChatView: View {
     }
 
     private func requestComposerFocusIfPossible() {
-        guard canFocusComposer else { return }
+        guard isOnScreen, canFocusComposer else { return }
 
         Task { @MainActor in
             await Task.yield()
-            guard canFocusComposer else { return }
+            guard isOnScreen, canFocusComposer else { return }
             composerIsFocused = true
         }
     }

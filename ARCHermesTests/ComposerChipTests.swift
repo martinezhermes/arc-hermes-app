@@ -959,6 +959,27 @@ final class ComposerFocusTransitionTests: XCTestCase {
         }
     }
 
+    func testDisablingPaneDuringAPopCancelsDeferredFocus() throws {
+        let state = ComposerPresentationHarnessState()
+        let host = UIHostingController(rootView:
+            ComposerPresentationHarness(state: state, updateRevision: 0).disabled(false))
+        var editor: ComposerChipTextView?
+        try withPopTransition(content: host.view, child: host, beforePush: {
+            editor = self.findEditor(in: host.view)
+            XCTAssertEqual(editor?.becomeFirstResponder(), true)
+        }) { root in
+            XCTAssertEqual(editor?.becomeFirstResponder(), false)
+            host.rootView = ComposerPresentationHarness(state: state, updateRevision: 1).disabled(true)
+            root.view.layoutIfNeeded()
+            XCTAssertEqual(editor?.wantsDeferredFocus(), false,
+                           "The latest disabled intent must block UIKit's deferred restoration immediately")
+        } after: {
+            XCTAssertEqual(editor?.isFirstResponder, false)
+            XCTAssertFalse(state.isFocused)
+            XCTAssertEqual(editor?.sourceText, state.text)
+        }
+    }
+
     func testFocusedComposerRestoresFocusAfterNavigationRoundTrip() throws {
         let state = ComposerPresentationHarnessState()
         let host = UIHostingController(rootView: ComposerPresentationHarness(state: state, updateRevision: 0))

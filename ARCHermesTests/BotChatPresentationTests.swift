@@ -982,6 +982,104 @@ import XCTest
         XCTAssertFalse(wire.calls.contains { $0.0 == "prompt.submit" }, "Dismissing the keyboard must not send the draft")
     }
 
+    /// The real compact shell deactivates the mounted composer rather than destroying its draft.
+    func testCompactSidebarReleasesComposerFocusAndPreservesTheEditor() async throws {
+        let wire = BotFixtureWire()
+        let model = make(wire)
+        await model.recover()
+        let focus = ComposerFixtureFocus()
+        let pane = ComposerPaneFixtureState()
+        let appeared = expectation(description: "pane composer appeared")
+        appeared.assertForOverFulfill = false
+        let blurred = expectation(description: "covered composer released focus")
+        let edited = expectation(description: "draft edit reached the model")
+        let restored = expectation(description: "detail became interactive again")
+        var acceptsCallbacks = true
+        var didReportBlur = false
+        let window = try show(ComposerPaneFixture(model: model, focus: focus, pane: pane,
+            appeared: { if acceptsCallbacks { appeared.fulfill() } }, blurred: {
+                if acceptsCallbacks && !didReportBlur { didReportBlur = true; blurred.fulfill() }
+            },
+            edited: { if acceptsCallbacks && $0 == "Unsent pane draft" { edited.fulfill() } },
+            changed: { if acceptsCallbacks && !$0 { restored.fulfill() } }))
+        defer { acceptsCallbacks = false; model.suspend(); close(window) }
+        await fulfillment(of: [appeared], timeout: 5)
+        window.layoutIfNeeded()
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertTrue(editor.becomeFirstResponder())
+        editor.insertText("Unsent pane draft")
+        await fulfillment(of: [edited], timeout: 5)
+
+        pane.sidebarPresented = true
+        await fulfillment(of: [blurred], timeout: 5)
+        XCTAssertFalse(editor.isFirstResponder)
+        XCTAssertFalse(editor.isEditable)
+        XCTAssertEqual(model.draft, "Unsent pane draft")
+        XCTAssertTrue(descendants(window).contains { $0 === editor })
+
+        pane.sidebarPresented = false
+        await fulfillment(of: [restored], timeout: 5)
+        window.layoutIfNeeded()
+        XCTAssertTrue(editor.isEditable)
+        XCTAssertFalse(editor.isFirstResponder, "A canceled reveal does not reopen the keyboard")
+        XCTAssertFalse(focus.isFocused)
+        XCTAssertEqual(editor.sourceText, "Unsent pane draft")
+        XCTAssertFalse(wire.calls.contains { $0.0 == "prompt.submit" })
+    }
+
+    func testWideSidebarKeepsTheVisibleComposerInteractive() async throws {
+        let model = make(BotFixtureWire())
+        await model.recover()
+        let focus = ComposerFixtureFocus()
+        let pane = ComposerPaneFixtureState()
+        let appeared = expectation(description: "wide composer appeared")
+        appeared.assertForOverFulfill = false
+        let changed = expectation(description: "wide sidebar changed")
+        var acceptsCallbacks = true
+        let window = try show(ComposerPaneFixture(model: model, focus: focus, pane: pane,
+            appeared: { if acceptsCallbacks { appeared.fulfill() } }, blurred: {}, edited: { _ in },
+            changed: { if acceptsCallbacks && $0 { changed.fulfill() } }))
+        defer { acceptsCallbacks = false; model.suspend(); close(window) }
+        window.traitOverrides.horizontalSizeClass = .regular
+        window.frame = CGRect(x: 0, y: 0, width: 1194, height: 834)
+        await fulfillment(of: [appeared], timeout: 5)
+        window.layoutIfNeeded()
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertTrue(editor.becomeFirstResponder())
+        pane.sidebarPresented = true
+        await fulfillment(of: [changed], timeout: 5)
+        window.layoutIfNeeded()
+        XCTAssertFalse(pane.compact)
+        XCTAssertTrue(editor.isFirstResponder)
+        XCTAssertTrue(editor.isEditable)
+        XCTAssertTrue(descendants(window).contains { $0 === editor })
+    }
+
+    func testCompactSidebarReleasesNativeUtilityFieldFocus() async throws {
+        let pane = ComposerPaneFixtureState()
+        let appeared = expectation(description: "utility field appeared")
+        appeared.assertForOverFulfill = false
+        let focused = expectation(description: "utility field focused")
+        let blurred = expectation(description: "utility field released focus")
+        var acceptsCallbacks = true
+        let window = try show(UtilityPaneFieldFixture(pane: pane,
+            appeared: { if acceptsCallbacks { appeared.fulfill() } },
+            focusChanged: {
+                guard acceptsCallbacks else { return }
+                if $0 { focused.fulfill() } else { blurred.fulfill() }
+            }))
+        defer { acceptsCallbacks = false; close(window) }
+        await fulfillment(of: [appeared], timeout: 5)
+        window.layoutIfNeeded()
+        let field = try XCTUnwrap(descendants(window).compactMap { $0 as? UITextField }.first)
+        XCTAssertTrue(field.becomeFirstResponder())
+        await fulfillment(of: [focused], timeout: 5)
+        pane.sidebarPresented = true
+        await fulfillment(of: [blurred], timeout: 5)
+        XCTAssertFalse(field.isFirstResponder)
+        XCTAssertTrue(descendants(window).contains { $0 === field })
+    }
+
     /// The question card is the Sessions clarification vocabulary: the question
     /// block, the host's choices, and a free-text response field. The field sits
     /// inside the transcript, which is why the transcript tap clears only the
@@ -1964,6 +2062,53 @@ private struct AttachmentOverlayHarnessView: View {
 /// Holds a composer's screen-owned focus binding for hosted integration tests.
 @MainActor @Observable private final class ComposerFixtureFocus {
     var isFocused = false
+}
+
+@MainActor @Observable private final class ComposerPaneFixtureState {
+    var sidebarPresented = false
+    var compact = true
+}
+
+private struct ComposerPaneFixture: View {
+    let model: BotConversation
+    let focus: ComposerFixtureFocus
+    @Bindable var pane: ComposerPaneFixtureState
+    let appeared: () -> Void
+    let blurred: () -> Void
+    let edited: (String) -> Void
+    let changed: (Bool) -> Void
+
+    var body: some View {
+        ChatNavigationShell(isPresented: $pane.sidebarPresented, isCompact: $pane.compact) {
+            ScrollView { Text("Sessions") }
+        } detail: {
+            BotComposerFixture(model: model, focus: focus)
+        }
+        .onAppear(perform: appeared)
+        .onChange(of: focus.isFocused) { _, value in if !value { blurred() } }
+        .onChange(of: model.draft) { _, value in edited(value) }
+        .onChange(of: pane.sidebarPresented) { _, shown in
+            DispatchQueue.main.async { changed(shown) }
+        }
+    }
+}
+
+private struct UtilityPaneFieldFixture: View {
+    @Bindable var pane: ComposerPaneFixtureState
+    @State private var text = "Utility draft"
+    @FocusState private var isFocused: Bool
+    let appeared: () -> Void
+    let focusChanged: (Bool) -> Void
+
+    var body: some View {
+        ChatNavigationShell(isPresented: $pane.sidebarPresented, isCompact: $pane.compact) {
+            Text("Sessions")
+        } detail: {
+            TextField("Utility field", text: $text).focused($isFocused)
+        }
+        .onAppear(perform: appeared)
+        .onChange(of: isFocused) { _, value in focusChanged(value) }
+    }
 }
 
 /// The Bot composer wired like `BotChatView`: focus lives in the parent, and
