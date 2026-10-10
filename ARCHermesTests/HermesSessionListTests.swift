@@ -502,6 +502,62 @@ import SwiftData
         }
     }
 
+    /// The scroll edge must treat content moving underneath ARC's pinned header, not blur the logo.
+    func testNativeHeaderScrollUnderPreservesPinnedChrome() async throws {
+        let wire = HermesSessionListWire()
+        wire.pages["default"] = [0: page(rows(0..<30))]
+        let list = makeList(wire)
+        await list.openHermes()
+        defer { list.closeHermes() }
+        let container = try ModelContainer(for: CachedSession.self, CachedMessage.self,
+                                          configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        let home = HermesHome(logoText: "ARC HERMES", colorHex: "#FFD700",
+                              servers: AvatarServerSwitcherModel(servers: [], activeServerID: nil),
+                              openSettings: {}, switchToServer: { _ in }, addServer: {}, manageServers: {},
+                              pendingBotDestination: .constant(nil), connectionChanged: {})
+        let appeared = expectation(description: "scrolling native sidebar appeared")
+        appeared.assertForOverFulfill = false
+        let host = UIHostingController(rootView:
+            HermesSessionListView(entry: HermesSessionListEntry(server: server, connection: connection, profile: "default"),
+                                  model: list, home: home)
+                .modelContainer(container).preferredColorScheme(.dark)
+                .transaction { $0.disablesAnimations = true }
+                .onAppear { appeared.fulfill() })
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        defer { window.isHidden = true; window.rootViewController = nil }
+        window.frame = CGRect(x: 0, y: 0, width: 393, height: 852)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        host.view.frame = window.bounds
+        await fulfillment(of: [appeared], timeout: 5)
+        window.layoutIfNeeded()
+        // Traverse all children even when a parent is itself scrollable.
+        func candidates(_ view: UIView) -> [UIScrollView] {
+            var found = view.subviews.flatMap { candidates($0) }
+            if let scroll = view as? UIScrollView { found.append(scroll) }
+            return found
+        }
+        let scroll = try XCTUnwrap(candidates(host.view).first {
+            $0.bounds.width < 500 && $0.bounds.height > 100 && $0.contentSize.height > $0.bounds.height + 100
+        })
+        let before = scroll.contentOffset.y
+        scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: before + 220), animated: false)
+        let rendered = expectation(description: "scroll transaction committed")
+        DispatchQueue.main.async { rendered.fulfill() }
+        await fulfillment(of: [rendered], timeout: 5)
+        window.layoutIfNeeded()
+        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: image)
+        attachment.name = "Native ARC pinned header - scrolled"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        XCTAssertGreaterThan(scroll.contentOffset.y, before)
+        XCTAssertEqual(list.sessions.count, 30)
+    }
+
     // MARK: Fixture
 
     private func makeList(_ wire: HermesSessionListWire, profile: String? = "default",

@@ -79,6 +79,37 @@ final class ChatSidebarLayoutTests: XCTestCase {
         XCTAssertEqual(drag.startWidth + drag.translation, 360)
     }
 
+    func testResizeReleaseCommitsEvenAfterTransientStateHasReset() {
+        let saved = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 330,
+            translation: 45, direction: 1, available: 1000)
+        XCTAssertEqual(saved, 375)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 1000, preferred: saved, wide: true), 375)
+        let next = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: saved,
+            translation: -60, direction: 1, available: 1000)
+        XCTAssertEqual(next, 315, "The next gesture starts at the committed width")
+    }
+
+    func testResizeReleaseMatchesLastRenderedWidthWithoutDoubleCountingTranslation() {
+        var drag = ChatSidebarDrag(width: 300, presented: true, direction: 1,
+                                   initialTranslation: .zero, resizing: true)
+        drag.update(CGSize(width: 50, height: 0))
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: drag, baseWidth: 300,
+            translation: 50, direction: 1, available: 1000), drag.startWidth + drag.translation)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 300,
+            translation: 50, direction: 1, available: 1000), 350)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 300,
+            translation: -50, direction: -1, available: 1000), 350)
+    }
+
+    func testSavedSidebarWidthSurvivesTemporaryWindowClamping() {
+        let preferred = ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 350,
+            translation: 50, direction: 1, available: 1100)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 700, preferred: preferred, wide: true), 380)
+        XCTAssertEqual(ChatSidebarLayout.width(available: 1100, preferred: preferred, wide: true), 400)
+        XCTAssertEqual(ChatSidebarLayout.completedResizeWidth(drag: nil, baseWidth: 350,
+            translation: 500, direction: 1, available: 700), 380)
+    }
+
     func testRightToLeftCloseUsesCapturedDirection() {
         let drag = ChatSidebarDrag(width: 300, presented: true, direction: -1,
                                   initialTranslation: CGSize(width: 200, height: 0))

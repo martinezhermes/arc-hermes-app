@@ -20,6 +20,14 @@ enum ChatSidebarLayout {
         return max(0, min(available * 0.8, available - 44))
     }
 
+    /// GestureState may be gone at release; commit the final total translation from the saved base.
+    static func completedResizeWidth(drag: ChatSidebarDrag?, baseWidth: CGFloat,
+                                     translation: CGFloat, direction: CGFloat, available: CGFloat) -> CGFloat {
+        width(available: available,
+              preferred: (drag?.startWidth ?? baseWidth) + translation * (drag?.direction ?? direction),
+              wide: true)
+    }
+
     static func reveal(width: CGFloat, presented: Bool, translation: CGFloat) -> CGFloat {
         min(width, max(0, (presented ? width : 0) + translation))
     }
@@ -185,11 +193,9 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                                     state?.update(value.translation)
                                 }
                                 .onEnded { value in
-                                    guard let drag = resizeDrag else { return }
-                                    preferredWidth = ChatSidebarLayout.width(
-                                        available: available,
-                                        preferred: drag.startWidth + value.translation.width * drag.direction,
-                                        wide: true
+                                    preferredWidth = ChatSidebarLayout.completedResizeWidth(
+                                        drag: resizeDrag, baseWidth: baseWidth,
+                                        translation: value.translation.width, direction: sign, available: available
                                     )
                                 }
                         )

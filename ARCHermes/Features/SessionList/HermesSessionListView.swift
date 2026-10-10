@@ -52,6 +52,7 @@ struct HermesSessionListView: View {
     @State private var searchText: String
     /// Search expands the sidebar's glass field without replacing the list.
     @State private var isSearchExpanded = false
+    @State private var isShowingProfileFilter = false
     @FocusState private var isSearchFieldFocused: Bool
     /// The list a chat's `/sessions` pushed.
     init(entry: HermesSessionListEntry) {
@@ -106,6 +107,7 @@ struct HermesSessionListView: View {
             if !viewModel.isViewingCachedData && !viewModel.hermesShowsAllProfiles { archivedRow }
         }
         .listStyle(.plain)
+        .scrollEdgeEffectStyle(.soft, for: .top)
         .environment(\.defaultMinListRowHeight, 0)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: projectsAreExpanded)
         .overlay(alignment: .bottom) {
@@ -201,7 +203,7 @@ struct HermesSessionListView: View {
         .onChange(of: navigation.isSidebarPresented) {
             guard home != nil else { return }
             if navigation.isSidebarPresented { Task { await viewModel.openHermes(modelContext: modelContext) } }
-            else { viewModel.pauseHermes() }
+            else { isShowingProfileFilter = false; viewModel.pauseHermes() }
         }
         .onChange(of: home?.pendingBotDestination.wrappedValue, initial: true) {
             guard let destination = home?.pendingBotDestination.wrappedValue,
@@ -262,7 +264,7 @@ struct HermesSessionListView: View {
                         .frame(width: 48, height: 48)
                         .sessionsChromeGlass(isInteractive: true, in: Circle())
                     Spacer(minLength: 0)
-                    profileFilter.labelStyle(.iconOnly).frame(width: 44, height: 44)
+                    profileFilter
                     Button(action: home.openSettings) {
                         Image(systemName: "gearshape")
                             .font(.system(size: 24, weight: .medium))
@@ -384,7 +386,7 @@ struct HermesSessionListView: View {
     /// The pushed list's Profile menu, named for what it lists.
     private var profileMenu: some View {
         Menu {
-            profilePicker
+            profileFilterActions
         } label: {
             // A Profile name is the user's own text, never a catalog key.
             if viewModel.hermesShowsAllProfiles {
@@ -396,32 +398,60 @@ struct HermesSessionListView: View {
         }
     }
 
-    /// The home's filter button, which holds the same picker.
+    /// A normal button opens the native popover explicitly, independent of nested menu/Picker behavior.
     private var profileFilter: some View {
-        Menu {
-            profilePicker
-        } label: {
-            Label("Filter", systemImage: "line.3.horizontal.decrease")
+        Button { isShowingProfileFilter = true } label: {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 24, weight: .medium))
+                .foregroundStyle(.primary)
+                .frame(width: 48, height: 48)
+                .sessionsChromeGlass(isInteractive: true, in: Circle())
+                .contentShape(Circle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Filter")
         .accessibilityValue(viewModel.hermesShowsAllProfiles ? Text("All Profiles") : Text(verbatim: profile ?? ""))
+        .accessibilityIdentifier("native-profile-filter")
+        .disabled(listedProfiles.isEmpty || viewModel.isViewingCachedData)
+        .popover(isPresented: $isShowingProfileFilter) {
+            VStack(alignment: .leading, spacing: 8) {
+                profileFilterActions
+            }
+            .buttonStyle(.plain)
+            .font(.subheadline)
+            .padding(16)
+            .frame(minWidth: 220, alignment: .leading)
+            .presentationCompactAdaptation(.popover)
+        }
     }
 
-    /// Every Profile's sessions, each row tagged with its Profile (#709), or one Profile's. Picking
-    /// a Profile lists it and makes it the server's pick, which the composer's Profile chip shares
-    /// (#1015); All Profiles keeps the pick for New Session.
-    private var profilePicker: some View {
-        let listed = viewModel.hermesProfiles.isEmpty ? [profile].compactMap(\.self) : viewModel.hermesProfiles
-        return Picker("Profile", selection: Binding<String?>(get: { viewModel.hermesShowsAllProfiles ? nil : profile }, set: { picked in
-            Task {
-                if let picked { await viewModel.selectHermesProfile(picked) } else { await viewModel.showAllHermesProfiles() }
-            }
-        })) {
-            Text("All Profiles").tag(String?.none)
-            ForEach(listed, id: \.self) {
-                Text(verbatim: $0).tag(Optional($0))
-            }
+    private var listedProfiles: [String] {
+        viewModel.hermesProfiles.isEmpty ? [profile].compactMap(\.self) : viewModel.hermesProfiles
+    }
+
+    /// Selecting a Profile changes only this server's list and keeps New Session's host pick.
+    @ViewBuilder private var profileFilterActions: some View {
+        Button {
+            isShowingProfileFilter = false
+            Task { await viewModel.showAllHermesProfiles() }
+        } label: {
+            if viewModel.hermesShowsAllProfiles { Label("All Profiles", systemImage: "checkmark") }
+            else { Text("All Profiles") }
         }
-        .disabled(profile == nil)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .disabled(profile == nil || viewModel.isViewingCachedData)
+        ForEach(listedProfiles, id: \.self) { name in
+            Button {
+                isShowingProfileFilter = false
+                Task { await viewModel.selectHermesProfile(name) }
+            } label: {
+                if !viewModel.hermesShowsAllProfiles && profile == name {
+                    Label { Text(verbatim: name) } icon: { Image(systemName: "checkmark") }
+                } else { Text(verbatim: name) }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .disabled(viewModel.isViewingCachedData)
+        }
     }
 
     /// More pages may hold rows this list shows: any, or the selected lane's that the host
