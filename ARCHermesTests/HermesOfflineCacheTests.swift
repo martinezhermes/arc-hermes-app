@@ -330,6 +330,31 @@ import XCTest
                        ["r@research", "d@default"])
     }
 
+    /// Profile filtering stays available while offline and reads each scope's cached rows.
+    func testProfileFilteringRemainsAvailableOffline() async throws {
+        let context = try makeContext()
+        HermesProfilePreference.saveShowsAllProfiles(true, for: server, in: defaults)
+        let online = HermesSessionListWire()
+        online.pages = ["default": [0: HermesSessionPage(rows: [HermesSessionRow(id: "d", lastActive: 1)])],
+                        "research": [0: HermesSessionPage(rows: [HermesSessionRow(id: "r", lastActive: 2)])]]
+        await makeList(online).openHermes(modelContext: context)
+
+        let wire = HermesSessionListWire()
+        wire.connectFailure = URLError(.cannotConnectToHost)
+        let list = makeList(wire)
+        await list.openHermes(modelContext: context)
+        await list.selectHermesProfile("research")
+        XCTAssertTrue(list.isViewingCachedData)
+        XCTAssertFalse(list.hermesShowsAllProfiles)
+        XCTAssertEqual(list.sessions.map(\.sessionId), ["r"])
+
+        await list.showAllHermesProfiles()
+        XCTAssertTrue(list.isViewingCachedData)
+        XCTAssertTrue(list.hermesShowsAllProfiles)
+        XCTAssertEqual(Set(list.sessions.compactMap(\.sessionId)), ["r", "d"])
+        XCTAssertEqual(wire.changes, [], "Filtering does not mutate the host")
+    }
+
     /// The home's list, opened offline without a Profile, shows the server's pick's cached rows.
     func testAListWithoutAProfileShowsThePicksCachedRowsOffline() async throws {
         let context = try makeContext()

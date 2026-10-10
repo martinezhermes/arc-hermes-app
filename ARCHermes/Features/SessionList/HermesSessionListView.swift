@@ -412,7 +412,7 @@ struct HermesSessionListView: View {
         .accessibilityLabel("Filter")
         .accessibilityValue(viewModel.hermesShowsAllProfiles ? Text("All Profiles") : Text(verbatim: profile ?? ""))
         .accessibilityIdentifier("native-profile-filter")
-        .disabled(listedProfiles.isEmpty || viewModel.isViewingCachedData)
+        .disabled(listedProfiles.isEmpty)
         .popover(isPresented: $isShowingProfileFilter) {
             VStack(alignment: .leading, spacing: 8) {
                 profileFilterActions
@@ -435,22 +435,27 @@ struct HermesSessionListView: View {
             isShowingProfileFilter = false
             Task { await viewModel.showAllHermesProfiles() }
         } label: {
-            if viewModel.hermesShowsAllProfiles { Label("All Profiles", systemImage: "checkmark") }
-            else { Text("All Profiles") }
+            Group {
+                if viewModel.hermesShowsAllProfiles { Label("All Profiles", systemImage: "checkmark") }
+                else { Text("All Profiles") }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .disabled(profile == nil || viewModel.isViewingCachedData)
+        .disabled(profile == nil)
         ForEach(listedProfiles, id: \.self) { name in
             Button {
                 isShowingProfileFilter = false
                 Task { await viewModel.selectHermesProfile(name) }
             } label: {
-                if !viewModel.hermesShowsAllProfiles && profile == name {
-                    Label { Text(verbatim: name) } icon: { Image(systemName: "checkmark") }
-                } else { Text(verbatim: name) }
+                Group {
+                    if !viewModel.hermesShowsAllProfiles && profile == name {
+                        Label { Text(verbatim: name) } icon: { Image(systemName: "checkmark") }
+                    } else { Text(verbatim: name) }
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .disabled(viewModel.isViewingCachedData)
         }
     }
 
