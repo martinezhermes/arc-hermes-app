@@ -56,6 +56,17 @@ class TestFlightBuildNumberSelector
     parts.join(".")
   end
 
+  # Older ARC builds used two components. Read both zero-patch spellings so
+  # normalizing 1.9 to 1.9.0 cannot lose the existing train's build history.
+  def self.marketing_version_spellings(value)
+    validate_build_number!(value, "marketing version")
+    parts = value.split(".")
+    aliases = [value]
+    aliases << "#{value}.0" if parts.length == 2
+    aliases << parts.first(2).join(".") if parts.length == 3 && parts.last == "0"
+    aliases.uniq
+  end
+
   def self.select_build_number(requested_build_number:, latest_build_number:)
     requested = requested_build_number.to_s.strip
 
@@ -134,7 +145,7 @@ class TestFlightBuildNumberSelector
     if blocking
       raise SelectionError,
             "The #{marketing_version} pre-release train is closed: App Store version #{blocking} is already approved. " \
-            "Bump MARKETING_VERSION in ARCHermes.xcodeproj/project.pbxproj above #{blocking}, land it on master, " \
+            "Bump MARKETING_VERSION above #{blocking} with scripts/release-version (Config/Version.xcconfig), land it on master, " \
             "and re-run this workflow (see TESTFLIGHT.md, Upload External-Capable Build)."
     end
 
@@ -157,13 +168,15 @@ class TestFlightBuildNumberSelector
 
   def latest_uploaded_build_number(bundle_id:, marketing_version:)
     app_id = app_id_for_bundle_id(bundle_id)
-    builds = fetch_paginated_json(
-      "/v1/builds",
-      "filter[app]" => app_id,
-      "filter[preReleaseVersion.version]" => marketing_version,
-      "fields[builds]" => "version,uploadedDate",
-      "limit" => "200"
-    )
+    builds = self.class.marketing_version_spellings(marketing_version).flat_map do |version|
+      fetch_paginated_json(
+        "/v1/builds",
+        "filter[app]" => app_id,
+        "filter[preReleaseVersion.version]" => version,
+        "fields[builds]" => "version,uploadedDate",
+        "limit" => "200"
+      )
+    end
 
     build_numbers = builds.map { |item| item.dig("attributes", "version") }.compact
     invalid_build_numbers = build_numbers.reject { |value| self.class.valid_build_number?(value) }

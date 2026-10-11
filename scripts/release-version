@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Inspect/check/bump ARC's numeric release version; never upload, tag or commit."""
+import argparse
+import json
+from pathlib import Path
+import re
+import sys
+
+VERSION_PATTERN = r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
+ASSIGNMENT = r"(?m)^([ \t]*MARKETING_VERSION[ \t]*=[ \t]*)([^ \t\r\n/]+)"
+OVERRIDE = r'(?m)^[ \t]*"?MARKETING_VERSION(?:\[[^]]+\])?"?[ \t]*='
+TARGETS = {"ARCHermes", "ARCHermesTests", "ARCHermesShareExtension",
+           "ARCHermesLiveActivityWidget", "ARCHermesNotificationService"}
+
+
+def parse(value):
+    if not re.fullmatch(VERSION_PATTERN, value):
+        raise ValueError("Release version must be MAJOR.MINOR.PATCH without leading zeros or beta suffixes")
+    return tuple(map(int, value.split(".")))
+
+
+def bumped(value, component):
+    major, minor, patch = parse(value)
+    if component == "major":
+        return f"{major + 1}.0.0"
+    if component == "minor":
+        return f"{major}.{minor + 1}.0"
+    if component == "patch":
+        return f"{major}.{minor}.{patch + 1}"
+    raise ValueError(f"Unknown version component: {component}")
+
+
+def read_version(root):
+    values = re.findall(ASSIGNMENT, (root / "Config/Version.xcconfig").read_text())
+    if len(values) != 1:
+        raise ValueError("Config/Version.xcconfig must define MARKETING_VERSION exactly once")
+    parse(values[0][1])
+    return values[0][1]
+
+
+def check(root, build_settings=None):
+    version = read_version(root)
+    project = (root / "ARCHermes.xcodeproj/project.pbxproj").read_text()
+    if re.search(OVERRIDE, project):
+        raise ValueError("Xcode target/project overrides must not shadow Config/Version.xcconfig")
+    shared = (root / "Config/Shared.xcconfig").read_text()
+    if '#include "Version.xcconfig"' not in shared:
+        raise ValueError("Config/Shared.xcconfig must include Version.xcconfig")
+    for config in (root / "Config").glob("*.xcconfig"):
+        if config.name != "Version.xcconfig" and re.search(OVERRIDE, config.read_text()):
+            raise ValueError(f"{config.name} must not override the release version")
+    if build_settings is not None:
+        targets = set()
+        for entry in json.loads(build_settings.read_text()):
+            target = entry.get("target")
+            if not isinstance(target, str) or not target.startswith("ARCHermes"):
+                continue
+            targets.add(target)
+            actual = entry["buildSettings"].get("MARKETING_VERSION")
+            if actual != version:
+                raise ValueError(f"{target} resolves release version {actual}, expected {version}")
+        if not TARGETS.issubset(targets):
+            raise ValueError(f"Missing effective version settings for: {', '.join(sorted(TARGETS - targets))}")
+    return version
+
+
+def bump(root, component, dry_run=False):
+    old = check(root)
+    new = bumped(old, component)
+    if not dry_run:
+        path = root / "Config/Version.xcconfig"
+        text = path.read_text()
+        path.write_text(re.sub(ASSIGNMENT, lambda match: match.group(1) + new, text, count=1))
+    return old, new
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("command", choices=["show", "check", "patch", "minor", "major"])
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--build-settings", type=Path)
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
+    args = parser.parse_args()
+    try:
+        if args.command in {"show", "check"}:
+            if args.dry_run:
+                parser.error("--dry-run applies to patch/minor/major")
+            print(check(args.root, args.build_settings) if args.command == "check" else read_version(args.root))
+        else:
+            if args.build_settings:
+                parser.error("--build-settings applies to check")
+            old, new = bump(args.root, args.command, args.dry_run)
+            print(f"{old} -> {new}" + (" (dry run)" if args.dry_run else ""))
+    except (ValueError, OSError, json.JSONDecodeError) as error:
+        parser.exit(1, f"release-version: {error}\n")
+
+
+if __name__ == "__main__":
+    main()
