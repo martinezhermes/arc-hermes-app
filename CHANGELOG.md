@@ -7,6 +7,24 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.10.1] - Unreleased
+
+### Fixed
+
+- Horizontal composer controls, attachment strips, tables, code/diffs, math and approval text retain their gestures without accidentally opening Sessions or clearing keyboard focus. The existing SwiftUI drawer still handles normal reveal and close gestures.
+- The exposed chat has an adaptive one-point outline, and its dimming overlay follows the rounded leading corners. Closing from either the sidebar or exposed chat ignores inactive chat controls.
+
+### Changed
+
+- The non-glassy girl is the default app icon in light and dark appearance. Removed pixel-caduceus choices and unused pixel catalogs while retaining all six girl alternatives and the ARC Helmet.
+
+### Testing
+
+- Type a draft and keep the keyboard visible while scrolling horizontal controls and content. Test deliberate drawer reveal, reverse, cancellation and closing over tables/code.
+- Inspect the chat outline in light/dark; check iPad resizing, rotation, larger text, RTL, VoiceOver, Reduce Motion and hardware-keyboard behavior.
+- Check the default icon and upgrade from a retired pixel-caduceus selection; verify retained alternatives still work.
+- Exact sideways attachment of the system keyboard remains under investigation. Deliberate drawer focus behavior is unchanged. Utility-row swipe activation also reproduced on 1.10.0 in simulator automation and remains for device review.
+
 ## [1.10.0] - Unreleased
 
 ### Added
