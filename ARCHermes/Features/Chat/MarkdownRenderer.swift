@@ -310,6 +310,8 @@ private struct ChatCodeBlock: View {
                 ScrollView(.horizontal) {
                     styledCodeText(fixedHorizontal: true)
                 }
+                .scrollDismissesKeyboard(.never)
+                .sidebarRevealGestureExcluded()
             }
         }
         .background(codeBlockBackground)
@@ -1224,6 +1226,8 @@ private struct ChatMarkdownTable: View {
                 )
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollDismissesKeyboard(.never)
+        .sidebarRevealGestureExcluded()
 
         if let edgeFadeColor {
             scroller.horizontalOverflowFades(.overlay(edgeFadeColor))
