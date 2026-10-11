@@ -209,7 +209,6 @@
 					"@loader_path/Frameworks",
 				);
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				MARKETING_VERSION = 1.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ARCHermes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ARCHermes";
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1334,7 +1333,6 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ARCHermes/Resources/ARCHermes.entitlements;
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
-				MARKETING_VERSION = 1.9;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				CURRENT_PROJECT_VERSION = 1;
@@ -1816,7 +1814,6 @@
 				KEYCHAIN_SERVICE = "$(APP_BUNDLE_IDENTIFIER)";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesNotificationService/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -2398,7 +2395,6 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesLiveActivityWidget/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -3248,7 +3244,6 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesShareExtension/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -4907,7 +4902,6 @@
 					"@loader_path/Frameworks",
 				);
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				MARKETING_VERSION = 1.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ARCHermes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ARCHermes";
 				GENERATE_INFOPLIST_FILE = YES;
@@ -6020,7 +6014,6 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ARCHermes/Resources/ARCHermes.entitlements;
 				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
-				MARKETING_VERSION = 1.9;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				CURRENT_PROJECT_VERSION = 1;
@@ -6377,7 +6370,6 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesLiveActivityWidget/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -6672,7 +6664,6 @@
 				KEYCHAIN_SERVICE = "$(APP_BUNDLE_IDENTIFIER)";
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesNotificationService/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -7932,7 +7923,6 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
-				MARKETING_VERSION = 1.9;
 				INFOPLIST_FILE = ARCHermesShareExtension/Resources/Info.plist;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";

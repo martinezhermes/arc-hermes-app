@@ -8,6 +8,51 @@ These procedures target the production app, `com.martinezhermes.archermes`.
 For the side-by-side **ARC Hermes Branch** app, use the
 [branch upload commands](DEVELOPMENT.md#branch-testflight-upload-cli--the-push-to-branch-testflight-command).
 
+## Release version and build number
+
+ARC's accepted 1.9 baseline is written as **1.9.0**. `Config/Version.xcconfig`
+is the single release-version source, included by `Config/Shared.xcconfig` for
+all app/extension/test targets. Target overrides must not shadow it.
+
+Use [Semantic Versioning](https://semver.org/) for the app's compatibility
+contract: configured-server access, saved user data/credentials, public deep
+links/App Intents, and supported platform/backend requirements.
+
+- **Patch**, `1.9.0 → 1.9.1`: backward-compatible fixes and corrections.
+- **Minor**, `1.9.0 → 1.10.0`: backward-compatible features; reset patch to zero.
+- **Major**, `1.9.0 → 2.0.0`: an owner-approved compatibility boundary; reset
+  minor and patch to zero. Define the 2.0.0 scope explicitly rather than letting
+  a commit label or the size of a merge choose it.
+
+Versions are integer components: `1.10.0` follows `1.9.0`. Prepare the chosen
+bump with the release's scope and notes, not automatically for every PR:
+
+```sh
+scripts/release-version show
+scripts/release-version patch --dry-run
+scripts/release-version minor --dry-run
+scripts/release-version major --dry-run
+scripts/release-version patch
+```
+
+The applied command changes only the version source. It does not commit, push,
+tag, merge or upload. Review the diff and update this release's changelog and
+TestFlight notes. `scripts/validate` checks the numeric three-component version,
+absence of competing overrides and effective versions for every target. Local
+signing overrides remain separate; they must not override the release version.
+
+`CFBundleShortVersionString`/`MARKETING_VERSION` is the release version.
+`CFBundleVersion`/`CURRENT_PROJECT_VERSION` is the unique upload build number.
+An unreleased beta/RC can keep its release version across validation builds;
+advance the build number. Keep beta/RC labels in notes or explicitly authorized
+Git tags, not in Apple's numeric bundle version. Once a stable version is
+released, ship changed contents under a new version.
+
+The build-number selector reads both `1.9` and `1.9.0` spellings of the
+zero-patch train, preserving the already-uploaded build history. Nonzero patches
+use their own train. Backend compatibility pins/version reporting remain
+independent of the app release version.
+
 ## Release gates
 
 Before a production upload, select a clean release-candidate commit on `master`,
@@ -102,8 +147,8 @@ This workflow uses [external-capable export options](ci/ExternalTestFlightExport
 and does not invite testers or submit for review. It checks the release train
 before archiving through `ENFORCE_OPEN_TRAIN` in
 [the build-number selector](ci/select_testflight_build_number.rb).
-After an App Store release, bump all `MARKETING_VERSION` entries on `master`
-to open the next release train; the external workflow rejects a closed train.
+After an App Store release, use `scripts/release-version patch|minor|major`
+for the selected next release and land that change on `master` to open its train; the external workflow rejects a closed train.
 
 For a manual upload instead, select the validated RC in Xcode, archive Release
 for `Any iOS Device`, and choose `Distribute App > App Store Connect > Upload`.
