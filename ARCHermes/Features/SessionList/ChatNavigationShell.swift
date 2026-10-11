@@ -58,6 +58,12 @@ enum ChatSidebarLayout {
         return 0.88 + 0.12 * Double(min(1, max(0, separation)))
     }
 
+    /// A small uniform scale makes the covered pane recede without a sideways translation.
+    static func sidebarScale(separation: CGFloat, wide: Bool, reduceMotion: Bool) -> CGFloat {
+        guard !wide, !reduceMotion else { return 1 }
+        return 0.97 + 0.03 * min(1, max(0, separation))
+    }
+
     static func settlesOpen(width: CGFloat, presented: Bool, projectedTranslation: CGFloat) -> Bool {
         reveal(width: width, presented: presented, translation: projectedTranslation) > width / 2
     }
@@ -164,6 +170,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .scrollDisabled(!activity.sidebar)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
+                    .scaleEffect(ChatSidebarLayout.sidebarScale(separation: separation, wide: wide, reduceMotion: reduceMotion), anchor: .leading)
                     .offset(x: ChatSidebarLayout.sidebarOffset(width: width, reveal: reveal, wide: wide))
                     .opacity(ChatSidebarLayout.sidebarOpacity(separation: separation, wide: wide, reduceMotion: reduceMotion))
                     .allowsHitTesting(isPresented)

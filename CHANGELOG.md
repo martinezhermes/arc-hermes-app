@@ -7,6 +7,18 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-10-11
+
+### Fixed
+
+- The compact Sessions pane now gently recedes to 97% size with the existing fade as chat covers it, then returns to full size on reveal. Both effects follow the same swipe progress, including reversal and cancellation.
+- The leading edge stays anchored in left-to-right and right-to-left layouts. Wide-layout sizing and Reduce Motion keep the sidebar at full size.
+
+### Testing
+
+- Review the depth and fade during slow, fast, cancelled and reversed swipes in light/dark appearance, including keyboard-open and actively scrolling sessions.
+- Confirm drafts and active responses survive, and iPad sidebar resizing, larger text, VoiceOver and Reduce Motion remain correct.
+
 ## [1.9.1] - 2026-10-11
 
 ### Fixed
