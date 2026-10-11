@@ -32,11 +32,26 @@ final class ChatSidebarLayoutTests: XCTestCase {
         XCTAssertEqual(ChatSidebarLayout.sidebarOpacity(separation: 2, wide: false, reduceMotion: false), 1)
     }
 
+    func testSidebarDepthTracksCoverageAndReversalWithinASubtleRange() {
+        let closing = [1.0, 0.75, 0.5, 0.25, 0.0].map {
+            ChatSidebarLayout.sidebarScale(separation: $0, wide: false, reduceMotion: false)
+        }
+        XCTAssertEqual(closing.first, 1)
+        XCTAssertEqual(closing.last, 0.97)
+        XCTAssertTrue(zip(closing, closing.dropFirst()).allSatisfy { $0 > $1 })
+        XCTAssertEqual(ChatSidebarLayout.sidebarScale(separation: 0.5, wide: false, reduceMotion: false),
+                       closing[2], "Reversed swipes share the same scale rather than starting another animation")
+        XCTAssertEqual(ChatSidebarLayout.sidebarScale(separation: -1, wide: false, reduceMotion: false), 0.97)
+        XCTAssertEqual(ChatSidebarLayout.sidebarScale(separation: 2, wide: false, reduceMotion: false), 1)
+    }
+
     func testWideColumnsAndReduceMotionDoNotFadeTheSidebar() {
         for reveal: CGFloat in [0, 150, 300] {
             XCTAssertEqual(ChatSidebarLayout.sidebarOffset(width: 300, reveal: reveal, wide: true), reveal - 300)
             XCTAssertEqual(ChatSidebarLayout.sidebarOpacity(separation: reveal / 300, wide: true, reduceMotion: false), 1)
             XCTAssertEqual(ChatSidebarLayout.sidebarOpacity(separation: reveal / 300, wide: false, reduceMotion: true), 1)
+            XCTAssertEqual(ChatSidebarLayout.sidebarScale(separation: reveal / 300, wide: true, reduceMotion: false), 1)
+            XCTAssertEqual(ChatSidebarLayout.sidebarScale(separation: reveal / 300, wide: false, reduceMotion: true), 1)
         }
     }
 
@@ -78,8 +93,15 @@ final class ChatSidebarLayoutTests: XCTestCase {
                 window.layoutIfNeeded()
                 XCTAssertTrue(pane.sidebar === sidebar)
                 XCTAssertTrue(pane.detail === detail)
-                XCTAssertEqual(sidebar.convert(sidebar.bounds, to: window).minX,
-                               wide && !shown ? anchor.minX - sign * anchor.width : anchor.minX, accuracy: 1)
+                let renderedSidebar = sidebar.convert(sidebar.bounds, to: window)
+                let leadingEdge = direction == .rightToLeft ? renderedSidebar.maxX : renderedSidebar.minX
+                let originalLeadingEdge = direction == .rightToLeft ? anchor.maxX : anchor.minX
+                XCTAssertEqual(leadingEdge,
+                               wide && !shown ? originalLeadingEdge - sign * anchor.width : originalLeadingEdge, accuracy: 1)
+                let expectedScale: CGFloat = wide || shown ? 1 : 0.97
+                XCTAssertEqual(renderedSidebar.width, sidebar.bounds.width * expectedScale, accuracy: 1)
+                XCTAssertEqual(renderedSidebar.height, sidebar.bounds.height * expectedScale, accuracy: 1)
+                XCTAssertEqual(renderedSidebar.midY, anchor.midY, accuracy: 1)
                 XCTAssertEqual(detail.convert(detail.bounds, to: window).minX, shown ? openDetailOrigin : 0, accuracy: 1)
                 XCTAssertEqual(detail.bounds.width, wide && shown ? window.bounds.width - anchor.width : window.bounds.width, accuracy: 1)
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
@@ -123,6 +145,7 @@ final class ChatSidebarLayoutTests: XCTestCase {
             XCTAssertTrue(pane.sidebar === sidebar)
             XCTAssertTrue(pane.detail === detail)
             XCTAssertEqual(sidebar.convert(sidebar.bounds, to: window).minX, anchor.minX, accuracy: 1)
+            XCTAssertEqual(sidebar.convert(sidebar.bounds, to: window).width, sidebar.bounds.width * (shown ? 1 : 0.97), accuracy: 1)
             XCTAssertEqual(detail.convert(detail.bounds, to: window).minX, shown ? anchor.width : 0, accuracy: 1)
         }
     }
