@@ -28,13 +28,6 @@ struct ComposerToolbarScroller<Content: View>: View {
         .scrollDismissesKeyboard(.never)
         // The toolbar sits on glass, so its edges fade through a mask.
         .horizontalOverflowFades(.mask)
-        .background {
-            GeometryReader { geometry in
-                Color.clear.preference(
-                    key: SidebarRevealExclusionFrameKey.self,
-                    value: geometry.frame(in: .global)
-                )
-            }
-        }
+        .sidebarRevealGestureExcluded()
     }
 }
