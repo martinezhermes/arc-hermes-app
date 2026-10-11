@@ -47,6 +47,17 @@ enum ChatSidebarLayout {
         min(width, max(0, (presented ? width : 0) + translation))
     }
 
+    /// Compact chat covers an anchored sidebar; wide layouts still reclaim its column.
+    static func sidebarOffset(width: CGFloat, reveal: CGFloat, wide: Bool) -> CGFloat {
+        wide ? reveal - width : 0
+    }
+
+    /// A restrained fade follows coverage, so reversing a drag has no separate animation to unwind.
+    static func sidebarOpacity(separation: CGFloat, wide: Bool, reduceMotion: Bool) -> Double {
+        guard !wide, !reduceMotion else { return 1 }
+        return 0.88 + 0.12 * Double(min(1, max(0, separation)))
+    }
+
     static func settlesOpen(width: CGFloat, presented: Bool, projectedTranslation: CGFloat) -> Bool {
         reveal(width: width, presented: presented, translation: projectedTranslation) > width / 2
     }
@@ -153,7 +164,8 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .scrollDisabled(!activity.sidebar)
                     .frame(width: width)
                     .frame(maxHeight: .infinity)
-                    .offset(x: sign * (reveal - width))
+                    .offset(x: ChatSidebarLayout.sidebarOffset(width: width, reveal: reveal, wide: wide))
+                    .opacity(ChatSidebarLayout.sidebarOpacity(separation: separation, wide: wide, reduceMotion: reduceMotion))
                     .allowsHitTesting(isPresented)
                     .accessibilityHidden(!isPresented)
                     .simultaneousGesture(revealGesture(width: width, shellFrame: geometry.frame(in: .global)), isEnabled: !wide && isPresented)
@@ -196,7 +208,8 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
-                    .offset(x: sign * reveal)
+                    // SwiftUI offsets already run from leading to trailing, including RTL.
+                    .offset(x: reveal)
 
                 if wide && isPresented {
                     Rectangle()
@@ -204,7 +217,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                         .frame(width: 1)
                         .frame(width: 20)
                         .contentShape(Rectangle())
-                        .offset(x: sign * (width - 10))
+                        .offset(x: width - 10)
                         .gesture(
                             DragGesture(minimumDistance: 0, coordinateSpace: .named(gestureSpace))
                                 .updating($resizeDrag) { value, state, transaction in
