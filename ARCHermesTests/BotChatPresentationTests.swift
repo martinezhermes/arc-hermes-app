@@ -370,8 +370,10 @@ import XCTest
         }.environment(\.scenePhase, .inactive))
         defer { reader.close(); close(window) }
         await settle(window) {
-            descendants(window).compactMap { $0 as? ComposerChipTextView }
-                .contains { $0.accessibilityLabel == "Reply in thread" }
+            guard descendants(window).compactMap({ $0 as? ComposerChipTextView })
+                .contains(where: { $0.accessibilityLabel == "Reply in thread" }) else { return false }
+            // The pushed composer can appear before the thread's deferred scroll.
+            return (try? replyLeaves(in: window))?.visible.contains("Thread message 20") == true
         }
         let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }
             .first { $0.accessibilityLabel == "Reply in thread" })

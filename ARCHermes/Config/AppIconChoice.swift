@@ -6,8 +6,6 @@ import UIKit
 enum AppIconChoice: String, CaseIterable, Identifiable {
     case system
     case wingedHelmet
-    case pixelCaduceus
-    case pixelCaduceusDark
     case nousResearch
     case nousResearchDark
     case nousResearchChromeLight
@@ -17,8 +15,6 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
 
     // Keep the existing alternate names so retained selections survive updates.
     static let wingedHelmetAlternateIconName = "AppIconWingedHelmet"
-    static let pixelCaduceusAlternateIconName = "AppIconPixelCaduceus"
-    static let pixelCaduceusDarkAlternateIconName = "AppIconPixelCaduceusDark"
 
     var id: String { rawValue }
 
@@ -26,8 +22,6 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system: String(localized: "System")
         case .wingedHelmet: String(localized: "ARC Helmet")
-        case .pixelCaduceus: String(localized: "Pixel Caduceus")
-        case .pixelCaduceusDark: String(localized: "Pixel Caduceus Dark")
         case .nousResearch: String(localized: "Nous Research")
         case .nousResearchDark: String(localized: "Nous Research Dark")
         case .nousResearchChromeLight: String(localized: "Nous Research Chrome Light")
@@ -41,11 +35,9 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system, .wingedHelmet:
             String(localized: "Matches device appearance")
-        case .pixelCaduceus:
-            String(localized: "Original artwork")
         case .nousResearch, .nousResearchChromeLight, .nousResearchGlassLight:
             String(localized: "Always use the light icon")
-        case .pixelCaduceusDark, .nousResearchDark, .nousResearchChromeDark, .nousResearchGlassDark:
+        case .nousResearchDark, .nousResearchChromeDark, .nousResearchGlassDark:
             String(localized: "Always use the dark icon")
         }
     }
@@ -54,8 +46,6 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
         switch self {
         case .system: nil
         case .wingedHelmet: Self.wingedHelmetAlternateIconName
-        case .pixelCaduceus: Self.pixelCaduceusAlternateIconName
-        case .pixelCaduceusDark: Self.pixelCaduceusDarkAlternateIconName
         case .nousResearch: "AppIconNousResearch"
         case .nousResearchDark: "AppIconNousResearchDark"
         case .nousResearchChromeLight: "AppIconNousResearchChromeLight"
