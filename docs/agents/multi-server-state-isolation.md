@@ -89,6 +89,22 @@ to `CacheStore`. Two consequences:
   chat its newest cached page, read-only under the offline banner, until a read
   succeeds. Sign-out, server removal and `clearCache(for:)` take the Hermes
   rows with the server's others.
+- **A bot's Bot Chat (#1144)** caches its transcript only, never a list row
+  (a webui server's list reads and sweeps every session row of its server),
+  under `hermes-bot|<connection UUID>|<Profile>|<canonical root>`, which a
+  compaction that moves its stored key leaves in place. Its chat shows the
+  newest cached page, read-only, before the attach, until the first newest
+  read replaces it; an attach that finds another root than the preview's drops
+  it. An archived Bot Chat, opened by its key, keeps its own copy under
+  `hermes-bot-archive|<connection UUID>|<Profile>|<lineage root>`, including a
+  legacy compression chain listed under its tip's "Bot Chat (continued)" title,
+  and reads its bot's copy of that root while it has none. Each copy's newest
+  read drops the rows the host cut from the other copy of the same root too,
+  writing nothing there, so an undo seen in either chat stays undone. It never becomes the
+  bot's preview, and the bot's attach on another root leaves it. Deleting the
+  bot or discarding its connection removes both copies, and a clear or removal revokes the writes of chats already
+  attached until they attach again (`CacheStore.hermesCacheEpoch`).
+  `HermesOfflineCacheTests` covers the root, the list and server isolation.
 
 ## Retained draft attachments
 
@@ -130,9 +146,7 @@ per-server:
 - Session-row display toggles (`SessionRowDisplaySettings`: message count, workspace, cron — the CLI toggle moved to per-server storage in #19, see the per-server table above)
 - Sidebar disclosure state (`sessionSidebar.profilesAreExpanded` / `projectsAreExpanded`)
 - Chat transcript display toggles (`ChatTranscriptDisplaySettings`: thinking/tool cards, attachment paths, timestamps, code-block wrap)
-- Streamed-text animation (`StreamedTextAnimationSettings`)
 - Streaming send behavior (`StreamingSendBehavior`)
-- Bot quick replies (`BotQuickReplyStore`): the user's own text, the same chips for every server, connection and Profile
 - Adaptive Glass preference (`adaptiveGlass.isEnabled`)
 - **Primary-action tint *toggle*** (`PrimaryActionTintSettings.isEnabledKey`) — the
   on/off behavior is global; only the *color* it applies (Header Logo Color) is
@@ -185,6 +199,18 @@ server's content even if the purge fails.
 | Per-server cookies | `AuthManagerStateTests` (`testSignOutClearsOnlyActiveServerCookies`, `testRemoveNonActiveServerClearsOnlyItsCookies`, `testUnauthorizedClearsOnlyActiveServerCookies`) |
 | Default model/profile | No persisted state to leak (server-fresh per active server); covered by the switch mechanism + `9.3` Settings tests. |
 | Chat thumbnail cache (same path, two servers/sessions; attachment vs. media key) | `TranscriptMediaParserTests` (`testAttachmentImageCacheKeySeparatesSamePathAcrossServersAndSessions`, `testImageCacheKeySeparatesSameReferenceAcrossSessions`, `testAttachmentAndMediaCacheKeysNeverCollide`) |
+
+## Links that name a server
+
+A Bot link (`bot?server=…`), a webui push link (`webui-push?server=…`) and a Hermes session
+link (`session?server=…`, #1176) each name their configured server. Each router reads only the
+registry and auth state, and drops a link for an unconfigured server. A link for another
+server switches to it first; a webui push or session link does so even from another server's
+sign-in form, where a Bot link waits for that sign-in. The session lookup
+then runs on the named server's own saved connection, after the switch, so a link never reads,
+signs in to or opens anything on a server it doesn't name. A webui push or session link
+also replaces every link already held (`PendingLinks`), so the sign-in it waits for never
+routes an older link to another server first. `HermesSessionLinkTests` covers the routing.
 
 ## Bot connection and drafts
 
