@@ -38,6 +38,8 @@ struct DisplayMathView: View {
         // Math/LaTeX is read left-to-right regardless of the chat direction (#259);
         // mirroring it would reverse equations inside an RTL message.
         .forcedLeftToRight()
+        .scrollDismissesKeyboard(.never)
+        .sidebarRevealGestureExcluded()
     }
 
     /// The pre-SwiftMath Unicode/serif rendering, kept verbatim as the graceful

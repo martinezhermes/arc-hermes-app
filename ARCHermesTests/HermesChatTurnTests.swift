@@ -373,6 +373,7 @@ import SwiftUI
     func testARefusedSignInIsNeverSentAgainUnasked() async {
         let chat = await openChat()
         let before = chat.host.requests.count
+        let signIns = HermesHostFixture.count("/auth/password-login")
         chat.turn.engine.disconnect(BotFailure.rejected(401))
         XCTAssertTrue(chat.model.hermesNeedsSignIn)
 
@@ -382,7 +383,12 @@ import SwiftUI
         chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
         let sent = await chat.model.sendMessage("Are you there?")
         XCTAssertFalse(sent)
-        XCTAssertEqual(chat.host.requests.count, before, "nothing reattached or sent")
+        // Metadata dispatched by the initial attach can finish logging after disconnect.
+        // As in the reattach test, distinguish those reads from a new attach or write.
+        let methods = chat.host.requests.dropFirst(before).compactMap { $0["method"].text }
+        XCTAssertEqual(methods.filter { !["session.control.read", "model.options", "profiles.list", "commands.catalog",
+                                          "subagent.list"].contains($0) }, [], "nothing reattached or sent")
+        XCTAssertEqual(HermesHostFixture.count("/auth/password-login"), signIns, "the password was not sent again")
         XCTAssertEqual(chat.turn.engine.connectionState, .disconnected)
     }
 

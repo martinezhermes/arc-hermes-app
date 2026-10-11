@@ -169,19 +169,41 @@ final class ChatSidebarLayoutTests: XCTestCase {
         XCTAssertTrue(canceled.detail)
     }
 
-    func testComposerToolbarSwipeDoesNotRevealSidebar() {
-        let shell = CGRect(x: 20, y: 40, width: 390, height: 800)
+    func testEveryHorizontalSurfaceKeepsItsGestureEvenWhenItsContentFits() {
         let toolbar = CGRect(x: 36, y: 680, width: 300, height: 44)
+        let attachments = CGRect(x: 36, y: 600, width: 300, height: 60)
+        var frames: [CGRect] = []
+        SidebarRevealExclusionFrameKey.reduce(value: &frames) { [toolbar] }
+        SidebarRevealExclusionFrameKey.reduce(value: &frames) { [attachments, .null] }
+        XCTAssertFalse(ChatSidebarLayout.allowsReveal(at: CGPoint(x: 100, y: 700), excluding: frames))
+        XCTAssertFalse(ChatSidebarLayout.allowsReveal(at: CGPoint(x: 100, y: 620), excluding: frames))
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(at: CGPoint(x: 100, y: 500), excluding: frames))
+        XCTAssertEqual(frames, [toolbar, attachments], "One child cannot replace another child's ownership")
+    }
 
-        XCTAssertFalse(ChatSidebarLayout.allowsReveal(
-            startLocation: CGPoint(x: 100, y: 660), shellFrame: shell, excludedFrame: toolbar
-        ))
-        XCTAssertTrue(ChatSidebarLayout.allowsReveal(
-            startLocation: CGPoint(x: 100, y: 500), shellFrame: shell, excludedFrame: toolbar
-        ))
-        XCTAssertTrue(ChatSidebarLayout.allowsReveal(
-            startLocation: CGPoint(x: 100, y: 660), shellFrame: shell, excludedFrame: .null
-        ))
+    func testFinalPanSampleCompletesASwipeThatBeganBelowTheActivationDistance() {
+        var drag = ChatSidebarDrag(width: 300, presented: false, direction: 1,
+                                  initialTranslation: CGSize(width: 8, height: 1))
+        XCTAssertNil(drag.isHorizontal)
+        drag.update(CGSize(width: 180, height: 2))
+        XCTAssertTrue(drag.settlesOpen(projected: CGSize(width: 180, height: 2)))
+    }
+
+    func testCoveredChatCanCloseSessionsOverAnInactiveHorizontalSurface() {
+        let table = CGRect(x: 330, y: 180, width: 390, height: 120)
+        let start = CGPoint(x: 370, y: 220)
+        XCTAssertFalse(ChatSidebarLayout.allowsReveal(at: start, excluding: [table]))
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(at: start, excluding: nil),
+                      "The closing scrim owns its touch even over disabled horizontal content")
+    }
+
+    func testSidebarClosingSwipeIgnoresChatContentMovingAcrossItsStart() {
+        let start = CGPoint(x: 200, y: 220)
+        let table = CGRect(x: 330, y: 180, width: 390, height: 120)
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(at: start, excluding: [table]))
+        XCTAssertFalse(ChatSidebarLayout.allowsReveal(at: start, excluding: [table.offsetBy(dx: -200, dy: 0)]))
+        XCTAssertTrue(ChatSidebarLayout.allowsReveal(at: start, excluding: nil),
+                      "A sidebar closing gesture must not inherit the moving chat's exclusions")
     }
 
     func testOutwardPullCannotCloseOpenPaneEvenWithReverseReleasePrediction() {

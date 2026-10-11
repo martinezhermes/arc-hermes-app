@@ -134,6 +134,8 @@ private struct BotApprovalRequestBody: View {
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
             }
+            .scrollDismissesKeyboard(.never)
+            .sidebarRevealGestureExcluded()
             .pendingRequestBlockSurface()
         }
         if let scope = approval.scopeLine {

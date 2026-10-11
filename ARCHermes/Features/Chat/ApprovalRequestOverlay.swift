@@ -102,6 +102,8 @@ struct ApprovalRequestOverlay: View {
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .scrollDismissesKeyboard(.never)
+                .sidebarRevealGestureExcluded()
                 .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 8))
             }
 
