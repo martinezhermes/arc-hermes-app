@@ -74,9 +74,16 @@ Upstream's integrated form detects the backend and gates Hermes behind Bot Mode
 beta opt-in. Native Sessions and Bots use the shared Hermes connection. The main
 chat, feature clients, caches and server registry support a Hermes server kind;
 WebUI remains available for recovery and features whose native contract is absent.
-System new-chat/share/session-link routes and workspace/Git screens still have
-WebUI dependencies. The upstream native home uses its own stack and bottom bar;
-retaining ARC's legacy sidebar tests does not establish identical native iPad layout.
+Hermes workspace browsing, file references/previews and Git review/write/branch controls
+now use the Agent's native filesystem/Git routes under the shared chat. Fetch and
+Pull remain WebUI-only. Server-qualified session links route directly to the named
+Hermes host and Profile; legacy links and system new-chat/share entry points retain
+WebUI dependencies until their separate native integration gates land.
+
+Bots open their canonical chat in the regular chat, using the shared turn coordinator,
+cache and request presentation; the obsolete separate Bot Chat screen is removed.
+ARC keeps its adaptive sidebar and mounted detail, including keyboard/input inactivity
+and Reduce Motion-aware depth/fade, rather than adopting upstream's full-width home.
 
 The minimum Hermes release is independent of ARC's last live validation pin.
 A fork's marketing version is not evidence of an equivalent gateway contract;

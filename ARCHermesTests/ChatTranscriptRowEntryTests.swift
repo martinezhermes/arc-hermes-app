@@ -101,7 +101,7 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             isEditingMessage: false,
             isForkingMessage: false,
             loadAttachmentImage: { _ in nil },
-            loadAttachmentData: { _ in nil },
+            attachmentAudio: nil,
             loadTranscriptMediaImage: { _ in nil },
             loadTranscriptMediaData: { _ in nil },
             transcriptMediaCacheNamespace: "",

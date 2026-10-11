@@ -7,6 +7,29 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.10.0] - Unreleased
+
+### Added
+
+- Native Hermes workspace browsing, file previews, `@` file references and working-folder selection in the shared chat.
+- Native Git status/diffs, staging, unstaging, discard, commits, push and branch switching, with guards for active turns and unsafe selections.
+- Fast mode, loop/heartbeat controls, plans, turn outcomes, delegated-work status/interrupts and richer app-connection/sign-in requests in ordinary Hermes chats.
+- Server-qualified session links that select the correct host and Profile, retain drafts and dismiss covering screens.
+
+### Changed
+
+- Bot conversations now use the regular chat, shared turn lifecycle and offline cache. Removed the obsolete separate Bot Chat screen, its quick replies/reactions and unused helpers.
+- Simplified streamed-text reveal and removed the old fade/lab machinery.
+- Reply images, audio and files load through the Hermes host; audio recovers from stale loads after reattachment.
+- ARC adaptive sidebar, keyboard/input ownership, depth/fade, accent controls, branding/icons and release/CI configuration remain in place.
+
+### Testing
+
+- Validate main native features across sessions/chat, Workspace/Git, Bots, Tasks, Skills, Memory, Usage and Kanban; feature-wide acceptance continues in #60.
+- Test streaming recovery, drafts, requests, server/Profile isolation, attachments/media and session links.
+- Check iPhone/iPad layouts, keyboard/sidebar gestures, light/dark, Dynamic Type, RTL, VoiceOver and Reduce Motion.
+- Native Git Fetch/Pull and password-vault prompt cards remain unavailable. Share, Shortcuts, push and Live Activity native follow-ups are outside this imported upstream snapshot.
+
 ## [1.9.2] - 2026-10-11
 
 ### Fixed

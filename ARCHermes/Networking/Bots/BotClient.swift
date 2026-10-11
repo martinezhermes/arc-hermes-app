@@ -8,7 +8,8 @@ import Foundation
 @MainActor final class BotClient: BotTransport {
     private let gateway: HermesGateway
     let consumerID: Int
-    private var http: HermesConnection { gateway.http }
+    /// The connection this client signs in and downloads through, shared with its Bot screens.
+    var http: HermesConnection { gateway.http }
     /// Bumped by `close()`, `connect()` and a lost socket, so this screen's late HTTP
     /// results are dropped.
     private var attempt = 0
@@ -64,7 +65,7 @@ import Foundation
         try await gateway.send(call, for: consumerID, validateDispatch: validateDispatch)
     }
 
-    func artifactData(path: String, context: BotArtifactContext) async throws -> Data {
+    func artifactData(path: String, context: BotArtifactContext, limit: Int?) async throws -> Data {
         guard context.connectionID == http.connection.id, gateway.isAttached(consumerID) else { throw BotFailure.stale }
         let attempt = self.attempt
         let request = try HermesREST.downloadArtifact(path: path, profile: context.profile, sessionID: context.sessionID)
@@ -73,7 +74,7 @@ import Foundation
         let http = self.http
         let task = Task {
             try await http.authorized(request, validateDispatch: { try self.checkOwner(attempt) }) { request, session in
-                try await BotArtifactDownload.data(session: session, request: request)
+                try await BotArtifactDownload.data(session: session, request: request, limit: limit)
             }
         }
         artifactTasks[id] = task
@@ -216,10 +217,10 @@ import Foundation
         return body
     }
 
-    func searchSessions(query: String, profile: String) async throws -> [HermesSessionSearchResult] {
+    func searchSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult] {
         guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
         let attempt = self.attempt
-        let data = try await http.data(.sessionSearch(query: query, profile: profile),
+        let data = try await http.data(.sessionSearch(query: query, profile: profile, limit: limit),
                                        validateDispatch: { try self.checkOwner(attempt) })
         try checkOwner(attempt)
         guard let search = try? JSONDecoder().decode(HermesSessionSearch.self, from: data) else { throw BotFailure.unsupported }

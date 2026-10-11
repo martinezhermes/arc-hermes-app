@@ -78,9 +78,8 @@ struct ChatTranscriptView: View {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let loadAttachmentImage: (String) async -> Data?
-    /// Raw bytes for an attachment's inline audio player; nil where the chat cannot
-    /// fetch them (a Hermes session, #1012), which shows audio as a file cell.
-    let loadAttachmentData: ((String) async -> Data?)?
+    /// Where attachment rows get their inline audio; nil shows audio as file cells.
+    let attachmentAudio: AttachmentAudioSource?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
     let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
@@ -121,12 +120,41 @@ struct ChatTranscriptView: View {
     /// Non-nil draws the "Forked from" row above everything else (#873).
     var forkOrigin: ForkOrigin? = nil
     var onOpenForkParent: () -> Void = {}
+    /// A Hermes chat's settled plan (#1139), drawn right after the row
+    /// `settledPlanAfterRenderID` names: the prompt that opens the plan's turn.
+    var settledPlan: HermesPlan? = nil
+    var settledPlanAfterRenderID: String? = nil
+    /// How a Hermes chat's last turn ended (#1139), under that turn.
+    var turnOutcome: HermesTurnOutcomeRow? = nil
+
+    /// What stands in for a transcript with no rows. Nil draws the transcript, as for a Hermes
+    /// turn that failed before the host saved any row, whose outcome row still shows (#1139).
+    enum Placeholder: Equatable {
+        case loading
+        case loadFailed(String)
+        case startPrompt
+
+        init?(isLoading: Bool, errorMessage: String?, isEmpty: Bool, showsTurnOutcome: Bool) {
+            guard isEmpty else { return nil }
+            if isLoading {
+                self = .loading
+            } else if let errorMessage {
+                self = .loadFailed(errorMessage)
+            } else if showsTurnOutcome {
+                return nil
+            } else {
+                self = .startPrompt
+            }
+        }
+    }
 
     var body: some View {
-        if isLoading && messages.isEmpty {
+        switch Placeholder(isLoading: isLoading, errorMessage: errorMessage, isEmpty: messages.isEmpty,
+                           showsTurnOutcome: turnOutcome != nil) {
+        case .loading?:
             ChatTranscriptLoadingSkeletonView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let errorMessage, messages.isEmpty {
+        case .loadFailed(let errorMessage)?:
             ContentUnavailableView {
                 Label("Could Not Load Messages", systemImage: "exclamationmark.triangle")
             } description: {
@@ -136,7 +164,7 @@ struct ChatTranscriptView: View {
                     Task { await onLoadMessages() }
                 }
             }
-        } else if messages.isEmpty {
+        case .startPrompt?:
             ContentUnavailableView {
                 Image(systemName: "bubble.left.and.bubble.right")
             } description: {
@@ -156,7 +184,7 @@ struct ChatTranscriptView: View {
                         .padding(.top, 16)
                 }
             }
-        } else {
+        case nil:
             transcriptScrollView
         }
     }
@@ -369,7 +397,7 @@ struct ChatTranscriptView: View {
                     isEditingMessage: isEditingMessage,
                     isForkingMessage: isForkingMessage,
                     loadAttachmentImage: loadAttachmentImage,
-                    loadAttachmentData: loadAttachmentData,
+                    attachmentAudio: attachmentAudio,
                     loadTranscriptMediaImage: loadTranscriptMediaImage,
                     loadTranscriptMediaData: loadTranscriptMediaData,
                     transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
@@ -392,11 +420,17 @@ struct ChatTranscriptView: View {
                    compressionReferenceCard.afterRenderID == transcriptMessage.renderID {
                     compressionReferenceCardView(compressionReferenceCard)
                 }
+
+                if let settledPlan, settledPlanAfterRenderID == transcriptMessage.renderID {
+                    HermesPlanRowView(plan: settledPlan)
+                        .id("hermes-plan")
+                }
             }
 
             transcriptLooseBlocks
             liveResponseBlocks
             workingRow
+            turnOutcome
             if let requestWithdrawal {
                 BotRequestWithdrawalNote(withdrawal: requestWithdrawal)
             }
@@ -606,7 +640,7 @@ struct StreamingFollowTrigger: View {
     }
 }
 
-private struct ChatTranscriptMessageBlock: View, Equatable {
+struct ChatTranscriptMessageBlock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let transcriptMessage: TranscriptMessage
@@ -637,7 +671,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let loadAttachmentImage: (String) async -> Data?
-    let loadAttachmentData: ((String) async -> Data?)?
+    let attachmentAudio: AttachmentAudioSource?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
     let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
@@ -682,6 +716,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
             lhs.isRegeneratingMessage == rhs.isRegeneratingMessage &&
             lhs.isEditingMessage == rhs.isEditingMessage &&
             lhs.isForkingMessage == rhs.isForkingMessage &&
+            lhs.attachmentAudio == rhs.attachmentAudio &&
             lhs.transcriptMediaCacheNamespace == rhs.transcriptMediaCacheNamespace
     }
 
@@ -762,7 +797,7 @@ private struct ChatTranscriptMessageBlock: View, Equatable {
                     isEditingMessage: isEditingMessage,
                     isForkingMessage: isForkingMessage,
                     loadAttachmentImage: loadAttachmentImage,
-                    loadAttachmentData: loadAttachmentData,
+                    attachmentAudio: attachmentAudio,
                     loadTranscriptMediaImage: loadTranscriptMediaImage,
                     loadTranscriptMediaData: loadTranscriptMediaData,
                     transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
@@ -851,7 +886,7 @@ private struct ChatTranscriptMessageRow: View {
     let isEditingMessage: Bool
     let isForkingMessage: Bool
     let loadAttachmentImage: (String) async -> Data?
-    let loadAttachmentData: ((String) async -> Data?)?
+    let attachmentAudio: AttachmentAudioSource?
     let loadTranscriptMediaImage: (TranscriptMediaReference) async -> Data?
     let loadTranscriptMediaData: (TranscriptMediaReference) async -> Data?
     let transcriptMediaCacheNamespace: String
@@ -870,6 +905,10 @@ private struct ChatTranscriptMessageRow: View {
         // don't apply to system-emitted markers.
         if let markerKind = ChatMarkerMessageClassifier.classify(message) {
             MarkerMessageCardView(kind: markerKind, content: message.content)
+        } else if let completion = HermesDelegationCompletion(message) {
+            // A Hermes chat's async-delegation delivery (#1140): the host's turn, never a
+            // user bubble, with the full report one tap away.
+            HermesDelegationCompletionCard(completion: completion)
         } else {
             VStack(alignment: isUserMessage ? .trailing : .leading, spacing: 4) {
                 bubble
@@ -910,7 +949,7 @@ private struct ChatTranscriptMessageRow: View {
         MessageBubbleView(
             message: message,
             loadAttachmentImage: loadAttachmentImage,
-            loadAttachmentData: loadAttachmentData,
+            attachmentAudio: attachmentAudio,
             loadTranscriptMediaImage: loadTranscriptMediaImage,
             loadTranscriptMediaData: loadTranscriptMediaData,
             transcriptMediaCacheNamespace: transcriptMediaCacheNamespace,
