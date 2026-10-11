@@ -7,6 +7,19 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-11
+
+### Fixed
+
+- Sessions stays anchored during compact swipe navigation while the selected chat covers it, with a subtle fade that follows and reverses with the drag.
+- Sidebar, chat and resize-divider positions correctly mirror in right-to-left layouts.
+- Reduce Motion suppresses the added fade; mounted pane identity, draft and stream ownership, keyboard/scrolling protection and regular-width sidebar sizing are preserved.
+
+### Testing
+
+- Test cover/reveal, short cancelled and reversed swipes, including keyboard-open and actively scrolling sessions, on iPhone and narrow iPad windows.
+- Verify light/dark appearance, Reduce Motion, right-to-left layout, and saved sidebar width after iPad resizing.
+
 ## [1.9.0] - Unreleased
 
 ### Added
