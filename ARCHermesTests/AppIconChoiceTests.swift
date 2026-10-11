@@ -5,7 +5,7 @@ import UIKit
 final class AppIconChoiceTests: XCTestCase {
     func testApprovedChoicesAndOrder() {
         XCTAssertEqual(AppIconChoice.allCases, [
-            .system, .wingedHelmet, .pixelCaduceus, .pixelCaduceusDark,
+            .system, .wingedHelmet,
             .nousResearch, .nousResearchDark, .nousResearchChromeLight,
             .nousResearchChromeDark, .nousResearchGlassLight, .nousResearchGlassDark
         ])
@@ -15,12 +15,10 @@ final class AppIconChoiceTests: XCTestCase {
         XCTAssertNil(AppIconChoice.system.alternateIconName)
         XCTAssertEqual(AppIconChoice.resolved(from: "AppIconWingedHelmet"), .wingedHelmet)
         XCTAssertEqual(AppIconChoice.wingedHelmet.title, "ARC Helmet")
-        XCTAssertEqual(AppIconChoice.resolved(from: "AppIconPixelCaduceus"), .pixelCaduceus)
-        XCTAssertEqual(AppIconChoice.resolved(from: "AppIconPixelCaduceusDark"), .pixelCaduceusDark)
     }
 
     func testRetiredSelectionCanStillResetToSystem() {
-        for name in ["AppIconLight", "AppIconDark", "AppIconDisco", "AppIconClassicCaduceus",
+        for name in ["AppIconPixelCaduceus", "AppIconPixelCaduceusDark", "AppIconLight", "AppIconDark", "AppIconDisco", "AppIconClassicCaduceus",
                      "AppIconARCMonogram", "AppIconARCMonogramDark", "AppIconMonochromeLight",
                      "AppIconMonochromeDark", "AppIconGradientLight", "AppIconGradientDark", "UnknownIcon"] {
             XCTAssertEqual(AppIconChoice.resolved(from: name), .system)
@@ -44,8 +42,8 @@ final class AppIconChoiceTests: XCTestCase {
     func testSelectableNamesAreUnique() {
         let names = AppIconChoice.allCases.compactMap(\.alternateIconName)
         let previews = AppIconChoice.allCases.compactMap(\.previewImageName)
-        XCTAssertEqual(Set(names).count, 9)
-        XCTAssertEqual(Set(previews).count, 9)
+        XCTAssertEqual(Set(names).count, 7)
+        XCTAssertEqual(Set(previews).count, 7)
     }
 
     func testExactlyTheSelectableIconsAreRegisteredAndHaveBundledPreviews() throws {

@@ -1287,7 +1287,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ARCHermes/Resources/ARCHermes.entitlements;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				CURRENT_PROJECT_VERSION = 1;
@@ -5864,7 +5864,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ARCHermes/Resources/ARCHermes.entitlements;
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconPixelCaduceus AppIconPixelCaduceusDark AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIconWingedHelmet AppIconNousResearch AppIconNousResearchDark AppIconNousResearchChromeLight AppIconNousResearchChromeDark AppIconNousResearchGlassLight AppIconNousResearchGlassDark";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER)";
 				CURRENT_PROJECT_VERSION = 1;
