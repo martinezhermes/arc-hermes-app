@@ -7,6 +7,20 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.10.3] - Unreleased
+
+### Fixed
+
+- The drawer's detail card extends through the status, home and side safe areas, with one rounded surface, outline and shadow. Native toolbar controls in the unfolded Duo's side rail remain inside that surface.
+- Sidebar and detail keep the same background color. The full-card darkening and tint are removed; tapping or swiping the exposed card still closes Sessions.
+- Native toolbar and composer placement retain their safe areas, including keyboard avoidance and the existing typing-focus restoration.
+
+### Testing
+
+- Open Sessions in light and dark appearance. Inspect the full-height corners, edge and shadow; no separate top/bottom band or whole-card wash should remain.
+- Close by tapping or swiping the exposed chat, then repeat while typing a draft. Check the keyboard returns with the same text and caret.
+- Rotate, resize an iPad window, and check toolbar/composer controls, sidebar resizing, Reduce Motion and RTL.
+
 ## [1.10.2] - Unreleased
 
 ### Fixed

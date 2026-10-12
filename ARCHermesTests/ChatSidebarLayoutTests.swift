@@ -4,6 +4,96 @@ import UIKit
 @testable import ARCHermes
 
 final class ChatSidebarLayoutTests: XCTestCase {
+    @MainActor
+    func testFullHeightCardKeepsOneBackgroundAndSafeNativeControls() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        for (direction, additionalRail) in [LayoutDirection.leftToRight, .rightToLeft].flatMap({ direction in
+            [false, true].map { (direction, $0) }
+        }) {
+            let pane = SidebarCoverFixtureState()
+            pane.shown = false
+            let window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
+            window.overrideUserInterfaceStyle = .light
+            window.traitOverrides.horizontalSizeClass = .compact
+            let host = UIHostingController(rootView: FullHeightCardFixture(pane: pane)
+                .environment(\.layoutDirection, direction)
+                .environment(\.colorScheme, .light)
+                .transaction { $0.disablesAnimations = true })
+            host.additionalSafeAreaInsets = UIEdgeInsets(top: 0, left: additionalRail ? 17 : 0,
+                bottom: 0, right: additionalRail ? 72 : 0)
+            window.rootViewController = host
+            defer { pane.rendered = nil; window.isHidden = true; window.rootViewController = nil }
+            let appeared = expectation(description: "native card appeared")
+            pane.rendered = { appeared.fulfill() }
+            window.makeKeyAndVisible()
+            await fulfillment(of: [appeared], timeout: 10)
+            pane.rendered = nil
+            window.layoutIfNeeded()
+            let toolbar = try XCTUnwrap(pane.toolbar)
+            let composer = try XCTUnwrap(pane.composer)
+            let originalToolbar = toolbar.convert(toolbar.bounds, to: window)
+            let originalComposer = composer.convert(composer.bounds, to: window)
+            XCTAssertGreaterThanOrEqual(originalToolbar.minY, window.safeAreaInsets.top - 1)
+            XCTAssertLessThanOrEqual(originalComposer.maxY, window.bounds.maxY - window.safeAreaInsets.bottom + 1)
+            let closedImage = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            for x in [CGFloat(2), window.bounds.width - 2] {
+                let rail = try cardPixel(closedImage, at: CGPoint(x: x, y: window.bounds.height / 2), bounds: window.bounds)
+                XCTAssertTrue(rail.prefix(3).allSatisfy { $0 > 0.95 },
+                              "The closed card must cover the side safe-area rails; got \(rail)")
+            }
+
+            let revealed = expectation(description: "card revealed")
+            pane.rendered = { revealed.fulfill() }
+            pane.shown = true
+            await fulfillment(of: [revealed], timeout: 10)
+            pane.rendered = nil
+            window.layoutIfNeeded()
+            XCTAssertTrue(pane.toolbar === toolbar)
+            XCTAssertTrue(pane.composer === composer)
+            XCTAssertEqual(toolbar.convert(toolbar.bounds, to: window).minY, originalToolbar.minY, accuracy: 1)
+            XCTAssertEqual(composer.convert(composer.bounds, to: window).maxY, originalComposer.maxY, accuracy: 1)
+
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let available = window.bounds.width - host.view.safeAreaInsets.left - host.view.safeAreaInsets.right
+            let width = ChatSidebarLayout.width(available: available, preferred: nil, wide: false)
+            let sign: CGFloat = direction == .rightToLeft ? -1 : 1
+            let edge = direction == .rightToLeft ? window.bounds.width - width : width
+            for y in [CGFloat(2), window.bounds.height / 2, window.bounds.height - 2] {
+                let inside = try cardPixel(image, at: CGPoint(x: edge + sign * 40, y: y), bounds: window.bounds)
+                XCTAssertTrue(inside.prefix(3).allSatisfy { $0 > 0.95 },
+                              "The card must stay white through its safe areas; got \(inside) at y=\(y)")
+            }
+            for y in [CGFloat(2), window.bounds.height - 2] {
+                let corner = try cardPixel(image, at: CGPoint(x: edge + sign * 2, y: y), bounds: window.bounds)
+                XCTAssertGreaterThan(corner[0] - corner[1], 0.45,
+                                     "Rounded safe-area corners must reveal the red fixture behind the card")
+            }
+            let attachment = XCTAttachment(image: image)
+            attachment.name = "full-height-card-\(direction)-\(additionalRail ? "side-rail" : "standard")"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    @MainActor
+    private func cardPixel(_ image: UIImage, at point: CGPoint, bounds: CGRect) throws -> [Double] {
+        let pixels = try XCTUnwrap(image.cgImage)
+        let crop = try XCTUnwrap(pixels.cropping(to: CGRect(
+            x: floor(point.x * CGFloat(pixels.width) / bounds.width),
+            y: floor(point.y * CGFloat(pixels.height) / bounds.height), width: 1, height: 1)))
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(data: &bytes, width: 1, height: 1, bitsPerComponent: 8,
+            bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        return bytes.map { Double($0) / 255 }
+    }
+
     func testCompactSidebarRemainsAnchoredDuringCoverRevealAndReversal() {
         for direction: CGFloat in [1, -1] {
             for presented in [true, false] {
@@ -400,7 +490,35 @@ private final class SidebarCoverFixtureState {
     var compact = true
     @ObservationIgnored var sidebar: UIView?
     @ObservationIgnored var detail: UIView?
+    @ObservationIgnored var toolbar: UIView?
+    @ObservationIgnored var composer: UIView?
     @ObservationIgnored var rendered: (() -> Void)?
+}
+
+private struct FullHeightCardFixture: View {
+    @Bindable var pane: SidebarCoverFixtureState
+
+    var body: some View {
+        ChatNavigationShell(isPresented: $pane.shown, isCompact: $pane.compact) {
+            Color.red
+        } detail: {
+            NavigationStack {
+                Color.white
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        SidebarCoverMarker { pane.composer = $0 }.frame(height: 44)
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            SidebarCoverMarker { pane.toolbar = $0 }.frame(width: 44, height: 44)
+                        }
+                    }
+            }
+        }
+        .background(Color.red.ignoresSafeArea())
+        .onChange(of: pane.shown, initial: true) {
+            DispatchQueue.main.async { pane.rendered?() }
+        }
+    }
 }
 
 private struct SidebarCoverFixture: View {
