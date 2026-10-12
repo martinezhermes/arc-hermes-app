@@ -7,6 +7,17 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.10.4] - Unreleased
+
+### Fixed
+
+- Chat no longer forces a full-width material banner behind its navigation title and buttons. The toolbar background is transparent and the transcript uses the system's soft top scroll-edge treatment; native button glass remains.
+
+### Testing
+
+- Scroll chat content beneath the title in light and dark appearance. Check for a smooth edge with no rectangular backdrop or separator and readable controls.
+- Open and close Sessions while typing. Check draft/caret return, horizontal scrolling and Files navigation; repeat with Reduce Transparency and larger text.
+
 ## [1.10.3] - Unreleased
 
 ### Fixed

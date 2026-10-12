@@ -261,7 +261,6 @@ struct ChatView: View {
     private let composerMaximumWidth = ChatReadingWidth.maximumWidth(horizontalPadding: 16)
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
@@ -973,7 +972,7 @@ struct ChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         // A bot's pill names the chat; its title stays only for Back on screens pushed over it.
         .toolbar(removing: viewModel.hermesBotChat == nil ? nil : .title)
-        .modifier(ChatNavigationBackground(reduceTransparency: reduceTransparency))
+        .modifier(ChatNavigationBackground())
         .accessibilityIdentifier("chat-detail:\(viewModel.displayTitle)")
         .pushPresence(viewModel.pushPresence)
     }
@@ -4143,22 +4142,12 @@ private struct ChatDraftSyncModifier: ViewModifier {
     }
 }
 
-/// Owns the Sessions navigation background independently of the nested transcript's
-/// scroll-edge detection. UIKit extends this native background through the status bar.
+/// Native controls keep their glass while the transcript owns a soft top scroll edge.
 struct ChatNavigationBackground: ViewModifier {
-    let reduceTransparency: Bool
-
     func body(content: Content) -> some View {
         content
-            .toolbarBackground(backgroundStyle, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-    }
-
-    private var backgroundStyle: AnyShapeStyle {
-        if #available(iOS 26, *), !reduceTransparency {
-            return AnyShapeStyle(.regularMaterial)
-        }
-        return AnyShapeStyle(Color(uiColor: .systemBackground))
+            .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+            .scrollEdgeEffectStyle(.soft, for: .top)
     }
 }
 

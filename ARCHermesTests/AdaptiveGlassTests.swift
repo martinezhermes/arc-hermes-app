@@ -106,11 +106,11 @@ final class AdaptiveGlassTests: XCTestCase {
 
 @MainActor
 final class ChatNavigationBackgroundTests: XCTestCase {
-    func testChatNavigationHasBackgroundAtScrollEdge() async throws {
+    func testChatNavigationKeepsToolbarBackgroundTransparent() async throws {
         try await checkBackground(reduceTransparency: false)
     }
 
-    func testChatNavigationHasOpaqueBackgroundWhenTransparencyIsReduced() async throws {
+    func testChatNavigationKeepsToolbarBackgroundTransparentWhenTransparencyIsReduced() async throws {
         try await checkBackground(reduceTransparency: true)
     }
 
@@ -140,15 +140,18 @@ final class ChatNavigationBackgroundTests: XCTestCase {
         window.layoutIfNeeded()
         let navigation = try XCTUnwrap(findNavigation(in: host))
         let item = try XCTUnwrap(navigation.topViewController?.navigationItem)
-        let appearance = item.scrollEdgeAppearance ?? navigation.navigationBar.scrollEdgeAppearance
-            ?? navigation.navigationBar.standardAppearance
-        if #available(iOS 26, *), !reduceTransparency {
-            XCTAssertTrue(appearance.backgroundEffect is UIBlurEffect,
-                          "Chat must request a native material behind the title even at the scroll edge")
-        } else {
-            XCTAssertEqual(appearance.backgroundColor?.resolvedColor(with: host.traitCollection),
-                           UIColor.systemBackground.resolvedColor(with: host.traitCollection),
-                           "Reduce Transparency and older systems must cover the navigation and status-bar region with an opaque background")
+        let appearances = [
+            navigation.navigationBar.standardAppearance,
+            item.scrollEdgeAppearance ?? navigation.navigationBar.scrollEdgeAppearance
+                ?? navigation.navigationBar.standardAppearance
+        ]
+        for appearance in appearances {
+            XCTAssertNil(appearance.backgroundEffect,
+                         "The chat header must not request a full-width material plane")
+            XCTAssertEqual(appearance.backgroundColor?.resolvedColor(with: host.traitCollection).cgColor.alpha ?? 0, 0,
+                           "A transparent toolbar must leave the transcript's native scroll-edge treatment visible")
+            XCTAssertEqual(appearance.shadowColor?.resolvedColor(with: host.traitCollection).cgColor.alpha ?? 0, 0,
+                           "The chat header must not add a rectangular separator")
         }
     }
 
