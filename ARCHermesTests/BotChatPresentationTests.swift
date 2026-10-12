@@ -889,6 +889,123 @@ import XCTest
     /// the main thread for seconds on a hosted runner.
     private let callbackTimeout: TimeInterval = 30
 
+    func testCompactDrawerRestoresTheSameComposerDraftAndCaret() async throws {
+        let pane = DrawerComposerFixtureState()
+        let focus = ComposerFixtureFocus()
+        let appeared = expectation(description: "drawer composer appeared")
+        let focused = expectation(description: "initial bound focus settled")
+        var awaitsInitialFocus = true
+        let window = try show(DrawerComposerFixture(pane: pane, focus: focus, appeared: { appeared.fulfill() },
+            focusChanged: { value in
+                if value && awaitsInitialFocus { awaitsInitialFocus = false; focused.fulfill() }
+            }))
+        defer { close(window) }
+        await fulfillment(of: [appeared], timeout: callbackTimeout)
+        window.layoutIfNeeded()
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertTrue(editor.becomeFirstResponder())
+        await fulfillment(of: [focused], timeout: callbackTimeout)
+        editor.insertText("Keep this draft and caret.")
+        editor.selectedRange = NSRange(location: 5, length: 0)
+        let selection = editor.sourceSelection
+
+        let blurred = expectation(forNotification: UITextView.textDidEndEditingNotification, object: editor)
+        pane.shown = true
+        await fulfillment(of: [blurred], timeout: callbackTimeout)
+        XCTAssertFalse(editor.isFirstResponder)
+        XCTAssertTrue(descendants(window).contains { $0 === editor }, "The drawer must keep the real editor mounted")
+
+        let restored = expectation(forNotification: UITextView.textDidBeginEditingNotification, object: editor)
+        pane.shown = false
+        await fulfillment(of: [restored], timeout: callbackTimeout)
+        XCTAssertTrue(editor.isFirstResponder)
+        XCTAssertEqual(editor.sourceText, "Keep this draft and caret.")
+        XCTAssertEqual(editor.sourceSelection, selection)
+    }
+
+    func testDrawerReturnDoesNotSummonAPreviouslyUnfocusedComposer() async throws {
+        let pane = DrawerComposerFixtureState()
+        let focus = ComposerFixtureFocus()
+        let appeared = expectation(description: "unfocused drawer appeared")
+        let opened = expectation(description: "drawer opened")
+        let returned = expectation(description: "drawer returned")
+        let window = try show(DrawerComposerFixture(pane: pane, focus: focus, appeared: { appeared.fulfill() },
+            presentationChanged: { if $0 { opened.fulfill() } else { returned.fulfill() } }))
+        defer { close(window) }
+        await fulfillment(of: [appeared], timeout: callbackTimeout)
+        pane.shown = true
+        await fulfillment(of: [opened], timeout: callbackTimeout)
+        pane.shown = false
+        await fulfillment(of: [returned], timeout: callbackTimeout)
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertFalse(focus.isFocused)
+        XCTAssertFalse(editor.isFirstResponder)
+    }
+
+    func testSidebarSearchSupersedesTheSuspendedComposerFocus() async throws {
+        let pane = DrawerComposerFixtureState()
+        let focus = ComposerFixtureFocus()
+        let appeared = expectation(description: "drawer with search appeared")
+        let focused = expectation(description: "composer focus settled")
+        var returned: XCTestExpectation?
+        var awaitsInitialFocus = true
+        let window = try show(DrawerComposerFixture(pane: pane, focus: focus, appeared: { appeared.fulfill() },
+            focusChanged: { value in
+                if value && awaitsInitialFocus { awaitsInitialFocus = false; focused.fulfill() }
+            }, presentationChanged: { if !$0 { returned?.fulfill() } }))
+        defer { close(window) }
+        await fulfillment(of: [appeared], timeout: callbackTimeout)
+        window.layoutIfNeeded()
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertTrue(editor.becomeFirstResponder())
+        await fulfillment(of: [focused], timeout: callbackTimeout)
+        let blurred = expectation(forNotification: UITextView.textDidEndEditingNotification, object: editor)
+        pane.shown = true
+        await fulfillment(of: [blurred], timeout: callbackTimeout)
+        let search = try XCTUnwrap(descendants(window).compactMap { $0 as? UITextField }
+            .first { $0.placeholder == "Search sessions" })
+        let searchBegan = expectation(forNotification: UITextField.textDidBeginEditingNotification, object: search)
+        XCTAssertTrue(search.becomeFirstResponder())
+        await fulfillment(of: [searchBegan], timeout: callbackTimeout)
+        let didReturn = expectation(description: "chat returned after search")
+        returned = didReturn
+        pane.shown = false
+        await fulfillment(of: [didReturn], timeout: callbackTimeout)
+        XCTAssertFalse(focus.isFocused, "Returning from a newer editing action must not steal focus")
+        XCTAssertFalse(editor.isFirstResponder)
+    }
+
+    func testSceneInterruptionInvalidatesSuspendedDrawerFocus() async throws {
+        let pane = DrawerComposerFixtureState()
+        let focus = ComposerFixtureFocus()
+        let appeared = expectation(description: "scene drawer appeared")
+        let focused = expectation(description: "composer focus settled")
+        let interrupted = expectation(description: "scene became inactive")
+        let returned = expectation(description: "chat returned after scene interruption")
+        var awaitsInitialFocus = true
+        let window = try show(DrawerComposerFixture(pane: pane, focus: focus, appeared: { appeared.fulfill() },
+            focusChanged: { value in
+                if value && awaitsInitialFocus { awaitsInitialFocus = false; focused.fulfill() }
+            }, presentationChanged: { if !$0 { returned.fulfill() } },
+            phaseChanged: { if $0 == .inactive { interrupted.fulfill() } }))
+        defer { close(window) }
+        await fulfillment(of: [appeared], timeout: callbackTimeout)
+        window.layoutIfNeeded()
+        let editor = try XCTUnwrap(descendants(window).compactMap { $0 as? ComposerChipTextView }.first)
+        XCTAssertTrue(editor.becomeFirstResponder())
+        await fulfillment(of: [focused], timeout: callbackTimeout)
+        let blurred = expectation(forNotification: UITextView.textDidEndEditingNotification, object: editor)
+        pane.shown = true
+        await fulfillment(of: [blurred], timeout: callbackTimeout)
+        pane.phase = .inactive
+        await fulfillment(of: [interrupted], timeout: callbackTimeout)
+        pane.phase = .active
+        pane.shown = false
+        await fulfillment(of: [returned], timeout: callbackTimeout)
+        XCTAssertFalse(focus.isFocused)
+        XCTAssertFalse(editor.isFirstResponder)
+    }
+
     func testCompactSidebarReleasesNativeUtilityFieldFocus() async throws {
         let pane = ComposerPaneFixtureState()
         let appeared = expectation(description: "utility field appeared")
@@ -1209,6 +1326,7 @@ private struct SessionChatPresentationFixture: View {
         // ChatView reads the draft outside body (tasks, actions); that must not
         // make it depend on the draft either.
         .task { probe.draftSeenOnAppear = draft }
+        .modifier(DrawerFocusRestorationModifier(isFocused: $focus.isFocused))
     }
 
     private var composer: some View {
@@ -1248,6 +1366,42 @@ private struct SessionChatPresentationFixture: View {
 @MainActor @Observable private final class ComposerPaneFixtureState {
     var sidebarPresented = false
     var compact = true
+}
+
+@MainActor @Observable private final class DrawerComposerFixtureState {
+    var shown = false
+    var compact = true
+    var phase = ScenePhase.active
+}
+
+private struct DrawerComposerFixture: View {
+    @Bindable var pane: DrawerComposerFixtureState
+    @Bindable var focus: ComposerFixtureFocus
+    @State private var searchText = ""
+    @FocusState private var searchFocused: Bool
+    let appeared: () -> Void
+    var focusChanged: (Bool) -> Void = { _ in }
+    var presentationChanged: (Bool) -> Void = { _ in }
+    var phaseChanged: (ScenePhase) -> Void = { _ in }
+
+    var body: some View {
+        ChatNavigationShell(isPresented: $pane.shown, isCompact: $pane.compact) {
+            TextField("Search sessions", text: $searchText)
+                .focused($searchFocused)
+                .accessibilityIdentifier("drawer-focus-search")
+        } detail: {
+            SessionChatPresentationFixture(focus: focus)
+        }
+        .environment(\.scenePhase, pane.phase)
+        .onAppear(perform: appeared)
+        .onChange(of: focus.isFocused) { _, value in focusChanged(value) }
+        .onChange(of: pane.shown) { _, shown in
+            DispatchQueue.main.async { presentationChanged(shown) }
+        }
+        .onChange(of: pane.phase) { _, phase in
+            DispatchQueue.main.async { phaseChanged(phase) }
+        }
+    }
 }
 
 private struct UtilityPaneFieldFixture: View {

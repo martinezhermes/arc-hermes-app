@@ -220,6 +220,65 @@ final class ChatSidebarLayoutTests: XCTestCase {
         let drag = ChatSidebarDrag(width: 300, presented: false, direction: 1,
                                   initialTranslation: CGSize(width: -80, height: 0))
         XCTAssertFalse(drag.settlesOpen(projected: CGSize(width: 900, height: 0)))
+        XCTAssertFalse(drag.hasAcceptedTransition, "A clamped outward pull must not suspend typing")
+    }
+
+    func testAcceptedRevealKeepsTypingSuspendedUntilAReversedGestureEnds() {
+        var drag = ChatSidebarDrag(width: 300, presented: false, direction: 1,
+                                  initialTranslation: CGSize(width: 20, height: 2))
+        XCTAssertTrue(drag.hasAcceptedTransition)
+        drag.update(.zero)
+        XCTAssertTrue(drag.hasAcceptedTransition, "Returning to the origin while still dragging is not a focus return")
+        XCTAssertFalse(drag.settlesOpen(projected: .zero))
+    }
+
+    func testFocusSuspensionRequiresTravelTowardTransitionInBothDirections() {
+        for direction: CGFloat in [1, -1] {
+            for presented in [false, true] {
+                let openingSign: CGFloat = presented ? -1 : 1
+                var drag = ChatSidebarDrag(width: 300, presented: presented, direction: direction,
+                    initialTranslation: CGSize(width: -60 * openingSign * direction, height: 1))
+                XCTAssertFalse(drag.hasAcceptedTransition)
+                drag.update(CGSize(width: 30 * openingSign * direction, height: 1))
+                XCTAssertTrue(drag.hasAcceptedTransition)
+            }
+        }
+    }
+
+    @MainActor
+    func testFocusReturnReadsPresentationIntentBeforeTheViewRefreshes() {
+        var presented = false
+        let scope = DrawerFocusScope()
+        scope.sceneIsActive = true
+        scope.presentation = Binding(get: { presented }, set: { presented = $0 })
+        XCTAssertTrue(scope.isActive(.detail))
+        presented = true
+        XCTAssertFalse(scope.isActive(.detail), "A stale active frame cannot authorize a queued keyboard return")
+        XCTAssertTrue(scope.isActive(.sidebar))
+    }
+
+    @MainActor
+    func testFocusReturnRejectsNewGestureAndSceneInterruption() {
+        let scope = DrawerFocusScope()
+        scope.sceneIsActive = true
+        scope.presentation = .constant(false)
+        XCTAssertTrue(scope.isActive(.detail))
+        scope.isRevealing = true
+        XCTAssertFalse(scope.isActive(.detail))
+        scope.isRevealing = false
+        scope.sceneIsActive = false
+        XCTAssertFalse(scope.isActive(.detail))
+        XCTAssertFalse(scope.isActive(.sidebar))
+    }
+
+    @MainActor
+    func testWideDrawerKeepsDetailFocusAvailableAlongsideSidebar() {
+        let scope = DrawerFocusScope()
+        scope.sceneIsActive = true
+        scope.isWide = true
+        scope.presentation = .constant(true)
+        XCTAssertTrue(scope.isActive(.detail))
+        XCTAssertTrue(scope.isActive(.sidebar))
     }
 
     func testNarrowRegularWindowUsesCompactPresentation() {
