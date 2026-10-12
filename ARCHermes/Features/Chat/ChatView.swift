@@ -266,6 +266,7 @@ struct ChatView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.navigationSurfaceIsActive) private var navigationSurfaceIsActive
+    @Environment(\.drawerFocusScope) private var drawerFocusScope
     @Environment(\.hermesUpdateSignIn) private var updateHermesSignIn
     @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @AppStorage(AppHaptics.streamingPulseIsEnabledKey) private var isStreamingPulseEnabled = false
@@ -525,13 +526,7 @@ struct ChatView: View {
         MessageComposerView(
             draftMessage: $draftMessage,
             quotes: persistedQuotesBinding,
-            isFocused: Binding(
-                get: { composerIsFocused },
-                set: { value in
-                    if composerIsFocused != value { composerFocusRevision += 1 }
-                    composerIsFocused = value
-                }
-            ),
+            isFocused: composerFocusBinding,
             // A Hermes prompt whose answer was lost holds Send until the chat reattaches (#508), and
             // a request card's answer holds it while out, so Steer and Queue send no competing
             // Continue (#1141).
@@ -986,6 +981,8 @@ struct ChatView: View {
     /// Appearance, scene, network, stream, and draft handlers over `chatScaffold`.
     private var chatLifecycle: some View {
         chatScaffold
+            .modifier(DrawerFocusRestorationModifier(isFocused: composerFocusBinding,
+                allowsRestoration: composerAcceptsInput))
             .task(id: didCompleteInitialAppearance) {
                 await handleInitialAppearanceTask()
             }
@@ -997,7 +994,6 @@ struct ChatView: View {
                     applyInitialComposerFocusPolicyIfNeeded()
                 } else {
                     composerFocusRevision += 1
-                    composerIsFocused = false
                     shouldRestoreComposerFocusAfterPreview = false
                 }
             }
@@ -3755,6 +3751,7 @@ struct ChatView: View {
     }
 
     private func dismissKeyboard() {
+        drawerFocusScope?.invalidateRestoration()
         composerIsFocused = false
         UIApplication.shared.sendAction(
             #selector(UIResponder.resignFirstResponder),
@@ -3764,12 +3761,20 @@ struct ChatView: View {
         )
     }
 
-    private var canFocusComposer: Bool {
-        navigationSurfaceIsActive
-            && !viewModel.isViewingCachedData
+    private var composerFocusBinding: Binding<Bool> {
+        Binding(get: { composerIsFocused }, set: { value in
+            if composerIsFocused != value { composerFocusRevision += 1 }
+            composerIsFocused = value
+        })
+    }
+
+    private var composerAcceptsInput: Bool {
+        !viewModel.isViewingCachedData
             && !viewModel.isUploadingAttachment
             && viewModel.uploadAttachmentErrorMessage == nil
     }
+
+    private var canFocusComposer: Bool { navigationSurfaceIsActive && composerAcceptsInput }
 
     private func handleInitialAppearanceCompletion() {
         didCompleteInitialAppearance = true
@@ -3791,6 +3796,7 @@ struct ChatView: View {
     }
 
     private func presentPreviewRestoringComposerFocusIfNeeded(_ present: () -> Void) {
+        drawerFocusScope?.invalidateRestoration()
         shouldRestoreComposerFocusAfterPreview = composerIsFocused
         if composerIsFocused {
             composerIsFocused = false
@@ -3805,6 +3811,7 @@ struct ChatView: View {
     }
 
     private func requestComposerFocusIfPossible() {
+        drawerFocusScope?.invalidateRestoration()
         guard isOnScreen, canFocusComposer else { return }
 
         Task { @MainActor in

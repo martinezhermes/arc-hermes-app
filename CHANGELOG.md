@@ -7,6 +7,21 @@ Security sections per release.
 
 ## [Unreleased]
 
+## [1.10.2] - Unreleased
+
+### Fixed
+
+- Compact drawer transitions temporarily dismiss the keyboard and restore the same composer when a swipe cancels or the same chat returns. Draft text and caret remain with the mounted editor.
+- Wrong-direction pulls do not suspend typing. Existing horizontal-control exclusions remain in place.
+- A newer editing action, explicit keyboard dismissal, changed screen, or scene interruption supersedes pending focus restoration.
+
+### Testing
+
+- Type a draft, open Sessions, and return to the same chat. Test cancelled and reversed swipes, rapid reopen, and a previously unfocused chat.
+- Verify search or another editing field can take focus without the composer stealing it back. Check background/foreground, rotation, wide layouts, Reduce Motion, and hardware-keyboard input.
+- Swipe composer controls, attachments, tables and code horizontally with the keyboard open; check that ordinary scrolling retains focus and deliberate drawer navigation still works.
+- This patch implements temporary dismissal and restoration. Keeping a visible keyboard attached to the shifted chat remains under investigation in #68.
+
 ## [1.10.1] - Unreleased
 
 ### Fixed

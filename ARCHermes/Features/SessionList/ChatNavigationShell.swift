@@ -1,8 +1,123 @@
 import SwiftUI
 import UIKit
+import Combine
 
 extension EnvironmentValues {
     @Entry var navigationSurfaceIsActive = true
+    @Entry var drawerFocusScope: DrawerFocusScope?
+    @Entry var drawerPane: DrawerPane?
+}
+
+enum DrawerPane: Equatable { case sidebar, detail }
+
+/// One drawer's current interaction and editing intent. Focus changes do not redraw its panes.
+@MainActor final class DrawerFocusScope {
+    private(set) var revision = 0
+    var sceneIsActive = false
+    var presentation: Binding<Bool>?
+    var isWide = false
+    var isRevealing = false
+    private weak var editorScene: UIWindowScene?
+    private weak var editorView: UIView?
+    private var focusedPane: DrawerPane?
+
+    func invalidateRestoration() {
+        revision &+= 1
+        focusedPane = nil
+    }
+
+    func claimFocus(_ pane: DrawerPane) {
+        revision &+= 1
+        focusedPane = pane
+    }
+
+    func intendsFocus(in pane: DrawerPane?) -> Bool { pane != nil && pane == focusedPane }
+
+    func registerEditor(_ editor: UIView) {
+        editorScene = editor.window?.windowScene
+        editorView = editor
+        claimFocus(.detail)
+    }
+
+    func isActive(_ pane: DrawerPane) -> Bool {
+        guard sceneIsActive, let presentation else { return false }
+        if pane == .detail { return isWide || (!presentation.wrappedValue && !isRevealing) }
+        return presentation.wrappedValue && !isRevealing
+    }
+
+    func didBeginEditing(_ notification: Notification) {
+        guard let view = notification.object as? UIView, let editorScene,
+              view.window?.windowScene === editorScene else { return }
+        if view === editorView { return }
+        invalidateRestoration()
+    }
+}
+
+/// A drawer blur suspends the existing editor; newer focus and scene actions supersede its return.
+struct DrawerFocusRestorationModifier: ViewModifier {
+    @Binding var isFocused: Bool
+    var allowsRestoration = true
+    @Environment(\.navigationSurfaceIsActive) private var surfaceIsActive
+    @Environment(\.drawerFocusScope) private var scope
+    @Environment(\.drawerPane) private var pane
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var suspendedRevision: Int?
+    @State private var ownsPendingBlur = false
+    @State private var restorationTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: surfaceIsActive) { _, active in
+                restorationTask?.cancel()
+                if !active {
+                    // Disabling a native editor can clear its binding before this callback.
+                    let wasEditing = isFocused || scope?.intendsFocus(in: pane) == true
+                    suspendedRevision = wasEditing ? scope?.revision : nil
+                    ownsPendingBlur = wasEditing
+                    isFocused = false
+                } else {
+                    restoreIfCurrent()
+                }
+            }
+            .onChange(of: isFocused) { _, focused in
+                if !focused, ownsPendingBlur {
+                    ownsPendingBlur = false
+                } else if focused {
+                    ownsPendingBlur = false
+                    suspendedRevision = nil
+                    restorationTask?.cancel()
+                    if let pane { scope?.claimFocus(pane) }
+                } else if let pane, scope?.isActive(pane) ?? surfaceIsActive {
+                    invalidate()
+                }
+            }
+            .onChange(of: allowsRestoration) { _, allowed in
+                if !allowed { invalidate() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active { invalidate() }
+            }
+            .onDisappear { invalidate() }
+    }
+
+    private func restoreIfCurrent() {
+        let revision = suspendedRevision
+        suspendedRevision = nil
+        guard allowsRestoration, scenePhase == .active,
+              let scope, let pane, let revision, revision == scope.revision else { return }
+        restorationTask = Task { @MainActor in
+            await Task.yield()
+            guard !Task.isCancelled, scope.isActive(pane), revision == scope.revision else { return }
+            isFocused = true
+        }
+    }
+
+    private func invalidate() {
+        restorationTask?.cancel()
+        suspendedRevision = nil
+        ownsPendingBlur = false
+        scope?.invalidateRestoration()
+    }
 }
 
 /// A mounted pane keeps its draft and stream while only its local interaction pauses.
@@ -101,6 +216,7 @@ struct ChatSidebarDrag {
     let startedPresented: Bool
     let direction: CGFloat
     private(set) var isHorizontal: Bool?
+    private(set) var hasAcceptedTransition = false
     var translation: CGFloat = 0
 
     init(width: CGFloat, presented: Bool, direction: CGFloat, initialTranslation: CGSize, resizing: Bool = false) {
@@ -117,7 +233,11 @@ struct ChatSidebarDrag {
         if isHorizontal == nil, max(abs(value.width), abs(value.height)) >= Self.activationDistance {
             isHorizontal = abs(value.width) > abs(value.height)
         }
-        if isHorizontal == true { translation = value.width * direction }
+        if isHorizontal == true {
+            translation = value.width * direction
+            let travel = startedPresented ? -translation : translation
+            if travel >= Self.activationDistance { hasAcceptedTransition = true }
+        }
     }
 
     var reveal: CGFloat {
@@ -141,11 +261,13 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.layoutDirection) private var direction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppHaptics.isEnabledKey) private var hapticsEnabled = true
     @Binding var isPresented: Bool
     @Binding var isCompact: Bool
     @State private var preferredWidth: CGFloat?
     @State private var revealExclusions = SidebarRevealExclusions()
+    @State private var focusScope = DrawerFocusScope()
     @Namespace private var gestureSpace
     @GestureState private var revealDrag: ChatSidebarDrag?
     @GestureState private var resizeDrag: ChatSidebarDrag?
@@ -167,7 +289,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             let available = geometry.size.width
             let wide = ChatSidebarLayout.isWide(available: available, regularSizeClass: sizeClass == .regular)
             let activity = ChatPaneActivity(wide: wide, sidebarPresented: isPresented,
-                                            isRevealing: revealDrag?.isHorizontal == true)
+                                            isRevealing: revealDrag?.hasAcceptedTransition == true)
             let baseWidth = ChatSidebarLayout.width(available: available, preferred: preferredWidth, wide: wide)
             let width = ChatSidebarLayout.width(available: available,
                 preferred: resizeDrag.map { $0.startWidth + $0.translation } ?? baseWidth, wide: wide)
@@ -182,6 +304,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             ZStack(alignment: .leading) {
                 sidebar
                     .environment(\.navigationSurfaceIsActive, activity.sidebar)
+                    .environment(\.drawerPane, .sidebar)
                     .disabled(!activity.sidebar)
                     .scrollDisabled(!activity.sidebar)
                     .frame(width: width)
@@ -195,6 +318,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
 
                 detail
                     .environment(\.navigationSurfaceIsActive, activity.detail)
+                    .environment(\.drawerPane, .detail)
                     .disabled(!activity.detail)
                     .scrollDisabled(!activity.detail)
                     .frame(width: wide ? max(0, available - reveal) : available)
@@ -272,8 +396,31 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             }
             .frame(width: available, height: geometry.size.height, alignment: .leading)
             .coordinateSpace(name: gestureSpace)
+            .environment(\.drawerFocusScope, focusScope)
+            .onAppear {
+                focusScope.presentation = _isPresented
+                focusScope.sceneIsActive = scenePhase == .active
+                focusScope.isWide = wide
+            }
+            .onDisappear {
+                focusScope.presentation = nil
+                focusScope.sceneIsActive = false
+                focusScope.invalidateRestoration()
+            }
+            .onChange(of: revealDrag?.hasAcceptedTransition == true) { _, revealing in
+                focusScope.isRevealing = revealing
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                focusScope.sceneIsActive = phase == .active
+                if phase != .active { focusScope.invalidateRestoration() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)
+                .merge(with: NotificationCenter.default.publisher(for: UITextView.textDidBeginEditingNotification))) {
+                focusScope.didBeginEditing($0)
+            }
             .onPreferenceChange(SidebarRevealExclusionFrameKey.self) { revealExclusions.frames = $0 }
             .onChange(of: wide, initial: true) { _, wide in
+                focusScope.isWide = wide
                 isCompact = !wide
             }
             // Do not clip here: native navigation controls can occupy the
@@ -298,6 +445,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                         direction: sign, initialTranslation: value.translation)
                 }
                 state?.update(value.translation)
+                focusScope.isRevealing = state?.hasAcceptedTransition == true
             }
             .onEnded { value in
                 guard ChatSidebarLayout.allowsReveal(at: value.startLocation,

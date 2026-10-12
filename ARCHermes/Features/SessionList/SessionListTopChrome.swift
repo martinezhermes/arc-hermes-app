@@ -61,7 +61,6 @@ struct SessionListSearchChrome: Equatable {
 /// Controls for the session list's native safe-area bar. The enclosing bar
 /// supplies the scroll-edge treatment; this view supplies no backdrop.
 struct SessionListTopChrome: View {
-    @Environment(\.navigationSurfaceIsActive) private var navigationSurfaceIsActive
     static let headerAccessibilityIdentifier = "session-list-top-chrome"
     static let searchFieldAccessibilityIdentifier = "session-list-search-field"
     static let searchToggleAccessibilityIdentifier = "session-list-search-toggle"
@@ -105,9 +104,10 @@ struct SessionListTopChrome: View {
         .onChange(of: searchFieldIsFocused.wrappedValue) { _, newValue in
             onSearchFocusChange(newValue)
         }
-        .onChange(of: navigationSurfaceIsActive) { _, active in
-            if !active { searchFieldIsFocused.wrappedValue = false }
-        }
+        .modifier(DrawerFocusRestorationModifier(isFocused: Binding(
+            get: { searchFieldIsFocused.wrappedValue },
+            set: { searchFieldIsFocused.wrappedValue = $0 }
+        )))
     }
 
     private var searchChrome: some View {

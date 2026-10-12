@@ -232,6 +232,7 @@ private struct ComposerTextView: UIViewRepresentable {
     func makeUIView(context: Context) -> ComposerChipTextView {
         let textView = ComposerChipTextView()
         textView.delegate = context.coordinator
+        context.coordinator.drawerFocusScope = context.environment.drawerFocusScope
         textView.textDropDelegate = context.coordinator
         context.coordinator.updateFocusIntent(shouldFocus: isFocused,
             isDisabled: isDisabled || !context.environment.isEnabled)
@@ -263,6 +264,7 @@ private struct ComposerTextView: UIViewRepresentable {
     }
 
     func updateUIView(_ textView: ComposerChipTextView, context: Context) {
+        context.coordinator.drawerFocusScope = context.environment.drawerFocusScope
         context.coordinator.onHeightChange = onHeightChange
         let editingIsDisabled = isDisabled || !context.environment.isEnabled
         textView.isInputFocusEnabled = !editingIsDisabled
@@ -316,6 +318,7 @@ private struct ComposerTextView: UIViewRepresentable {
         @Binding var isFocused: Bool
         @Binding var renderedChips: [ComposerChipToken]
         var onHeightChange: (CGFloat) -> Void
+        var drawerFocusScope: DrawerFocusScope?
         var acceptsAttachments = true
         var onDropFileProviders: ([NSItemProvider]) -> Void = { _ in }
         var onDropImageProviders: ([NSItemProvider]) -> Void = { _ in }
@@ -555,6 +558,7 @@ private struct ComposerTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            drawerFocusScope?.registerEditor(textView)
             if !isFocused {
                 isFocused = true
             }
