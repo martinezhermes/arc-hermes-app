@@ -323,7 +323,14 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .scrollDisabled(!activity.detail)
                     .frame(width: wide ? max(0, available - reveal) : available)
                     .frame(maxHeight: .infinity)
-                    .background(.background)
+                    // Extend only the painted card into the window's safe areas.
+                    // Matching negative padding below keeps native content in place.
+                    .padding(.top, geometry.safeAreaInsets.top)
+                    .padding(.bottom, geometry.safeAreaInsets.bottom)
+                    .padding(.leading, geometry.safeAreaInsets.leading)
+                    .padding(.trailing, geometry.safeAreaInsets.trailing)
+                    .background(.background, ignoresSafeAreaEdges: [])
+                    .clipShape(chatSurface)
                     .background {
                         chatSurface.fill(.background)
                             .shadow(color: .black.opacity(0.12 * separation), radius: 6, x: -2 * sign)
@@ -337,25 +344,25 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                     .accessibilityHidden(!wide && isPresented)
                     .overlay {
                         if !wide && isPresented {
-                            chatSurface.fill(Color.black.opacity(0.15))
-                                .contentShape(Rectangle())
+                            chatSurface.fill(Color.clear)
+                                .contentShape(chatSurface)
                                 .onTapGesture { isPresented = false }
                                 .gesture(revealGesture(width: width, excludesContent: false))
                                 .accessibilityLabel("Hide Sessions")
                                 .accessibilityAddTraits(.isButton)
                         }
                     }
-                    // A quiet surface edge, not a mask: native toolbar items
-                    // remain free to render in the window's safe-area rail.
+                    // The edge follows the same full-height card without tinting its content.
                     .overlay {
-                        chatSurface.fill(.primary.opacity(0.025 * separation))
-                            .overlay {
-                                chatSurface.strokeBorder(Color(uiColor: .separator), lineWidth: 1)
-                                    .opacity(separation)
-                            }
+                        chatSurface.strokeBorder(Color(uiColor: .separator), lineWidth: 1)
+                            .opacity(separation)
                             .allowsHitTesting(false)
                             .accessibilityHidden(true)
                     }
+                    .padding(.top, -geometry.safeAreaInsets.top)
+                    .padding(.bottom, -geometry.safeAreaInsets.bottom)
+                    .padding(.leading, -geometry.safeAreaInsets.leading)
+                    .padding(.trailing, -geometry.safeAreaInsets.trailing)
                     // SwiftUI offsets already run from leading to trailing, including RTL.
                     .offset(x: reveal)
 
@@ -423,8 +430,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                 focusScope.isWide = wide
                 isCompact = !wide
             }
-            // Do not clip here: native navigation controls can occupy the
-            // window's safe-area rail outside this content rectangle on Duo.
+            // Keep the shell unmasked; only the expanded detail card is clipped.
             .animation(motion, value: isPresented)
             .animation(motion, value: revealDrag == nil)
         }
