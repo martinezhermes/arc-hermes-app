@@ -25,6 +25,8 @@ final class BotSocketHost: @unchecked Sendable {
     ]
     private var queued: [String: [Reply]] = [:]
     private var withheld: Set<String> = []
+    private var nextHeld: [String: XCTestExpectation] = [:]
+    private var heldReplies: [String: [(BotScriptedSocket, BotJSON)]] = [:]
     private var log: [BotJSON] = []
     private var waiters: [(method: String, expectation: XCTestExpectation)] = []
 
@@ -38,6 +40,14 @@ final class BotSocketHost: @unchecked Sendable {
     /// Leaves every later `method` call unanswered, as a reply the socket lost; it is still
     /// logged.
     func withhold(_ method: String) { lock.withLock { _ = withheld.insert(method) } }
+    /// Holds the next reply until explicitly released, and signals only once it is stored.
+    func holdNext(_ method: String, received expectation: XCTestExpectation) {
+        lock.withLock { nextHeld[method] = expectation }
+    }
+    func releaseHeld(_ method: String) {
+        let replies = lock.withLock { heldReplies.removeValue(forKey: method) ?? [] }
+        for (socket, reply) in replies { socket.enqueue(Self.message(reply.fields ?? [:])) }
+    }
     /// Fulfills `expectation` when the next `method` call arrives.
     func expect(_ expectation: XCTestExpectation, onNext method: String) {
         lock.withLock { waiters.append((method, expectation)) }
@@ -56,8 +66,15 @@ final class BotSocketHost: @unchecked Sendable {
                          gateway: .init(rpcDeadline: rpcDeadline, socketFactory: { [self] _ in
                              let socket = BotScriptedSocket()
                              socket.reply = { [weak socket, self] request in answer(request, on: socket) }
-                             socket.withholdReply = { [self] request in
-                                 guard lock.withLock({ withheld.contains(request["method"].text ?? "") }) else { return false }
+                             socket.withholdReply = { [weak socket, self] request in
+                                 let method = request["method"].text ?? ""
+                                 if let received = lock.withLock({ nextHeld.removeValue(forKey: method) }), let socket {
+                                     let reply = answer(request, on: nil)
+                                     lock.withLock { heldReplies[method, default: []].append((socket, reply)) }
+                                     received.fulfill()
+                                     return true
+                                 }
+                                 guard lock.withLock({ withheld.contains(method) }) else { return false }
                                  _ = answer(request, on: nil) // logged and awaited like any call; its answer is dropped
                                  return true
                              }

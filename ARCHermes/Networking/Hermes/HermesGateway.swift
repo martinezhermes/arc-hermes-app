@@ -278,7 +278,9 @@ import OSLog
             socket = NativeBotSocket(task: task, label: label)
         }
         self.socket = socket
-        let ready = try await Self.receive(socket, label: label)
+        let ready = try await HermesConnectionLog.measure(.gatewayReady, label: label) {
+            try await Self.receive(socket, label: label)
+        }
         try check()
         guard ready["method"].text == "event", ready["params"]["type"].text == "gateway.ready",
               let epoch = ready["params"]["payload"]["replay_epoch"].text, !epoch.isEmpty
@@ -290,7 +292,11 @@ import OSLog
         // answered empty, and sudo/secret are skipped. A host older than the
         // capability answers -32601 and connects as before; the shared web
         // client ignores any rejection here too, so only a lost socket fails.
-        do { _ = try await send(.clientCapabilities, for: nil, validateDispatch: nil) }
+        do {
+            _ = try await HermesConnectionLog.measure(.capabilities, label: label) {
+                try await self.send(.clientCapabilities, for: nil, validateDispatch: nil)
+            }
+        }
         catch BotFailure.rejected {}
         try check()
         startHeartbeat(socket, generation: owner)
