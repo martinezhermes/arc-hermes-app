@@ -84,8 +84,9 @@ an ephemeral cookie jar, a single-flight password sign-in, and the only path Bot
 requests and gateway upgrades are sent through. `HermesConnections` gives every
 consumer of the active server's saved connection (inbox, chats, rooms, creator,
 editor and push provisioning's `BotDashboardClient`) the same instance, so they sign
-in once; a reconnect only mints a new ticket. The registry holds its one entry weakly
-and keys it by configured server and connection UUID. A request for another server
+in once; a reconnect only mints a new ticket. The registry retains its one entry across
+screen/background gaps, keeping authentication in memory while its socket closes. It
+keys it by configured server and connection UUID. A request for another server
 or UUID, or for the same UUID with a new address, account, password or headers,
 retires the old connection first: its sign-in in flight stops and its late replies
 throw `.stale`. Switching away from, signing out of or removing the configured server,
@@ -168,6 +169,15 @@ session or runtime id, Profile name, title, message text, ticket, replay epoch o
 install id. Events, deltas and keepalive pongs are never logged. `HermesConversation` logs
 through the same logger, counts and codes only: each reattach (automatic retries before
 it, and frames held, applied and dropped) and each `session.resume` refusal it retries.
+Recovery stages also log completion/failure durations in milliseconds: status, login,
+identity, ticket (including any required sign-in), gateway-ready, capabilities, connect,
+identify, resume-identity, replay, snapshot and history. Started stages use info level;
+completed stages use notice. These are lifecycle measurements, never per-frame logs.
+A warm return with no status/login/identity stages reused authentication; a later 401
+still triggers the existing single-flight sign-in.
+Debug builds mirror these same sanitized stages to stdout with `[HermesRecovery]`,
+so `devicectl device process launch --console` can capture device timings without
+collecting the phone's broader system log. Release builds use only the unified logger.
 
 Requests are typed in `Networking/Hermes/`: every HTTP request (method, path, query, JSON body) is a
 `HermesREST` case, and every JSON-RPC request is a `HermesCall` case, one per

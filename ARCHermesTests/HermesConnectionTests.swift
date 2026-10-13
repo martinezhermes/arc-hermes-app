@@ -233,7 +233,7 @@ import XCTest
         XCTAssertEqual(HermesHostFixture.count("/auth/password-login"), 3, "Signed out: the next request signs in first")
     }
 
-    func testTheRegistryIsolatesServersAccountsAndCredentialsAndKeepsNothingAlive() async throws {
+    func testTheRegistryIsolatesServersAccountsAndCredentialsAndRetainsOnlyItsCurrentConnection() async throws {
         let registry = HermesConnections()
         let serverA = URL(string: "https://a.example")!, serverB = URL(string: "https://b.example")!
         var saved = record
@@ -266,7 +266,51 @@ import XCTest
 
         weak var released: HermesConnection?
         released = registry.connection(for: record, server: serverA)
-        XCTAssertNil(released, "The registry holds its connection only while a consumer does")
+        XCTAssertNotNil(released, "The active sign-in survives a gap between screens")
+        registry.retire(server: serverA)
+        XCTAssertNil(released, "Retirement releases the retained connection")
+    }
+
+    func testReturningAfterTheLastConsumerLeavesDoesNotRepeatSignIn() async throws {
+        let server = URL(string: "https://hermes.example")!
+        let registry = HermesConnections(configuration: { HermesHostFixture.configuration { _ in nil } })
+        var departing: HermesConnection? = registry.connection(for: record, server: server)
+        let serial = try XCTUnwrap(departing).serial
+        try await departing?.signIn()
+        departing = nil
+        registry.closeForBackground()
+
+        let returning = registry.connection(for: record, server: server)
+        try await returning.signIn()
+        XCTAssertEqual(returning.serial, serial, "Foregrounding reuses the authenticated HTTP connection")
+        XCTAssertEqual(["/api/status", "/auth/password-login", "/api/auth/me"].map(HermesHostFixture.count), [1, 1, 1],
+                       "Leaving the Sessions list must not add three sign-in round trips on return")
+        XCTAssertNil(returning.liveGateway, "Retaining sign-in does not retain an active socket")
+        registry.retire(server: server)
+    }
+
+    func testAnExpiredSignInAfterBackgroundingRecoversOnceOn401() async throws {
+        let server = URL(string: "https://hermes.example")!
+        var pairingReads = 0
+        let registry = HermesConnections(configuration: { HermesHostFixture.configuration { request in
+            guard request.url?.path == "/api/plugins/hermex-push/pairing" else { return nil }
+            pairingReads += 1
+            return pairingReads == 1 ? .json(401, .object(["error": .string("session_expired")])) : nil
+        } })
+        var departing: HermesConnection? = registry.connection(for: record, server: server)
+        let serial = try XCTUnwrap(departing).serial
+        try await departing?.signIn()
+        departing = nil
+        registry.closeForBackground()
+
+        let returning = registry.connection(for: record, server: server)
+        try await returning.signIn()
+        XCTAssertEqual(HermesHostFixture.count("/auth/password-login"), 1, "No speculative sign-in on return")
+        _ = try await returning.data(.pushPairing)
+        XCTAssertEqual(returning.serial, serial)
+        XCTAssertEqual(["/api/status", "/auth/password-login", "/api/auth/me"].map(HermesHostFixture.count), [2, 2, 2])
+        XCTAssertEqual(pairingReads, 2, "Only the request refused by the auth gate is retried")
+        registry.retire(server: server)
     }
 
     /// The retirement lands while a refused write waits on its recovery sign-in.

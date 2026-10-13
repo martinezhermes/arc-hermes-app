@@ -345,8 +345,11 @@ extension HermesConversationOwner {
 
     /// The log's name for this kind of conversation: never an id or a Profile name.
     private var logName: String {
-        if case .canonicalChat = target { return "Bot Chat" }
-        return "Hermes session"
+        let kind: String
+        if case .canonicalChat = target { kind = "Bot Chat" }
+        else { kind = "Hermes session" }
+        if let client = wire as? BotClient { return "c\(client.http.serial) \(kind)" }
+        return kind
     }
 
     private func reset() {
@@ -361,12 +364,15 @@ extension HermesConversationOwner {
         reset()
         let attempt = generation
         connectionState = .recovering
+        let label = logName
         do {
-            try await wire.connect()
+            try await HermesConnectionLog.measure(.connect, label: label) { try await self.wire.connect() }
             try check(attempt)
-            try await identify(attempt)
+            try await HermesConnectionLog.measure(.identify, label: label) { try await self.identify(attempt) }
             // Identity only: the read after the replay is the one that carries live state.
-            let first = try await resume(attempt: attempt)
+            let first = try await HermesConnectionLog.measure(.resumeIdentity, label: label) {
+                try await self.resume(attempt: attempt)
+            }
             guard let foundKey = attachedKey(first), let foundRuntime = first["session_id"].text,
                   !foundRuntime.isEmpty, let foundEpoch = wire.replayEpoch else { throw BotFailure.wrongIdentity }
             replayWasReset = epoch != foundEpoch || runtime != foundRuntime
@@ -374,11 +380,17 @@ extension HermesConversationOwner {
             if replayWasReset { sequence = 0 }
             runtime = foundRuntime; epoch = foundEpoch; storedKey = foundKey
             owner?.conversationWillReplay(newRuntime: newRuntime)
-            let replay = try await request(.sessionEventsSince(sessionID: foundRuntime, lastSeen: sequence), attempt: attempt)
+            let replay = try await HermesConnectionLog.measure(.replay, label: label) {
+                try await self.request(.sessionEventsSince(sessionID: foundRuntime, lastSeen: self.sequence), attempt: attempt)
+            }
             let missed = try reconcile(replay)
             owner?.conversationDidReplay(replay, frames: missed)
-            let snapshot = try await resume(attempt: attempt)
-            try await owner?.conversationDidReadSnapshot(snapshot, runtime: foundRuntime, attempt: attempt)
+            let snapshot = try await HermesConnectionLog.measure(.snapshot, label: label) {
+                try await self.resume(attempt: attempt)
+            }
+            try await HermesConnectionLog.measure(.history, label: label) {
+                try await self.owner?.conversationDidReadSnapshot(snapshot, runtime: foundRuntime, attempt: attempt)
+            }
             try check(attempt)
             guard connectionState == .recovering else { throw BotFailure.transport }
             connectionState = .connected

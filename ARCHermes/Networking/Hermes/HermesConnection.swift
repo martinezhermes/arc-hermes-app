@@ -130,7 +130,9 @@ import OSLog
             // The step a failure is logged at.
             var step = "status"
             do {
-                let status = try await publicStatus(on: session)
+                let status = try await HermesConnectionLog.measure(.status, label: "c\(serial)") {
+                    try await self.publicStatus(on: session)
+                }
                 try checkCurrent()
                 serverVersion = status["version"].text
                 serverInstallID = BotConnection.installID(in: status)
@@ -140,10 +142,14 @@ import OSLog
                 // #708 replaces this branch with the browser sign-in flow.
                 guard status["auth_providers"].list?.contains(.string("basic")) == true else { throw BotFailure.browserSignIn }
                 step = "login"
-                _ = try await decoded(.login(username: connection.username, password: connection.password), on: session)
+                _ = try await HermesConnectionLog.measure(.login, label: "c\(serial)") {
+                    try await self.decoded(.login(username: self.connection.username, password: self.connection.password), on: session)
+                }
                 try checkCurrent()
                 step = "identity"
-                let identity = try await decoded(.identity, on: session)
+                let identity = try await HermesConnectionLog.measure(.identity, label: "c\(serial)") {
+                    try await self.decoded(.identity, on: session)
+                }
                 try checkCurrent()
                 guard identity["provider"].text == "basic" else { throw BotFailure.wrongIdentity }
                 // Trust on first use, in memory only: a later sign-in here must reach the same install.
@@ -273,7 +279,9 @@ import OSLog
     /// Mints one ticket and returns the upgrade `build` makes for it, with this connection's headers.
     private func upgrade(_ build: (String) throws -> URLRequest) async throws -> URLRequest {
         do {
-            let ticket = try JSONDecoder().decode(BotJSON.self, from: try await data(.ticket))
+            let ticket = try await HermesConnectionLog.measure(.ticket, label: "c\(serial)") {
+                try JSONDecoder().decode(BotJSON.self, from: try await self.data(.ticket))
+            }
             guard let token = ticket["ticket"].text, !token.isEmpty else { throw BotFailure.unsupported }
             return prepared(try build(token))
         } catch {
@@ -373,8 +381,9 @@ import OSLog
 
 /// Gives every consumer of the active server's saved Bot connection the same
 /// `HermesConnection`, and with it the same gateway socket. It keeps one entry, keyed by
-/// configured server and connection UUID, and holds it weakly, so the connection lives
-/// only while a consumer does. A request for another server or UUID, or for the same UUID
+/// configured server and connection UUID, and retains its sign-in across gaps between
+/// consumers. The gateway still closes when its last screen leaves or the app backgrounds.
+/// A request for another server or UUID, or for the same UUID
 /// with a new address, account, password or headers (the connection form can keep a UUID
 /// across those), retires the old connection first, so no cookie, sign-in, socket or late
 /// reply crosses servers, accounts, credentials or headers.
@@ -387,7 +396,7 @@ import OSLog
     var onSignInRejected: ((URL) -> Void)?
     private let configuration: () -> URLSessionConfiguration
     private var server: String?
-    private weak var current: HermesConnection?
+    private var current: HermesConnection?
 
     /// `configuration` makes each new connection's URL session setup, with a cookie jar of
     /// its own; tests script the host with it.
@@ -556,6 +565,46 @@ struct HermesHeaders: Sendable {
 /// ticket, replay epoch or install id. Events, deltas and keepalive pongs are never logged.
 enum HermesConnectionLog {
     static let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ARCHermes", category: "HermesConnection")
+
+    enum Step: String {
+        case status, login, identity, ticket
+        case gatewayReady = "gateway-ready"
+        case capabilities, connect, identify, replay, snapshot, history
+        case resumeIdentity = "resume-identity"
+    }
+
+    /// Times recovery stages without changing their ordering, errors or cancellation.
+    /// Labels must contain only the existing connection/socket counters or conversation kind.
+    @MainActor static func measure<Value>(_ step: Step, label: String,
+                                         operation: () async throws -> Value) async rethrows -> Value {
+        let started = ContinuousClock.now
+        let name = step.rawValue
+        logger.info("\(label, privacy: .public): \(name, privacy: .public) started")
+        #if DEBUG
+        print("[HermesRecovery] \(label): \(name) started")
+        #endif
+        do {
+            let value = try await operation()
+            let elapsed = milliseconds(since: started)
+            logger.notice("\(label, privacy: .public): \(name, privacy: .public) completed in \(elapsed, privacy: .public) ms")
+            #if DEBUG
+            print("[HermesRecovery] \(label): \(name) completed in \(elapsed) ms")
+            #endif
+            return value
+        } catch {
+            let elapsed = milliseconds(since: started), failureReason = reason(error)
+            logger.error("\(label, privacy: .public): \(name, privacy: .public) failed after \(elapsed, privacy: .public) ms: \(failureReason, privacy: .public)")
+            #if DEBUG
+            print("[HermesRecovery] \(label): \(name) failed after \(elapsed) ms: \(failureReason)")
+            #endif
+            throw error
+        }
+    }
+
+    private static func milliseconds(since started: ContinuousClock.Instant) -> Int64 {
+        let duration = started.duration(to: .now).components
+        return duration.seconds * 1_000 + duration.attoseconds / 1_000_000_000_000_000
+    }
 
     /// Names `error` for a log line without its description or user info: a `URLError`'s
     /// user info holds the failing URL, and so the host, and a rejection can carry the

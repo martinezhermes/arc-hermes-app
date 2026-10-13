@@ -354,12 +354,17 @@ import Observation
     func testOnlyTheNewestCompletionApplies() async throws {
         let chat = await openChat()
         let slash = chat.turn.slashCommands
-        slash.completionDelay = .milliseconds(1)
+        slash.completionDelay = .zero
         chat.host.always("complete.slash", .init(result: try Self.fixture("complete.slash /approvals ")))
 
-        async let older: Void = slash.complete("/approvals x")
-        async let newer: Void = slash.complete("/approvals ")
-        _ = await (older, newer)
+        let olderHeld = expectation(description: "older completion reply held")
+        chat.host.holdNext("complete.slash", received: olderHeld)
+        defer { chat.host.releaseHeld("complete.slash") }
+        let older = Task { await slash.complete("/approvals x") }
+        await fulfillment(of: [olderHeld], timeout: 2)
+        await slash.complete("/approvals ")
+        chat.host.releaseHeld("complete.slash")
+        await older.value
         XCTAssertEqual(chat.writes("complete.slash").count, 2)
         XCTAssertEqual(slash.completion?.text, "/approvals ", "the older reply is dropped, whichever lands last")
         XCTAssertEqual(slash.completion?.items.map(\.text), ["manual", "smart", "off"])

@@ -217,7 +217,9 @@ routes an older link to another server first. `HermesSessionLinkTests` covers th
 Bot Mode has a separate per-server Keychain connection and ephemeral cookie jar.
 `HermesConnections` keeps one shared `HermesConnection` for the active server's saved
 connection, keyed by configured server and connection UUID and compared on address,
-account, password and headers; another server or a changed configuration retires it,
+account, password and headers. It retains that one connection across screen/background
+gaps so authentication survives while the gateway socket closes. Another server or a
+changed configuration retires it,
 so its jar, sign-in, gateway socket and late replies never reach another server or
 account (`HermesConnectionTests`, `HermesGatewayTests`). Switching, signing out,
 removing the server and replacing or removing its Bot credentials or headers retire it
