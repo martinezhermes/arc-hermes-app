@@ -262,7 +262,6 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
     @Environment(\.layoutDirection) private var direction
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage(AppHaptics.isEnabledKey) private var hapticsEnabled = true
     @Binding var isPresented: Bool
     @Binding var isCompact: Bool
     @State private var preferredWidth: CGFloat?
@@ -433,9 +432,6 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
             // Keep the shell unmasked; only the expanded detail card is clipped.
             .animation(motion, value: isPresented)
             .animation(motion, value: revealDrag == nil)
-        }
-        .sensoryFeedback(.selection, trigger: isPresented) { old, new in
-            hapticsEnabled && old != new
         }
     }
 

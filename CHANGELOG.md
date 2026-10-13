@@ -12,11 +12,13 @@ Security sections per release.
 ### Fixed
 
 - Chat no longer forces a full-width material banner behind its navigation title and buttons. The toolbar background is transparent and the transcript uses the system's soft top scroll-edge treatment; native button glass remains.
+- Opening or closing Sessions no longer adds a selection haptic alongside keyboard dismissal/restoration. Send, completion and other action feedback retain their existing preference.
 
 ### Testing
 
 - Scroll chat content beneath the title in light and dark appearance. Check for a smooth edge with no rectangular backdrop or separator and readable controls.
 - Open and close Sessions while typing. Check draft/caret return, horizontal scrolling and Files navigation; repeat with Reduce Transparency and larger text.
+- On iPhone, repeat with app haptics enabled and confirm drawer/keyboard transitions stay quiet while action feedback still works.
 
 ## [1.10.3] - Unreleased
 
