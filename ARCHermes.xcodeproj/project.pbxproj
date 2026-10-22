@@ -5,6 +5,246 @@
 	objectVersion = 56;
 	archiveVersion = 1;
 	objects = {
+		A1213000000000000000A006 = {
+			path = MoveToHermesTransferTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1218000000000000000A005 = {
+			fileRef = A1218000000000000000A006;
+			isa = PBXBuildFile;
+		};
+		125200000000000000000002 = {
+			fileRef = 125200000000000000000001;
+			isa = PBXBuildFile;
+		};
+		12520000000000000000000F = {
+			path = WebuiServerSettingsModel.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1213000000000000000A004 = {
+			path = MoveToHermes/WebuiSessionTransfer.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		399F08B786CE4AD292F2CA5B = {
+			path = MoveToHermesCommitTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1218000000000000000A003 = {
+			fileRef = A1218000000000000000A004;
+			isa = PBXBuildFile;
+		};
+		C87080000000000000000004 = {
+			path = HermesBrowserSignInTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		12520000000000000000000D = {
+			path = AddServerView.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1213000000000000000A002 = {
+			path = MoveToHermes/MoveToHermesScan.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		125200000000000000000009 = {
+			path = SettingsServerPage.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1218000000000000000A001 = {
+			fileRef = A1218000000000000000A002;
+			isa = PBXBuildFile;
+		};
+		A1216000000000000000A006 = {
+			path = MoveToHermesRunnerTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		C87080000000000000000002 = {
+			path = Hermes/HermesBrowserSignIn.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1214000000000000000A004 = {
+			path = MoveToHermesReconcileTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		12520000000000000000000B = {
+			path = WebuiServerSettings.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		125200000000000000000007 = {
+			path = SettingsNotificationsPage.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1216000000000000000A004 = {
+			path = MoveToHermes/MoveToHermesRunner.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1214000000000000000A002 = {
+			path = MoveToHermes/MoveToHermesReconcile.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		B5A1000000000000000FA002 = {
+			path = TestHostStateGuard.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		125200000000000000000005 = {
+			path = SettingsAboutPage.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1216000000000000000A002 = {
+			path = MoveToHermes/MoveToHermesJournal.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1218000000000000000A006 = {
+			path = MoveToHermesModelTests.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		125200000000000000000003 = {
+			path = SettingsAppPages.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1213000000000000000A005 = {
+			fileRef = A1213000000000000000A006;
+			isa = PBXBuildFile;
+		};
+		A1218000000000000000A004 = {
+			path = MoveToHermes/MoveToHermesView.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		125200000000000000000001 = {
+			path = SettingsRows.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		12520000000000000000000E = {
+			fileRef = 12520000000000000000000D;
+			isa = PBXBuildFile;
+		};
+		A1213000000000000000A003 = {
+			fileRef = A1213000000000000000A004;
+			isa = PBXBuildFile;
+		};
+		0258EA266C5141C2B253F58E = {
+			path = "AuthManager+MoveToHermes.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		A1218000000000000000A002 = {
+			path = MoveToHermes/MoveToHermesModel.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		C87080000000000000000003 = {
+			fileRef = C87080000000000000000004;
+			isa = PBXBuildFile;
+		};
+		12520000000000000000000C = {
+			fileRef = 12520000000000000000000B;
+			isa = PBXBuildFile;
+		};
+		A1213000000000000000A001 = {
+			fileRef = A1213000000000000000A002;
+			isa = PBXBuildFile;
+		};
+		125200000000000000000008 = {
+			fileRef = 125200000000000000000007;
+			isa = PBXBuildFile;
+		};
+		A1216000000000000000A005 = {
+			fileRef = A1216000000000000000A006;
+			isa = PBXBuildFile;
+		};
+		C87080000000000000000001 = {
+			fileRef = C87080000000000000000002;
+			isa = PBXBuildFile;
+		};
+		A1214000000000000000A003 = {
+			fileRef = A1214000000000000000A004;
+			isa = PBXBuildFile;
+		};
+		1C4F07CFB23F412182D463BE = {
+			fileRef = 399F08B786CE4AD292F2CA5B;
+			isa = PBXBuildFile;
+		};
+		12520000000000000000000A = {
+			fileRef = 125200000000000000000009;
+			isa = PBXBuildFile;
+		};
+		125200000000000000000006 = {
+			fileRef = 125200000000000000000005;
+			isa = PBXBuildFile;
+		};
+		125200000000000000000010 = {
+			fileRef = 12520000000000000000000F;
+			isa = PBXBuildFile;
+		};
+		A1216000000000000000A003 = {
+			fileRef = A1216000000000000000A004;
+			isa = PBXBuildFile;
+		};
+		A1214000000000000000A001 = {
+			fileRef = A1214000000000000000A002;
+			isa = PBXBuildFile;
+		};
+		B5A1000000000000000FA001 = {
+			fileRef = B5A1000000000000000FA002;
+			isa = PBXBuildFile;
+		};
+		FE4E43ABAB3A416FA881C6C8 = {
+			fileRef = 0258EA266C5141C2B253F58E;
+			isa = PBXBuildFile;
+		};
+		125200000000000000000004 = {
+			fileRef = 125200000000000000000003;
+			isa = PBXBuildFile;
+		};
+		A1216000000000000000A001 = {
+			fileRef = A1216000000000000000A002;
+			isa = PBXBuildFile;
+		};
 		C0AA020000000000000000F12 = {
 			path = ReasoningSummaryFormatterTests.swift;
 			isa = PBXFileReference;
@@ -201,17 +441,18 @@
 					"@loader_path/Frameworks",
 				);
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ARCHermes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ARCHermes";
 				GENERATE_INFOPLIST_FILE = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				CODE_SIGN_STYLE = Automatic;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				INFOPLIST_KEY_NSPrincipalClass = ARCHermesTests.TestHostStateGuard;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).tests";
-				CURRENT_PROJECT_VERSION = 1;
 			};
 			name = Release;
 		};
@@ -238,7 +479,6 @@
 				"7BBB8E5B895948939E22118C",
 				"13BC5694F485465CA9648F24",
 				"EE6A7BC5738C4EF9AB0A965B",
-				"A48400000000000000000555",
 				"689A646974F44DF4BFE57FD7",
 				"4890A0000000000000000011",
 				"1AF16E9919604984868D037B",
@@ -308,7 +548,6 @@
 				"C0GATE000000000000000002",
 				"C0390000000000000000000E",
 				"C0DED00000000000000DE000",
-				"C14600000000000000000001",
 				"C15200000000000000000007",
 				"C0390000000000000000000F",
 				"C08650000000000000000003",
@@ -380,11 +619,9 @@
 				"C0AA03000000000000000F02",
 				"C0AA07000000000000000F07",
 				"C08730000000000000000F03",
-				"C08730000000000000000F02",
 				"C0AA05000000000000000F02",
 				"C03190000000000000F003",
 				"C0DE22000000000000000004",
-				"C0A5C9000000000000000004",
 				"C08730000000000000000F01",
 				"C08800000000000000000004",
 				"C09300000000000000000004",
@@ -433,6 +670,17 @@
 				"E1112000000000000000A004",
 				"B1176000000000000000A004",
 				"B1176000000000000000A006",
+				"C87080000000000000000004",
+				"A1213000000000000000A006",
+				"A1214000000000000000A004",
+				"A1216000000000000000A006",
+				"A1218000000000000000A006",
+				"399F08B786CE4AD292F2CA5B",
+				"B5A1000000000000000FA002",
+				"A48400000000000000000555",
+				"C08730000000000000000F02",
+				"C14600000000000000000001",
+				"C0A5C9000000000000000004",
 			);
 			"sourceTree" = "<group>";
 		};
@@ -495,6 +743,7 @@
 				"E1048000000000000000A002",
 				"E1052000000000000000A002",
 				"C8240A000000000000000002",
+				"C87080000000000000000002",
 				"E1071000000000000000A002",
 				"C8250A000000000000000002",
 				"C8970A000000000000000002",
@@ -3928,7 +4177,7 @@
 			repositoryURL = "https://github.com/LaunchDarkly/swift-eventsource.git";
 			requirement = {
 				kind = upToNextMajorVersion;
-				minimumVersion = 3.3.0;
+				minimumVersion = 3.4.0;
 			};
 		};
 		1A2B3C4D5E6F700000000341 = {
@@ -4357,7 +4606,6 @@
 				"127110E3C3924333B7967315",
 				"C8D6BA506D0F43B3AB34A9B4",
 				"142E7F57D82742678CF78DCA",
-				"A48400000000000000000556",
 				"CF99AE7CDC2E472881C269AC",
 				"4890A0000000000000000002",
 				"902328F7C46D484784A92C52",
@@ -4423,7 +4671,6 @@
 				"C0GATE000000000000000001",
 				"C0391000000000000000000E",
 				"C0DED00000000000000DE001",
-				"C14600000000000000000002",
 				"C15210000000000000000007",
 				"C0391000000000000000000F",
 				"C08650000000000000000004",
@@ -4495,11 +4742,9 @@
 				"C0AA03000000000000000B02",
 				"C0AA07000000000000000B07",
 				"C08730000000000000000B03",
-				"C08730000000000000000B02",
 				"C0AA05000000000000000B02",
 				"C03190000000000000B003",
 				"C0DE22000000000000000003",
-				"C0A5C9000000000000000003",
 				"C08730000000000000000B01",
 				"C08800000000000000000003",
 				"C09300000000000000000003",
@@ -4551,6 +4796,17 @@
 				"E1112000000000000000A003",
 				"B1176000000000000000A003",
 				"B1176000000000000000A005",
+				"C87080000000000000000003",
+				"A1213000000000000000A005",
+				"A1214000000000000000A003",
+				"A1216000000000000000A005",
+				"A1218000000000000000A005",
+				"1C4F07CFB23F412182D463BE",
+				"B5A1000000000000000FA001",
+				"A48400000000000000000556",
+				"C08730000000000000000B02",
+				"C14600000000000000000002",
+				"C0A5C9000000000000000003",
 			);
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
@@ -4772,17 +5028,18 @@
 					"@loader_path/Frameworks",
 				);
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CURRENT_PROJECT_VERSION = 1;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ARCHermes.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ARCHermes";
 				GENERATE_INFOPLIST_FILE = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				CODE_SIGN_STYLE = Automatic;
+				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				PRODUCT_NAME = "$(TARGET_NAME)";
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				INFOPLIST_KEY_NSPrincipalClass = ARCHermesTests.TestHostStateGuard;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(APP_BUNDLE_IDENTIFIER).tests";
-				CURRENT_PROJECT_VERSION = 1;
 			};
 			name = Debug;
 		};
@@ -4822,6 +5079,7 @@
 			isa = PBXGroup;
 			children = (
 				1A2B3C4D5E6F7000000000B1,
+				0258EA266C5141C2B253F58E,
 				C0DE88500000000000000002,
 				C0DE88500000000000000006,
 				1A2B3C4D5E6F7000000000B0,
@@ -5661,6 +5919,23 @@
 				"E1139000000000000000A001",
 				"E1139000000000000000A003",
 				"E1141000000000000000A001",
+				"C87080000000000000000001",
+				"A1213000000000000000A001",
+				"A1213000000000000000A003",
+				"A1214000000000000000A001",
+				"A1216000000000000000A001",
+				"A1216000000000000000A003",
+				"A1218000000000000000A001",
+				"A1218000000000000000A003",
+				"FE4E43ABAB3A416FA881C6C8",
+				"125200000000000000000002",
+				"125200000000000000000004",
+				"125200000000000000000006",
+				"125200000000000000000008",
+				"12520000000000000000000A",
+				"12520000000000000000000C",
+				"125200000000000000000010",
+				"12520000000000000000000E",
 			);
 			"runOnlyForDeploymentPostprocessing" = "0";
 		};
@@ -6020,7 +6295,7 @@
 			sourceTree = "<group>";
 		};
 		62920C6E58407FA35B380660 = {
-			path = Bots/HermexPushSectionView.swift;
+			path = Bots/HermexPushSettingsPage.swift;
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";
@@ -7349,6 +7624,14 @@
 			"isa" = "PBXGroup";
 			"children" = (
 				"1A2B3C4D5E6F7000000000F6",
+				"125200000000000000000001",
+				"125200000000000000000003",
+				"125200000000000000000005",
+				"125200000000000000000007",
+				"125200000000000000000009",
+				"12520000000000000000000B",
+				"12520000000000000000000F",
+				"12520000000000000000000D",
 				"E1075000000000000000A006",
 				"E1075000000000000000A004",
 				"C012400000000000000003",
@@ -7850,6 +8133,13 @@
 				"E9030000000000000000A002",
 				"709A0000000000000000A002",
 				"B1176000000000000000A002",
+				"A1213000000000000000A002",
+				"A1213000000000000000A004",
+				"A1214000000000000000A002",
+				"A1216000000000000000A002",
+				"A1216000000000000000A004",
+				"A1218000000000000000A002",
+				"A1218000000000000000A004",
 				"3C75DCD3DB974E27A3CB405C",
 				"FFAECFA53DCE4DDF90FBEEE7",
 				"A8D7065880CB4CA7B1ECB65C",

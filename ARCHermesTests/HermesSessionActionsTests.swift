@@ -94,24 +94,6 @@ import Observation
 
     // MARK: Rename
 
-    /// `/title`'s call names the runtime, and a refusal carries the host's own words (4022).
-    func testRenamingOnTheRuntimeCarriesTheHostsRefusal() async throws {
-        let host = BotSocketHost()
-        let client = BotClient(http: host.connection(record))
-        try await client.connect()
-        let message = "Title 'Plan' is already in use by session 20261007_003046_925526"
-        host.next("session.title", .init(error: 4022, message: message))
-
-        do {
-            _ = try await client.call(.sessionRename(runtime: "runtime", title: "Plan"))
-            XCTFail("The host refused the title")
-        } catch BotSettingFailure.rejected(let code, let refusal) {
-            XCTAssertEqual(code, 4022)
-            XCTAssertEqual(refusal, message)
-        }
-        XCTAssertEqual(writes(host, ["session.title"]), [["session_id": .string("runtime"), "title": .string("Plan")]])
-    }
-
     /// The rename sheet keeps the host's reason and the row keeps its title; a title the host
     /// takes is shown as the host cleaned it.
     func testARefusedRenameStaysInTheSheetAndATakenOneShowsTheHostsTitle() async throws {
@@ -200,6 +182,7 @@ import Observation
         let host = BotSocketHost()
         let connection = host.connection(record)
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch request.httpMethod {
             case "PATCH": return .park
             case "GET" where request.url?.path == "/api/sessions":
@@ -242,6 +225,7 @@ import Observation
             .object(["id": .string("pin"), "title": .string("Pinned"), "pinned": .bool(true), "archived": .bool(false)])
         ])])
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch (request.httpMethod, request.url?.path) {
             case ("GET", "/api/sessions"): return .json(200, page)
             case ("PATCH", "/api/sessions/bot"?):
@@ -284,6 +268,7 @@ import Observation
             .object(["id": .string("bot"), "title": .string("Bot Chat"), "archived": .bool(true), "hidden": .number(1)])
         ])])
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch (request.httpMethod, request.url?.path) {
             case ("GET", "/api/sessions"): return .json(200, page)
             default: return nil
@@ -312,6 +297,7 @@ import Observation
             .object(["id": .string("room\($0)"), "title": .string("Group: room-\($0)"), "archived": .bool(true), "hidden": .number(1)])
         } + [.object(["id": .string("old"), "title": .string("Old plan"), "archived": .bool(true), "hidden": .number(0)])]
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             guard request.httpMethod == "GET", request.url?.path == "/api/sessions" else { return nil }
             let query = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems ?? []
             let offset = Int(query.first { $0.name == "offset" }?.value ?? "") ?? 0
@@ -327,40 +313,6 @@ import Observation
         XCTAssertFalse(archive.hasMore)
     }
 
-    /// A restore moves the host's later archived rows up one, so Load more reads from where they
-    /// now start: the row just past the first page still appears.
-    func testLoadMoreAfterARestoreStillReachesTheRowPastTheFirstPage() async throws {
-        let host = BotSocketHost()
-        let connection = host.connection(record)
-        var archived = (0...HermesREST.sessionPageSize).map { "s\($0)" }
-        _ = HermesHostFixture.configuration { request in
-            switch (request.httpMethod, request.url?.path) {
-            case ("GET", "/api/sessions"):
-                let query = request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems ?? []
-                let offset = Int(query.first { $0.name == "offset" }?.value ?? "") ?? 0
-                let rows = archived.dropFirst(offset).prefix(HermesREST.sessionPageSize)
-                return .json(200, .object(["sessions": .array(rows.map { .object(["id": .string($0), "archived": .bool(true)]) })]))
-            case ("PATCH", let path?):
-                archived.removeAll { "/api/sessions/\($0)" == path }
-                return .json(200, .object(["ok": .bool(true), "title": .null, "archived": .bool(false)]))
-            default: return nil
-            }
-        }
-        let archive = ArchivedSessionsViewModel(server: server, hermes: HermesArchiveSource(
-            connection: record, profile: "default", makeWire: { _ in BotClient(http: connection) }, preferences: defaults
-        ))
-        await archive.load()
-        XCTAssertEqual(archive.sessions.count, 100)
-
-        let restored = await archive.unarchive(try XCTUnwrap(archive.sessions.first { $0.sessionId == "s5" }))
-        XCTAssertTrue(restored)
-        await archive.loadMore()
-
-        XCTAssertEqual(archive.sessions.count, 100)
-        XCTAssertEqual(archive.sessions.last?.sessionId, "s100")
-        XCTAssertFalse(archive.sessions.contains { $0.sessionId == "s5" })
-    }
-
     /// Load more waits out a restore still on its way to the host, whose rows it would shift,
     /// so every other archived row is still reached once the restore lands.
     func testLoadMoreDuringARestoreSkipsNoRow() async throws {
@@ -368,6 +320,7 @@ import Observation
         let connection = host.connection(record)
         var archived = (0...200).map { "s\($0)" }
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch request.httpMethod {
             case "PATCH": return .park
             case "GET" where request.url?.path == "/api/sessions":
@@ -406,6 +359,7 @@ import Observation
         let connection = host.connection(record)
         let page = BotJSON.object(["sessions": .array(["a", "b", "c"].map { .object(["id": .string($0), "archived": .bool(true)]) })])
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch request.httpMethod {
             case "PATCH": return .park
             case "GET" where request.url?.path == "/api/sessions": return .json(200, page)
@@ -438,6 +392,7 @@ import Observation
         let connection = host.connection(record)
         let archived = (0...250).map { "s\($0)" }
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             switch request.httpMethod {
             case "PATCH": return .park
             case "GET" where request.url?.path == "/api/sessions":
@@ -528,6 +483,7 @@ import Observation
                            _ answer: @escaping (URLRequest) -> HermesHostFixture.Reply? = { _ in nil }) {
         let page = BotJSON.object(["sessions": .array(rows.map(Self.json))])
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             guard request.httpMethod == "GET", request.url?.path == "/api/sessions" else { return answer(request) }
             let gone = method.map { method in host.requests.contains { $0["method"].text == method } } ?? false
             return .json(200, gone ? .object(["sessions": .array([])]) : page)

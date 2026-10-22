@@ -1201,7 +1201,7 @@ extension KanbanBackend {
     }
 
     /// Whether a Card in `status` offers Complete. A Hermes host completes a Card without a
-    /// result, which Hermex never sends, only out of Review, and refuses the rest with a 400.
+    /// result, which ARC Hermes never sends, only out of Review, and refuses the rest with a 400.
     func offersComplete(from status: String?) -> Bool {
         switch self {
         case .webui: status != "done" && status != "archived"

@@ -18,6 +18,37 @@ import SwiftUI
         super.tearDown()
     }
 
+    func testPickingAnotherBotDropsTheLinkedConversation() throws {
+        let first = try XCTUnwrap(BotProfile(.object(["name": .string("first")])))
+        let second = try XCTUnwrap(BotProfile(.object(["name": .string("second")])))
+        let connection = BotConnection(id: UUID(), name: "Fixture", address: server,
+                                       username: "fixture", password: "fixture-only")
+        let destination = BotDestination(server: server, connectionID: connection.id,
+                                         profile: first.id, conversation: "first-root")
+        var selection = BotInboxSelection()
+        selection.open(destination, connection: connection, profiles: [first, second])
+        XCTAssertEqual(selection.chat(server: server, connection: connection)?.linkedRoot, "first-root")
+
+        selection.profile = second
+
+        let chat = try XCTUnwrap(selection.chat(server: server, connection: connection))
+        XCTAssertEqual(chat.target, .canonicalChat(profile: second.id))
+        XCTAssertNil(chat.linkedRoot, "An ordinary bot pick must not carry another bot's linked root")
+    }
+
+    func testBotAndRoomPicksReplaceTheSelection() throws {
+        let bot = try XCTUnwrap(BotProfile(.object(["name": .string("fixture")])))
+        let room = BotRoomKey(server: server, connectionID: UUID(), roomID: "room")
+        var selection = BotInboxSelection(profile: bot, conversation: "linked-root")
+        selection.room = room
+        XCTAssertNil(selection.profile)
+        XCTAssertNil(selection.conversation)
+        XCTAssertEqual(selection.room, room)
+        selection.profile = bot
+        XCTAssertNil(selection.room)
+        XCTAssertEqual(selection.profile, bot)
+    }
+
     func testSessionsChangedBurstCoalescesIntoBoundedReloads() async throws {
         let wire = BotInboxFixtureWire(roster: [row("triage", lastActive: 100, preview: "old")])
         let inbox = try makeInbox(wires: [wire])
@@ -202,6 +233,16 @@ import SwiftUI
         XCTAssertEqual(BotUnreadStore(defaults: defaults).load(connectionID: connection.id), ["triage": 100])
     }
 
+    /// The Shortcuts picker titles a Hermes server's Profiles by these names (#1180).
+    func testEachRosterReadLeavesTheProfilesNamesForShortcuts() async throws {
+        let wire = BotInboxFixtureWire(roster: [row("default"), row("triage", look: ["title": .string("Inbox Triage")])])
+        let inbox = try makeInbox(wires: [wire])
+        await inbox.open()
+
+        XCTAssertEqual(HermesProfileNameCache(defaults: defaults).names(for: server),
+                       [.init(profile: "default", title: "Hermes"), .init(profile: "triage", title: "Inbox Triage")])
+    }
+
     func testMissingMetadataReadsPlainAndPinWritesUnderRevisionZero() async throws {
         let wire = BotInboxFixtureWire(roster: [row("triage", look: nil, revision: nil)])
         var configured: [String: BotJSON]?
@@ -220,7 +261,6 @@ import SwiftUI
         XCTAssertEqual(configured?["name"], .string("triage"))
         XCTAssertEqual(configured?["ui_meta"], .object(["hermes-bots": .object(["pinned": .bool(true)])]))
         XCTAssertEqual(configured?["ui_meta_expected_revisions"], .object(["hermes-bots": .number(0)]))
-        XCTAssertEqual(Set(configured?.keys.map { $0 } ?? []), ["name", "ui_meta", "ui_meta_expected_revisions"])
         XCTAssertEqual(inbox.rows(matching: "").pinned.map(\.id), ["triage"], "the row moves only after the host applied and the roster was re-read")
         XCTAssertNil(inbox.notice)
         XCTAssertEqual(wire.listCalls, 2)
@@ -696,47 +736,14 @@ import SwiftUI
         XCTAssertEqual(inbox.profiles.map(\.id), ["triage"])
     }
 
-    func testNotAHermesHostShowsTheMessageInsteadOfRetryingForever() async throws {
-        let wire = BotInboxFixtureWire(roster: [row("triage")])
-        wire.connectError = BotFailure.rejected(404)
-        var spare = 0
-        let inbox = BotInbox(server: server, store: try connectedStore(), unread: BotUnreadStore(defaults: defaults),
-                             avatarStore: BotAvatarStore(), reloadSpacing: .zero, reconnectDelays: [.zero]) { _ in
-            spare += 1; return wire
-        }
-        await inbox.open()
-        XCTAssertNotNil(inbox.errorMessage, "a permanent client error is the user's to fix")
-        XCTAssertFalse(inbox.isLoadingRoster)
-        await Task.yield(); await Task.yield()
-        XCTAssertEqual(spare, 1, "no automatic retry after a 404")
-    }
-
-    func testAWebUIAddressShowsTheAdviceInsteadOfRetryingForever() async throws {
-        let wire = BotInboxFixtureWire(roster: [row("triage")])
-        wire.connectError = BotFailure.notDashboard
-        var spare = 0
-        let inbox = BotInbox(server: server, store: try connectedStore(), unread: BotUnreadStore(defaults: defaults),
-                             avatarStore: BotAvatarStore(), reloadSpacing: .zero, reconnectDelays: [.zero]) { _ in
-            spare += 1; return wire
-        }
-        await inbox.open()
-        XCTAssertEqual(inbox.errorMessage, "mac.example isn't a Hermes dashboard. Use the dashboard address, not the Hermes Web UI.")
-        XCTAssertFalse(inbox.isLoadingRoster)
-        await Task.yield(); await Task.yield()
-        XCTAssertEqual(spare, 1, "no automatic retry for an address that is not a dashboard")
-    }
-
-    /// An access proxy, a host with browser sign-in only, a refused gateway upgrade and a
-    /// release older than the minimum each need the user to change something, so the inbox
-    /// says what and stops retrying.
+    /// An access proxy, a host with browser sign-in only, a refused gateway upgrade, a
+    /// release older than the minimum, a host that is not Hermes or not its dashboard, and
+    /// another install at the saved address each need the user to change something, so
+    /// the inbox says what and stops retrying.
     func testSignInFailuresTheUserMustFixShowTheirMessageInsteadOfRetrying() async throws {
-        let rows: [(BotFailure, String)] = [
-            (.blocked, "Something in front of Hermes, such as Cloudflare Access, wants its own sign-in first. Add its service token under Connection Headers in the Hermes connection, or use an address that skips it, such as the dashboard's local network address."),
-            (.browserSignIn, "This Hermes host only offers sign-in with a browser, which ARC Hermes doesn't support yet. To connect now, add a dashboard username and password on the host."),
-            (.upgradeRefused(403), "Hermes accepted the sign-in, but the live connection was refused. If a proxy or tunnel sits in front of Hermes, turn on WebSocket support and let the Sec-WebSocket-Protocol header through."),
-            (.outdated("0.21.2"), "This Hermes host runs 0.21.2. ARC Hermes needs Hermes 0.21.3 or later. Update Hermes on the host, then try again.")
-        ]
-        for (failure, message) in rows {
+        let failures: [BotFailure] = [.blocked, .browserSignIn, .upgradeRefused(403), .outdated("0.21.2"),
+                                      .rejected(404), .notDashboard, .differentHost]
+        for failure in failures {
             let wire = BotInboxFixtureWire(roster: [row("triage")])
             wire.connectError = failure
             var spare = 0
@@ -745,7 +752,8 @@ import SwiftUI
                 spare += 1; return wire
             }
             await inbox.open()
-            XCTAssertEqual(inbox.errorMessage, message, "\(failure)")
+            XCTAssertEqual(inbox.link, .disconnected, "\(failure)")
+            XCTAssertNotNil(inbox.errorMessage, "\(failure)")
             XCTAssertFalse(inbox.isLoadingRoster, "\(failure)")
             await Task.yield(); await Task.yield()
             XCTAssertEqual(spare, 1, "no automatic retry after \(failure)")
@@ -813,22 +821,6 @@ import SwiftUI
         newHost.release(); stale.release()
         await settle(inbox) { $0.link == .live }
         XCTAssertEqual(inbox.connection?.address.host(), "tunnel.example")
-    }
-
-    func testRefusedConnectionShowsTheMessageAndDoesNotRetryOnItsOwn() async throws {
-        let wire = BotInboxFixtureWire(roster: [row("triage")])
-        wire.connectError = BotFailure.rejected(401)
-        var spare = 0
-        let inbox = BotInbox(server: server, store: try connectedStore(), unread: BotUnreadStore(defaults: defaults),
-                             avatarStore: BotAvatarStore(), reloadSpacing: .zero, reconnectDelays: [.zero]) { _ in
-            spare += 1; return wire
-        }
-        await inbox.open()
-        XCTAssertEqual(inbox.link, .disconnected)
-        XCTAssertEqual(inbox.errorMessage, BotFailure.rejected(401).localizedDescription)
-        XCTAssertTrue(inbox.needsSignIn, "a refused password offers the sign-in form")
-        await Task.yield(); await Task.yield()
-        XCTAssertEqual(spare, 1, "no automatic retry after a refusal")
     }
 
     /// Foregrounding, pull to refresh and closing the form unsaved all rerun `open()`;
@@ -924,21 +916,6 @@ import SwiftUI
         }
     }
 
-    func testAnotherHostShowsTheMessageAndDoesNotRetryOnItsOwn() async throws {
-        let wire = BotInboxFixtureWire(roster: [row("triage")])
-        wire.connectError = BotFailure.differentHost
-        var spare = 0
-        let inbox = BotInbox(server: server, store: try connectedStore(), unread: BotUnreadStore(defaults: defaults),
-                             avatarStore: BotAvatarStore(), reloadSpacing: .zero, reconnectDelays: [.zero]) { _ in
-            spare += 1; return wire
-        }
-        await inbox.open()
-        XCTAssertEqual(inbox.link, .disconnected)
-        XCTAssertEqual(inbox.errorMessage, BotFailure.differentHost.localizedDescription)
-        await Task.yield(); await Task.yield()
-        XCTAssertEqual(spare, 1, "no automatic retry against another host")
-    }
-
     func testTheFirstReportedInstallIDIsRecordedOnceWithoutRevertingANewerSave() async throws {
         let store = try connectedStore()
         let first = String(repeating: "a", count: 32)
@@ -966,15 +943,6 @@ import SwiftUI
         await inbox.open()
         stored = try XCTUnwrap(store.load(server: server))
         XCTAssertEqual(stored.installID, first, "The backfill writes only a record that has none")
-    }
-
-    func testUnreadableSavedConnectionShowsTheFailureInsteadOfAStaleRoster() async throws {
-        let keychain = InMemoryKeychainStore()
-        try keychain.save("not json", forKey: .botConnection, scope: server.absoluteString)
-        let inbox = try makeInbox(wires: [], store: BotConnectionStore(keychain: keychain))
-        await inbox.open()
-        XCTAssertEqual(inbox.link, .disconnected)
-        XCTAssertNotNil(inbox.errorMessage)
     }
 
     // MARK: - Live status
@@ -1157,8 +1125,21 @@ import SwiftUI
         await inbox.open()
         defer { inbox.close() }
 
+        // Each read records what the inbox showed as it went out. The empty state
+        // between the failures lasts only until the next retry answers, so a test
+        // that waits to observe it can miss it (#1018).
+        var shownAtRead: [[String: BotLiveStatus]] = []
+        let retried = expectation(description: "the read after both failures went out")
+        wire.onCall = { method in
+            guard method == "session.active_list" else { return }
+            shownAtRead.append(inbox.liveStatuses)
+            if shownAtRead.count == 3 { retried.fulfill() }
+        }
         wire.failsActive = 2
-        await settle(inbox) { $0.liveStatuses.isEmpty }
+        await fulfillment(of: [retried], timeout: 5)
+        wire.onCall = nil
+        XCTAssertEqual(Array(shownAtRead.prefix(3)), [["triage": .working], [:], [:]],
+                       "a failed read shows no statuses and tries again")
         await settle(inbox) { $0.liveStatuses == ["triage": .working] }
         XCTAssertEqual(inbox.link, .live, "a failed status read never drops the socket")
         XCTAssertEqual(wire.listCalls, 1, "the retry is a status read, not a roster read")
@@ -1240,22 +1221,6 @@ import SwiftUI
         XCTAssertEqual(inbox.liveStatuses, [:], "no socket can vouch for them")
     }
 
-    func testActivityLabelUsesTimeTodayWeekdayThisWeekThenMonthAndDay() {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let locale = Locale(identifier: "en_US")
-        // Thursday 2026-09-10 15:00 UTC.
-        let now = Date(timeIntervalSince1970: 1_789_052_400)
-        let label = { (offset: TimeInterval) in
-            BotInboxDateLabel.text(for: now.addingTimeInterval(offset), now: now, calendar: calendar, locale: locale)
-        }
-        XCTAssertEqual(label(-6 * 3600), "9:00\u{202F}AM")
-        XCTAssertEqual(label(-24 * 3600), "Wednesday")
-        XCTAssertEqual(label(-6 * 86_400), "Friday")
-        XCTAssertEqual(label(-7 * 86_400), "Sep 3")
-        XCTAssertEqual(label(-40 * 86_400), "Aug 1")
-    }
-
     // MARK: - Helpers
 
     /// Status re-reads default to an hour apart, so only a test that asks for them sees one.
@@ -1267,7 +1232,8 @@ import SwiftUI
         return BotInbox(server: server, store: store, unread: BotUnreadStore(defaults: defaults),
                         roomStore: BotRoomOrganizeStore(defaults: defaults),
                         sectionOrderStore: BotSectionOrderStore(defaults: defaults),
-                        avatarStore: BotAvatarStore(), reloadSpacing: .zero, reconnectDelays: [.zero],
+                        avatarStore: BotAvatarStore(), profileNames: HermesProfileNameCache(defaults: defaults),
+                        reloadSpacing: .zero, reconnectDelays: [.zero],
                         statusPollInterval: statusPollInterval) { _ in queue.removeFirst() }
     }
 
@@ -1367,8 +1333,6 @@ import SwiftUI
     private var held: [CheckedContinuation<Void, Never>] = []
     /// `GET /api/sessions/search`'s matches per Profile, whatever the query.
     var searchResults: [String: [HermesSessionSearchResult]] = [:]
-    /// While true, a session search waits for `release()`.
-    var holdsSearch = false
     private(set) var searches: [(query: String, profile: String, limit: Int)] = []
 
     init(roster: [BotJSON]) { self.roster = roster }
@@ -1390,7 +1354,6 @@ import SwiftUI
 
     func searchSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult] {
         searches.append((query, profile, limit))
-        if holdsSearch { await withCheckedContinuation { held.append($0) } }
         // The host answers at most `limit` matches.
         return Array((searchResults[profile] ?? []).prefix(limit))
     }

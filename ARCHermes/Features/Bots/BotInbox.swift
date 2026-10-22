@@ -186,6 +186,9 @@ import UIKit
     private var uncertainDeletions: Set<String> = []
     /// Session-only reveal of hidden bots, as in Desktop. Never persisted.
     var showsHidden = false
+    /// The open bot or room. It lives here, not in the inbox view, so the Hermes home's
+    /// chat survives what rebuilds that view: a size-class change or the `[Bots | Sessions]` switch.
+    var selection = BotInboxSelection()
     /// Device-local watermarks for the current connection: the canonical
     /// `last_active` the user last saw for each Profile. Never leaves the phone.
     private(set) var seen: [String: Double] = [:]
@@ -217,6 +220,8 @@ import UIKit
     private let sectionOrderStore: BotSectionOrderStore
     private let avatarStore: BotAvatarStore
     private let historyCache: BotHistoryCache
+    /// Where each roster read leaves the Profiles' names for the Shortcuts picker (#1180).
+    private let profileNames: HermesProfileNameCache
     private let makeWire: @MainActor (BotConnection) -> any BotTransport
     /// Drops this phone's drafts for one deleted bot.
     private let purgeLocalState: @MainActor (UUID, String) async -> Void
@@ -236,7 +241,8 @@ import UIKit
     init(server: URL, store: BotConnectionStore? = nil, unread: BotUnreadStore = BotUnreadStore(),
          roomStore: BotRoomOrganizeStore = BotRoomOrganizeStore(),
          sectionOrderStore: BotSectionOrderStore = BotSectionOrderStore(),
-         avatarStore: BotAvatarStore? = nil, historyCache: BotHistoryCache = .shared, reloadSpacing: Duration = .seconds(1),
+         avatarStore: BotAvatarStore? = nil, historyCache: BotHistoryCache = .shared,
+         profileNames: HermesProfileNameCache = .shared, reloadSpacing: Duration = .seconds(1),
          reconnectDelays: [Duration] = [.seconds(1), .seconds(2), .seconds(4), .seconds(8), .seconds(16), .seconds(30)],
          statusPollInterval: Duration = .seconds(5),
          makeWire: (@MainActor (BotConnection) -> any BotTransport)? = nil,
@@ -244,7 +250,7 @@ import UIKit
         self.server = server; self.store = store ?? BotConnectionStore(); self.unread = unread; self.roomStore = roomStore
         self.sectionOrderStore = sectionOrderStore
         self.avatarStore = avatarStore ?? .shared; self.reloadSpacing = reloadSpacing
-        self.reconnectDelays = reconnectDelays; self.historyCache = historyCache
+        self.reconnectDelays = reconnectDelays; self.historyCache = historyCache; self.profileNames = profileNames
         self.statusPollInterval = statusPollInterval
         self.makeWire = makeWire ?? { BotClient(saved: $0, server: server) }
         self.purgeLocalState = purgeLocalState ?? { connectionID, profile in
@@ -329,6 +335,7 @@ import UIKit
         do {
             let saved = try store.load(server: server)
             if connection?.id != saved?.id {
+                selection = BotInboxSelection()
                 profiles = []; avatars = [:]; seen = [:]; rooms = []; roomCapabilities = BotRoomCapabilities(.null)
                 roomFlags = BotRoomOrganizeStore.Flags(); sectionOrder = []; setLiveStatuses([:])
             }
@@ -478,6 +485,7 @@ import UIKit
 
     /// Drops everything this phone kept for a bot that no longer exists on the host.
     private func forget(_ profile: String) async {
+        if selection.profile?.id == profile { selection = BotInboxSelection() }
         guard let connection else { return }
         seen.removeValue(forKey: profile); persistSeen()
         avatarStore.setImage(nil, connectionID: connection.id, profile: profile, revision: nil)
@@ -578,6 +586,9 @@ import UIKit
             guard let rows = roster["profiles"].list else { throw BotFailure.unsupported }
             var ids = Set<String>()
             profiles = rows.compactMap(BotProfile.init).filter { ids.insert($0.id).inserted }
+            if profileNames.save(profiles.map { .init(profile: $0.id, title: $0.name) }, for: server) {
+                ProfileEntityProvider.refreshAppShortcuts(changed: true)
+            }
             var changed = false
             for profile in profiles {
                 guard let lastActive = profile.lastActive?.timeIntervalSince1970,

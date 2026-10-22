@@ -1,9 +1,9 @@
 import Foundation
 
-/// Every JSON-RPC request Hermex sends to a direct Hermes gateway: one case per
+/// Every JSON-RPC request ARC Hermes sends to a direct Hermes gateway: one case per
 /// operation the app uses, and deliberately none for any other upstream method.
 /// A case carries only what its callers vary. Values the contract fixes for
-/// Hermex (the canonical Bot Chat title, `queued`, the avatar asset, the room
+/// ARC Hermes (the canonical Bot Chat title, `queued`, the avatar asset, the room
 /// page size) are written here, so no caller can widen a request.
 ///
 /// `params()` is the only way to the wire. It runs admission first, for the
@@ -14,11 +14,17 @@ enum HermesCall: Equatable, Sendable {
     static let botChatTitle = "Bot Chat"
     /// Room lists are read in the host's largest page.
     static let roomPageSize = 500
+    /// The surface every session ARC Hermes creates or resumes runs as (#1278). The host picks the
+    /// agent's note about the screen it is talking to by this name, and without one it assumes
+    /// its terminal UI, whose note tells the agent it cannot send files. The host has no note
+    /// of its own for this name: `HermesREST.platformNote` is the one ARC Hermes keeps in each
+    /// Profile's config.
+    static let source = "hermex"
 
     // Profiles
     case profilesList(includeSessions: Bool)
     case profilesDescribe(name: String)
-    /// The Profile's avatar, the only asset Hermex reads.
+    /// The Profile's avatar, the only asset ARC Hermes reads.
     case profilesGetAsset(name: String)
     case profilesSetAsset(name: String, avatar: AvatarChange)
     case profilesConfigure(ProfileChanges)
@@ -35,7 +41,7 @@ enum HermesCall: Equatable, Sendable {
     case sessionResume(profile: String, sessionID: String, omitMessages: Bool)
     case sessionEventsSince(sessionID: String, lastSeen: Int)
     /// The inbox's live-status read. `current_session_id` only marks a TUI's
-    /// focused row, which Hermex never has.
+    /// focused row, which ARC Hermes never has.
     case sessionActiveList
     /// The Sessions list's one Profile-scoped read after it connects (#1046): naming the
     /// Profile makes the host watch its store for `sessions.changed`, which it does only once
@@ -89,7 +95,10 @@ enum HermesCall: Equatable, Sendable {
     /// `text`, in one call under the host's history lock. Never `queued`: the host
     /// refuses a cut while busy (4009) instead of queueing or steering it. A Hermes
     /// chat's retry of a failed turn (#878), Edit, Regenerate and `/retry` (#1049) use it.
-    case promptRewind(sessionID: String, text: String, beforeRowID: Int)
+    /// `deep` sends `confirm_deep_truncate`, which a host that guards deep cuts asks for (4033)
+    /// before one that drops later prompts (#1300). Older hosts refuse the unknown key (4000),
+    /// so it goes only to a host that asked (`HermesChatTurnCoordinator.rewind`).
+    case promptRewind(sessionID: String, text: String, beforeRowID: Int, deep: Bool)
     /// `/undo` in a Hermes session (#1049): rewinds the last real user turn on `runtime`
     /// and answers `{removed}`. Refused while a turn runs (4009).
     case sessionUndo(runtime: String)
@@ -349,9 +358,9 @@ enum HermesCall: Equatable, Sendable {
             return ["profile": .string(profile), "title": .string(Self.botChatTitle), "include_hidden": .bool(true)]
         case .sessionCreate(let profile):
             return ["profile": .string(profile), "title": .string(Self.botChatTitle),
-                    "hidden": .bool(true), "follow_profile_config": .bool(true)]
+                    "hidden": .bool(true), "follow_profile_config": .bool(true), "source": .string(Self.source)]
         case .sessionNew(let profile, let cwd, let model):
-            var params: [String: BotJSON] = ["profile": .string(profile)]
+            var params: [String: BotJSON] = ["profile": .string(profile), "source": .string(Self.source)]
             if let cwd { params["cwd"] = .string(cwd) }
             if let model { params["model"] = .string(model.id); params["provider"] = .string(model.provider) }
             return params
@@ -384,7 +393,7 @@ enum HermesCall: Equatable, Sendable {
             return params
         case .sessionResume(let profile, let sessionID, let omitMessages):
             var params: [String: BotJSON] = ["profile": .string(profile), "session_id": .string(sessionID),
-                                             "close_on_disconnect": .bool(false)]
+                                             "close_on_disconnect": .bool(false), "source": .string(Self.source)]
             if omitMessages { params["omit_messages"] = .bool(true) }
             return params
         case .sessionEventsSince(let sessionID, let lastSeen):
@@ -392,11 +401,15 @@ enum HermesCall: Equatable, Sendable {
         case .sessionActiveList, .groupsCapabilities: return [:]
         case .promptSubmit(let sessionID, let text):
             return ["session_id": .string(sessionID), "text": .string(text), "queued": .bool(true)]
-        case .promptRewind(let sessionID, let text, let rowID):
+        case .promptRewind(let sessionID, let text, let rowID, let deep):
             // `confirm_empty_truncate` too, as Desktop sends whenever it names a row:
             // cutting at the first prompt legitimately empties the transcript.
-            return ["session_id": .string(sessionID), "text": .string(text), "truncate_before_row_id": .number(Double(rowID)),
-                    "confirm_truncate": .bool(true), "confirm_empty_truncate": .bool(true)]
+            var params: [String: BotJSON] = [
+                "session_id": .string(sessionID), "text": .string(text), "truncate_before_row_id": .number(Double(rowID)),
+                "confirm_truncate": .bool(true), "confirm_empty_truncate": .bool(true)
+            ]
+            if deep { params["confirm_deep_truncate"] = .bool(true) }
+            return params
         case .sessionSteer(let sessionID, let text), .sessionRedirect(let sessionID, let text),
              .promptBtw(let sessionID, let text), .promptBackground(let sessionID, let text):
             return ["session_id": .string(sessionID), "text": .string(text)]
@@ -564,7 +577,7 @@ enum HermesCall: Equatable, Sendable {
                 answerIsValid = !target.isEmpty && env.allSatisfy { !$0.key.isEmpty && !$0.value.isEmpty }
             }
             valid = !sessionID.isEmpty && !opID.isEmpty && answerIsValid
-        case .promptRewind(let sessionID, let text, let rowID):
+        case .promptRewind(let sessionID, let text, let rowID, _):
             valid = !sessionID.isEmpty && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && rowID > 0
         case .promptBtw(let sessionID, let text), .promptBackground(let sessionID, let text):
             // The host refuses empty text (4012).

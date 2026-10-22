@@ -83,8 +83,9 @@ enum HermesRequestAnswer: Equatable {
     /// One of this runtime's frames, in `seq` order with duplicates dropped. `afterGap`
     /// when frames before it were lost: the rebuild signal, and `replayWasReset` is set.
     func conversation(didReceive frame: BotJSON, afterGap: Bool)
-    /// Frames were lost with none to apply: one came without a `seq`, or more arrived
-    /// while attaching than the hold keeps. Rebuild from a full snapshot.
+    /// Frames were lost with none to apply: one came without a `seq`, more arrived while
+    /// attaching than the hold keeps, or the host reclaimed the runtime. Rebuild from a
+    /// full snapshot.
     func conversationDidLoseFrames()
     /// A frame held while attaching; it is handed over once connected.
     func conversation(didHold frame: BotJSON)
@@ -314,7 +315,9 @@ extension HermesConversationOwner {
             let reply = try await send(.approvalRespond(sessionID: action.runtime, requestID: action.requestID, choice: choice))
             // `resolved` counts what the host actually unblocked. Zero means the queue no
             // longer held this request: an action failure, not a delivery one.
-            return (reply["resolved"].integer ?? 0) > 0 ? .answered : .alreadyResolved
+            // A missing, non-integer or negative count is no verdict at all.
+            guard let resolved = reply["resolved"].integer, resolved >= 0 else { return .uncertain }
+            return resolved > 0 ? .answered : .alreadyResolved
         case .value(let value):
             // The host tolerates a late answer to a prompt it already dropped and says so
             // rather than erroring; nothing was applied.
@@ -366,8 +369,10 @@ extension HermesConversationOwner {
         connectionState = .recovering
         let label = logName
         do {
+            async let noted: Void = wire.keepPlatformNote(profile: target.profile)
             try await HermesConnectionLog.measure(.connect, label: label) { try await self.wire.connect() }
             try check(attempt)
+            await noted
             try await HermesConnectionLog.measure(.identify, label: label) { try await self.identify(attempt) }
             // Identity only: the read after the replay is the one that carries live state.
             let first = try await HermesConnectionLog.measure(.resumeIdentity, label: label) {
@@ -477,9 +482,11 @@ extension HermesConversationOwner {
     }
 
     /// Routes one event from the shared socket, which carries other screens' sessions
-    /// too: only this runtime's frames and host requests reach the owner.
+    /// too: only this runtime's frames and host requests reach the owner, and a
+    /// `session.reclaimed` naming this runtime or stored key.
     private func receive(_ event: BotJSON) {
         guard connectionState != .disconnected, runtime != nil else { return }
+        if event["type"].text == "session.reclaimed" { return reclaim(event["payload"]) }
         if let session = Self.requestSession(event) {
             guard session == runtime else { return }
             owner?.conversation(didReceiveRequest: event)
@@ -492,6 +499,20 @@ extension HermesConversationOwner {
             return
         }
         admit(event)
+    }
+
+    /// The host tore down a runtime the client never closed (idle timeout, LRU eviction, an
+    /// orphan reap) and broadcast it to every client, with both ids in the payload. When it
+    /// was this session's, the rest of its frames are lost: the owner rebuilds as after a
+    /// gap, which reattaches to the stored key now, so the next write finds a live runtime
+    /// instead of failing with 4001. A close this client asked for is never announced.
+    private func reclaim(_ payload: BotJSON) {
+        let ownRuntime = payload["session_id"].text == runtime
+        let ownKey = storedKey.map { payload["stored_session_id"].text == $0 } ?? false
+        guard ownRuntime || ownKey else { return }
+        let reason = payload["reason"].text ?? "unknown", name = logName
+        HermesConnectionLog.logger.notice("\(name, privacy: .public): the host reclaimed the runtime (\(reason, privacy: .public)); reattaching")
+        owner?.conversationDidLoseFrames()
     }
 
     /// The session a host request envelope names: a string `id`, a `method` and

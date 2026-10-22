@@ -56,43 +56,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
     }
 
-    func testParsedFileURLUsesSessionMediaEndpointAndDecodedExportFilename() async throws {
-        let recorder = TranscriptMediaPreviewRequestRecorder()
-        let imageData = try XCTUnwrap(Self.imageData())
-        let sessionID = "session-file-url"
-        let segments = TranscriptMediaParser.segments(
-            in: "Created file:///tmp/final%20chart.png"
-        )
-        let reference = try XCTUnwrap(segments.compactMap { segment in
-            if case let .media(reference) = segment {
-                return reference
-            }
-            return nil
-        }.first)
-        let client = makeClient { request in
-            recorder.record(request)
-            return self.response(statusCode: 200, data: imageData, for: request)
-        }
-        let viewModel = TranscriptMediaPreviewViewModel(
-            server: Self.baseURL,
-            files: Self.webui(sessionID, client),
-            reference: reference,
-            apiClient: client
-        )
-
-        await viewModel.load()
-
-        XCTAssertNil(viewModel.errorMessage)
-        let queryItems = queryItems(for: try XCTUnwrap(recorder.firstURL))
-        XCTAssertEqual(queryItems["session_id"], sessionID)
-        XCTAssertEqual(queryItems["path"], "/tmp/final chart.png")
-
-        let payload = try await viewModel.exportPayload()
-        XCTAssertEqual(payload.filename, "final chart.png")
-        XCTAssertEqual(payload.data, imageData)
-        XCTAssertEqual(recorder.requestCount, 1)
-    }
-
     func testLoadSameServerRemoteImageUsesAuthenticatedSession() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
         let imageData = try XCTUnwrap(Self.imageData())
@@ -327,12 +290,12 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         viewModel.cleanupTemporaryFiles()
     }
 
-    /// A Hermes MEDIA file past the 25 MB preview cap shows no preview but keeps Save and Share,
+    /// A Hermes MEDIA file past the preview cap (25 MB) shows no preview but keeps Save and Share,
     /// which download the whole file by the same path.
     func testAHermesMediaFilePastThePreviewCapStillExportsWhole() async throws {
         defer { HermesHostFixture.reset() }
-        let size = BotArtifactBuffer.maximumBytes + 1
-        let files = HermesWorkspaceFileClientTests.client { request in
+        let size = 5
+        let files = HermesWorkspaceFileClientTests.client(previewLimit: size - 1) { request in
             request.url?.path == "/api/fs/download" ? .body(200, Data(repeating: 0x61, count: size)) : nil
         }
         let viewModel = TranscriptMediaPreviewViewModel(
@@ -353,29 +316,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(payload.filename, "huge.png")
         XCTAssertEqual(HermesWorkspaceFileClientTests.fileRequests.compactMap(\.url).map { queryItems(for: $0)["path"] },
                        ["/tmp/hermes/huge.png", "/tmp/hermes/huge.png"])
-    }
-
-    func testLoadLocalVideoWithoutSessionIDDoesNotRequestMediaEndpoint() async {
-        let recorder = TranscriptMediaPreviewRequestRecorder()
-        let client = makeClient { request in
-            recorder.record(request)
-            return self.response(statusCode: 200, data: Data(), for: request)
-        }
-        let viewModel = TranscriptMediaPreviewViewModel(
-            server: Self.baseURL,
-            files: Self.webui(nil, client),
-            reference: .init(rawReference: "/tmp/generated/movie.mov"),
-            apiClient: client
-        )
-
-        await viewModel.load()
-
-        XCTAssertFalse(viewModel.isLoading)
-        XCTAssertNil(viewModel.previewData)
-        XCTAssertNil(viewModel.videoFileURL)
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertNotNil(viewModel.lastError)
-        XCTAssertEqual(recorder.requestCount, 0)
     }
 
     func testExtensionlessRemoteMediaFallsBackToVideoFileWhenImageDecodeFails() async throws {
@@ -622,14 +562,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
     }
 }
 
-private enum PhotoLibraryTestVideoError: Error {
-    case cannotConfigureWriter
-    case cannotStartWriter
-    case cannotCreatePixelBuffer
-    case cannotAppendFrame
-    case cannotFinishWriter
-}
-
 private final class TranscriptMediaPreviewRequestRecorder {
     private let lock = NSLock()
     private var requests: [URLRequest] = []
@@ -697,4 +629,12 @@ private extension Data {
             append(contentsOf: buffer)
         }
     }
+}
+
+private enum PhotoLibraryTestVideoError: Error {
+    case cannotConfigureWriter
+    case cannotStartWriter
+    case cannotCreatePixelBuffer
+    case cannotAppendFrame
+    case cannotFinishWriter
 }

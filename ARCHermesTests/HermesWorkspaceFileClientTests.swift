@@ -116,6 +116,14 @@ import XCTest
         XCTAssertFalse(text.isTruncated)
     }
 
+    /// Lines count as an editor numbers them: a final newline, LF or CRLF, starts no new line.
+    func testALineCountIgnoresAFinalNewline() {
+        let counts = ["": 0, "one": 1, "one\n": 1, "one\ntwo\nthree\n": 3, "one\r\ntwo\r\n": 2, "one\r\ntwo": 2, "\n": 1]
+        for (text, lines) in counts {
+            XCTAssertEqual(HermesWorkspaceFileClient.lineCount(text), lines, text.debugDescription)
+        }
+    }
+
     /// The host decodes text with replacement characters, so the preview is not the file: Save
     /// and Share download the file's own bytes instead of re-encoding the preview.
     func testExportDownloadsTheFileRatherThanItsPreviewText() async throws {
@@ -135,7 +143,7 @@ import XCTest
 
         XCTAssertEqual(export.data, Data(#""original bytes""#.utf8))
         XCTAssertEqual(Self.fileRequests.map { $0.url?.path }, ["/api/fs/read-text", "/api/fs/download"])
-        XCTAssertEqual(Self.fileRequests.last.flatMap(Self.queryPath), "notes.txt")
+        XCTAssertEqual(Self.fileRequests.last.flatMap(Self.queryPath), Self.cwd + "/notes.txt")
     }
 
     /// A symlinked folder lists as a file; opening it is the preview's No Preview state, not a
@@ -210,38 +218,43 @@ import XCTest
 
     // MARK: Downloads
 
-    /// A file downloads by its relative path with the Profile and stored key, so the host
-    /// resolves it against the session's folder. A MEDIA path is sent as the reply wrote it.
-    func testDownloadsSendTheRelativePathProfileAndStoredKey() async throws {
+    /// A file downloads by its host path with the Profile and no stored key, so Save to Files
+    /// works before the host has stored a new chat (#1138), with a `+` kept as itself. A MEDIA
+    /// path is sent as the reply wrote it, with the stored key, so the host resolves it against
+    /// the session.
+    func testFileDownloadsSendTheHostPathAndMediaKeepsTheStoredKey() async throws {
         let client = Self.client { request in
             request.url?.path == "/api/fs/download" ? .json(200, .string("bytes")) : nil
         }
 
-        let file = try await client.rawFileData(path: "out/plot.png")
+        let file = try await client.rawFileData(path: "out/a+b.png")
+        let preview = try await client.rawFilePreviewData(path: "out/a+b.png")
         let media = try await client.mediaData(path: "/tmp/hermes/screenshot.png")
 
         XCTAssertEqual(file, Data(#""bytes""#.utf8))
+        XCTAssertEqual(preview, Data(#""bytes""#.utf8))
         XCTAssertEqual(media, Data(#""bytes""#.utf8))
+        let fileQuery = [URLQueryItem(name: "path", value: Self.cwd + "/out/a+b.png"), URLQueryItem(name: "profile", value: "research")]
         XCTAssertEqual(Self.fileRequests.map(Self.query), [
-            [URLQueryItem(name: "path", value: "out/plot.png"), URLQueryItem(name: "profile", value: "research"),
-             URLQueryItem(name: "session_id", value: "20261008_101500_abc123")],
+            fileQuery, fileQuery,
             [URLQueryItem(name: "path", value: "/tmp/hermes/screenshot.png"), URLQueryItem(name: "profile", value: "research"),
              URLQueryItem(name: "session_id", value: "20261008_101500_abc123")]
         ])
+        XCTAssertTrue(Self.fileRequests.first?.url?.query(percentEncoded: true)?.contains("a%2Bb.png") == true)
     }
 
-    /// Image and Quick Look previews stop at 25 MB; Save and Share download the whole file.
-    func testOnlyPreviewDownloadsStopAt25MB() async throws {
-        let large = String(repeating: "a", count: BotArtifactBuffer.maximumBytes)
-        let client = Self.client { request in
-            request.url?.path == "/api/fs/download" ? .json(200, .string(large)) : nil
+    /// Image and Quick Look previews stop at the preview cap (25 MB); Save and Share download
+    /// the whole file.
+    func testOnlyPreviewDownloadsStopAtTheCap() async throws {
+        let client = Self.client(previewLimit: 4) { request in
+            request.url?.path == "/api/fs/download" ? .body(200, Data(count: 5)) : nil
         }
 
         let export = try await client.rawFileData(path: "archive.zip")
-        XCTAssertEqual(export.count, BotArtifactBuffer.maximumBytes + 2)
+        XCTAssertEqual(export.count, 5)
         do {
             _ = try await client.imagePreviewData(path: "huge.png")
-            XCTFail("Expected an image preview past 25 MB to stop")
+            XCTFail("Expected an image preview past the cap to stop")
         } catch {
             XCTAssertEqual(error as? BotArtifactFailure, .tooLarge)
         }
@@ -281,10 +294,11 @@ import XCTest
         HermesWorkspaceContext(server: server, profile: profile, storedKey: storedKey, cwd: cwd, terminalBackend: terminalBackend)
     }
 
-    static func client(context: HermesWorkspaceContext = context(),
+    static func client(context: HermesWorkspaceContext = context(), previewLimit: Int = BotArtifactBuffer.maximumBytes,
                        _ script: @escaping (URLRequest) -> HermesHostFixture.Reply?) -> HermesWorkspaceFileClient {
         HermesWorkspaceFileClient(context: context,
-                                  http: HermesConnection(connection: record, configuration: HermesHostFixture.configuration(script)))
+                                  http: HermesConnection(connection: record, configuration: HermesHostFixture.configuration(script)),
+                                  previewLimit: previewLimit)
     }
 
     /// `GET /api/fs/list`'s reply for `directory`, each entry's `path` resolved the way the host

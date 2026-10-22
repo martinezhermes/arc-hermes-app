@@ -1,0 +1,44 @@
+#!/bin/bash
+# Run asc with ARC's explicitly configured App Store Connect app and API-key profile.
+# Read-only mode also protects commands whose native CLI has no --confirm flag.
+set -euo pipefail
+
+if [[ $# -eq 0 || "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+  cat <<'USAGE'
+Usage: scripts/app-store [--write] <asc command> [flags]
+
+Requires ARCHERMES_ASC_APP_ID and ARCHERMES_ASC_PROFILE; API access is read-only by default.
+Use --write only for an owner-authorized App Store Connect change.
+All remaining arguments go directly to asc; add --help to discover its commands.
+
+Examples:
+  scripts/app-store status
+  scripts/app-store versions list --platform IOS
+  scripts/app-store release stage --help
+  scripts/app-store --write versions release --version-id VERSION_ID --confirm
+
+Setup and release procedure: TESTFLIGHT.md, "App Store Connect CLI".
+USAGE
+  exit 0
+fi
+
+export ASC_READ_ONLY=1
+if [[ "$1" == "--write" ]]; then
+  export ASC_READ_ONLY=0
+  shift
+  if [[ $# -eq 0 ]]; then
+    echo "Provide an asc command after --write. See scripts/app-store --help." >&2
+    exit 2
+  fi
+fi
+
+if ! command -v asc >/dev/null 2>&1; then
+  echo "Install the App Store Connect CLI with: brew install asc" >&2
+  exit 127
+fi
+
+: "${ARCHERMES_ASC_APP_ID:?Set ARCHERMES_ASC_APP_ID to the intended ARC Hermes App Store app.}"
+: "${ARCHERMES_ASC_PROFILE:?Set ARCHERMES_ASC_PROFILE to its asc authentication profile.}"
+export ASC_APP_ID="$ARCHERMES_ASC_APP_ID"
+export ASC_TELEMETRY_DISABLED=1
+exec asc --profile "$ARCHERMES_ASC_PROFILE" "$@"

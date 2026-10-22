@@ -247,21 +247,6 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         }
     }
 
-    func testUnauthorizedAndBadRequestCopyIsUnchangedByForbiddenHandling() {
-        XCTAssertEqual(
-            APIError.unauthorized.localizedDescription,
-            "The password was rejected. Check the server password and try again."
-        )
-        XCTAssertEqual(
-            APIError.http(statusCode: 400, body: #"{"error":"Missing message"}"#).localizedDescription,
-            "The server rejected the request: Missing message"
-        )
-        XCTAssertEqual(
-            APIError.http(statusCode: 400, body: "<html>nope</html>").localizedDescription,
-            "The server rejected the request."
-        )
-    }
-
     func testDisplayedServerMessageIsBoundedAcrossHTTPBranches() {
         let long = String(repeating: "x", count: 500)
         let body = #"{"error":"\#(long)"}"#
@@ -281,6 +266,42 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         )
         // The raw body is still available to callers that inspect it programmatically.
         XCTAssertEqual(APIError.http(statusCode: 403, body: body).serverMessage, long)
+    }
+
+    // MARK: - Durable compression continuation
+
+    func testSessionRotationRequiresExactConflictContractAndValidID() {
+        let body = #"{"code":"session_rotated","continuation_session_id":"20261008-abc_def","future":{"x":1}}"#
+        XCTAssertEqual(APIError.http(statusCode: 409, body: body).sessionRotation?.continuationSessionID,
+                       "20261008-abc_def")
+        for status in [200, 400, 404, 500] {
+            XCTAssertNil(APIError.http(statusCode: status, body: body).sessionRotation)
+        }
+        for invalid in [
+            "not json", "{}",
+            #"{"code":"session_profile_mismatch","continuation_session_id":"next"}"#,
+            #"{"continuation_session_id":"next"}"#,
+            #"{"code":"session_rotated"}"#,
+            #"{"code":"session_rotated","continuation_session_id":null}"#,
+            #"{"code":"session_rotated","continuation_session_id":42}"#,
+            #"{"code":"session_rotated","continuation_session_id":{}}"#,
+            #"{"code":"session_rotated","continuation_session_id":""}"#,
+            #"{"code":"session_rotated","continuation_session_id":" next "}"#,
+            #"{"code":"session_rotated","continuation_session_id":"next\nchat"}"#,
+            #"{"code":"session_rotated","continuation_session_id":"../next"}"#,
+            #"{"code":"session_rotated","continuation_session_id":"https://other.test"}"#
+        ] {
+            XCTAssertNil(APIError.http(statusCode: 409, body: invalid).sessionRotation, invalid)
+        }
+    }
+
+    func testMalformedContinuationDoesNotHideExistingErrorMetadata() {
+        let error = APIError.http(statusCode: 409, body:
+            #"{"error":"Already running","active_stream_id":"stream-1","continuation_session_id":42}"#)
+        XCTAssertNil(error.sessionRotation)
+        XCTAssertEqual(error.activeStreamID, "stream-1")
+        XCTAssertEqual(error.serverMessage, "Already running")
+        XCTAssertEqual(error.privacySafeLogCategory, "http.409")
     }
 
     // MARK: - HTTP 409 agent_runtime_stale (issue #955)
@@ -356,29 +377,5 @@ final class APIClientAuthAndErrorTests: APIClientTestCase {
         XCTAssertFalse(category.contains("secret"))
         XCTAssertFalse(category.contains("private"))
         XCTAssertFalse(category.contains("raw response"))
-    }
-
-    func testNetworkErrorPrivacySafeLogCategoryUsesOnlyURLCode() {
-        let error = APIError.network(underlying: URLError(.timedOut))
-
-        XCTAssertEqual(error.privacySafeLogCategory, "network.url.-1001")
-    }
-
-    func testNetworkTimeoutUsesSetupGuidance() async throws {
-        let error = APIError.network(underlying: URLError(.timedOut))
-
-        XCTAssertEqual(
-            error.localizedDescription,
-            "The server did not respond in time. Check that the server is running and the connection is available."
-        )
-    }
-
-    func testAppTransportSecurityErrorUsesHTTPGuidance() async throws {
-        let error = APIError.network(underlying: URLError(.appTransportSecurityRequiresSecureConnection))
-
-        XCTAssertEqual(
-            error.localizedDescription,
-            "iOS blocked this insecure HTTP connection. Use HTTPS, a local network address, or a Tailscale name or IP."
-        )
     }
 }

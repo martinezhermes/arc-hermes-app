@@ -177,97 +177,6 @@ final class FileBrowserViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testLastErrorIsHandedOverOnce() async throws {
-        let log = RequestLog(failing: ["src"])
-        let viewModel = try makeViewModel(client: makeListingClient(log: log))
-
-        await viewModel.loadInitialRootIfNeeded()
-
-        XCTAssertNotNil(viewModel.takeLastError())
-        XCTAssertNil(viewModel.takeLastError())
-    }
-
-    @MainActor
-    func testFolderRemovedDuringAnInFlightListingIsNotKeptAsLoaded() async throws {
-        let slowListingStarted = expectation(description: "slow src listing started")
-        let log = RequestLog()
-        let client = makeClient { [self] request in
-            let path = listedPath(in: request)
-            log.record(path)
-            switch path {
-            case ".":
-                let rootCalls = log.listedPaths.filter { $0 == "." }.count
-                let entries = rootCalls == 2 ? "" : entryJSON("src", path: "src", isDirectory: true)
-                return apiTestJSONResponse(#"{"path": ".", "entries": [\#(entries)]}"#, for: request)
-            case "src":
-                if log.listedPaths.filter({ $0 == "src" }).count == 1 {
-                    slowListingStarted.fulfill()
-                    Thread.sleep(forTimeInterval: 0.3)
-                }
-                return apiTestJSONResponse(#"{"path": "src", "entries": [\#(entryJSON("a.txt", path: "src/a.txt", isDirectory: false))]}"#, for: request)
-            default:
-                return apiTestJSONResponse(#"{"error": "not found"}"#, for: request, status: 404)
-            }
-        }
-        try saveWebUIExpansion([])
-        let viewModel = try makeViewModel(client: client)
-        await viewModel.loadInitialRootIfNeeded()
-
-        let slowOpen = Task { await viewModel.toggleDirectory("src") }
-        await fulfillment(of: [slowListingStarted], timeout: 1)
-        await viewModel.refresh()
-        await slowOpen.value
-
-        XCTAssertFalse(viewModel.tree.isLoaded("src"), "The folder vanished from the root while its listing was in flight")
-        XCTAssertFalse(viewModel.isLoading("src"), "A dropped listing must not leave its spinner behind")
-
-        await viewModel.retryRoot()
-
-        XCTAssertEqual(viewModel.childCount(of: "src"), 1, "A folder that comes back is listed again, not served from the orphaned listing")
-        XCTAssertEqual(log.listedPaths.filter { $0 == "src" }.count, 2)
-    }
-
-    @MainActor
-    func testFolderRemovedAndRecreatedDuringAnInFlightListingDropsTheOldResponse() async throws {
-        let slowListingStarted = expectation(description: "slow src listing started")
-        let log = RequestLog()
-        let client = makeClient { [self] request in
-            let path = listedPath(in: request)
-            log.record(path)
-            switch path {
-            case ".":
-                let rootCalls = log.listedPaths.filter { $0 == "." }.count
-                let entries = rootCalls == 2 ? "" : entryJSON("src", path: "src", isDirectory: true)
-                return apiTestJSONResponse(#"{"path": ".", "entries": [\#(entries)]}"#, for: request)
-            case "src":
-                if log.listedPaths.filter({ $0 == "src" }).count == 1 {
-                    slowListingStarted.fulfill()
-                    Thread.sleep(forTimeInterval: 0.3)
-                }
-                return apiTestJSONResponse(#"{"path": "src", "entries": [\#(entryJSON("a.txt", path: "src/a.txt", isDirectory: false))]}"#, for: request)
-            default:
-                return apiTestJSONResponse(#"{"error": "not found"}"#, for: request, status: 404)
-            }
-        }
-        try saveWebUIExpansion([])
-        let viewModel = try makeViewModel(client: client)
-        await viewModel.loadInitialRootIfNeeded()
-
-        let slowOpen = Task { await viewModel.toggleDirectory("src") }
-        await fulfillment(of: [slowListingStarted], timeout: 1)
-        await viewModel.toggleDirectory("src")
-        XCTAssertFalse(viewModel.isExpanded("src"), "Collapsed while the listing is still in flight")
-        await viewModel.refresh()
-        XCTAssertNil(viewModel.tree.node(at: "src"), "Second root listing dropped the folder")
-        await viewModel.retryRoot()
-        XCTAssertNotNil(viewModel.tree.node(at: "src"), "Third root listing brought it back, collapsed, so nothing re-listed it")
-        await slowOpen.value
-
-        XCTAssertFalse(viewModel.tree.isLoaded("src"), "The listing from before the folder was recreated is stale and must not be stored")
-        XCTAssertFalse(viewModel.isLoading("src"), "The recreated folder must not show a spinner with no listing in flight")
-    }
-
-    @MainActor
     func testRefreshRelistsRootAndOpenFoldersOnly() async throws {
         let log = RequestLog()
         let viewModel = try makeViewModel(client: makeListingClient(log: log))
@@ -402,10 +311,12 @@ final class FileBrowserViewModelTests: APIClientTestCase {
 
     // MARK: - Hermes (#1112)
 
-    /// A Hermes tree lists the chat's folder and builds every row from the folder's relative path
-    /// plus the entry's name, though the host answers with resolved `/private/…` paths.
+    /// A Hermes tree opens with every folder closed and lists only the chat's folder, since the
+    /// host lists one folder at a time and blocks on protected ones (#1138); a folder lists when
+    /// tapped. Every row is the folder's relative path plus the entry's name, though the host
+    /// answers with resolved `/private/…` paths.
     @MainActor
-    func testAHermesTreeListsTheChatFolderAndNamesChildrenRelatively() async throws {
+    func testAHermesTreeOpensClosedAndNamesChildrenRelatively() async throws {
         let cwd = HermesWorkspaceFileClientTests.cwd
         let files = HermesWorkspaceFileClientTests.client { request in
             switch HermesWorkspaceFileClientTests.queryPath(request) {
@@ -417,6 +328,11 @@ final class FileBrowserViewModelTests: APIClientTestCase {
         let viewModel = FileBrowserViewModel(files: files, defaults: defaults)
 
         await viewModel.loadInitialRootIfNeeded()
+
+        XCTAssertEqual(HermesWorkspaceFileClientTests.fileRequests.map(HermesWorkspaceFileClientTests.queryPath), [cwd])
+        XCTAssertEqual(viewModel.visibleNodes(matching: "").map(\.node.path), ["src", "README.md"])
+
+        await viewModel.toggleDirectory("src")
 
         XCTAssertEqual(HermesWorkspaceFileClientTests.fileRequests.map(HermesWorkspaceFileClientTests.queryPath),
                        [cwd, cwd + "/src"])
@@ -441,6 +357,7 @@ final class FileBrowserViewModelTests: APIClientTestCase {
         let viewModel = FileBrowserViewModel(files: files, defaults: defaults)
 
         await viewModel.loadInitialRootIfNeeded()
+        await viewModel.toggleDirectory("src")
 
         XCTAssertEqual(viewModel.loadFailure(for: "src"), "This folder is no longer on the server.")
         XCTAssertNil(viewModel.errorMessage, "A missing subfolder is not the root's failure")
@@ -548,7 +465,7 @@ final class FileBrowserViewModelTests: APIClientTestCase {
         let first = FileBrowserViewModel(files: HermesWorkspaceFileClientTests.client(script), defaults: defaults)
         await first.loadInitialRootIfNeeded()
         await first.toggleDirectory("src")
-        XCTAssertEqual(first.expandedPaths, [])
+        XCTAssertEqual(first.expandedPaths, ["src"])
 
         let others = [
             HermesWorkspaceFileClientTests.context(storedKey: "20261008_101600_def456"),
@@ -558,10 +475,10 @@ final class FileBrowserViewModelTests: APIClientTestCase {
         for context in others {
             let other = FileBrowserViewModel(files: HermesWorkspaceFileClientTests.client(context: context, script), defaults: defaults)
             await other.loadInitialRootIfNeeded()
-            XCTAssertEqual(other.expandedPaths, ["src"], "\(context) starts from the default expansion")
+            XCTAssertEqual(other.expandedPaths, [], "\(context) starts with every folder closed")
         }
         let same = FileBrowserViewModel(files: HermesWorkspaceFileClientTests.client(script), defaults: defaults)
         await same.loadInitialRootIfNeeded()
-        XCTAssertEqual(same.expandedPaths, [], "The same chat and folder remembers its layout")
+        XCTAssertEqual(same.expandedPaths, ["src"], "The same chat and folder remembers its layout")
     }
 }

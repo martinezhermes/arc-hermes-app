@@ -162,7 +162,7 @@ extension MessageAttachment {
     }
 
     /// A Hermes session's user text as its transcript shows it (#1012), and the chips it
-    /// names. Each `\n\n` block that is a reference a Hermex send appends becomes a chip:
+    /// names. Each `\n\n` block that is a reference a ARC Hermes send appends becomes a chip:
     /// Hermes's vision-tool instruction pair (`BotAttachmentUpload.imageReference`) or a
     /// lone `@file:` token, plain or quoted (`file.attach`'s `ref_text`). The footer the
     /// host saves after a prompt's `@file:` tokens (`--- Context Warnings ---` and

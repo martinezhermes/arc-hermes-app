@@ -94,6 +94,28 @@ import Observation
         XCTAssertEqual(chat.model.messages.map(\.content), ["First", "First answer.", "Second"])
     }
 
+    /// A host that guards deep cuts (#1300) refuses one past later prompts until it is confirmed
+    /// (4033). A cut the chat asked to discard later messages for goes again, confirmed; regenerating
+    /// the last reply drops no other prompt, so a 4033 there is a chat out of date and is not resent.
+    func testADeepCutIsConfirmedOnlyWhenTheHostAsksAndTheChatAskedFirst() async throws {
+        for (index, deep) in [(3, true), (5, false)] {
+            let chat = await openChat(threeTurns)
+            chat.host.next("prompt.submit", .init(error: 4033, message: "truncation would archive later user turns"))
+            chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+
+            let regenerated = await chat.model.regenerateAssistantResponse(try context(chat, at: index))
+
+            XCTAssertEqual(regenerated, deep, "\(index)")
+            XCTAssertEqual(chat.writes("prompt.submit").map { $0["confirm_deep_truncate"] },
+                           deep ? [nil, .bool(true)] : [nil], "\(index)")
+            if !deep {
+                XCTAssertEqual(chat.model.messages.compactMap(\.rowID), [1, 2, 3, 4, 5, 6], "nothing is cut")
+                XCTAssertNil(chat.model.activeStreamID, "no turn starts")
+                XCTAssertNotNil(chat.model.messageActionErrorMessage, "the chat says why")
+            }
+        }
+    }
+
     /// A skill turn's row holds the expanded skill and shows the typed line; regenerating resends
     /// that line, which the host expands again.
     func testASkillTurnResendsItsInvocation() async throws {
@@ -464,8 +486,10 @@ import Observation
             if transcript.takeFailure() { return .json(502, .object(["detail": .string("Bad Gateway")])) }
             return .json(200, .object(["session_id": .string("tip"), "messages": .array(transcript.rows)]))
         }
+        // A failed attach tries again at once, not after the 1, 2, 4 s backoff a slow runner sat through.
         let engine = HermesConversation(server: URL(string: "https://hermes.example")!, connection: Self.connection,
-                                        target: .session(profile: "default", key: "tip"), wire: client)
+                                        target: .session(profile: "default", key: "tip"), wire: client,
+                                        reconnectDelay: { _ in })
         let model = ChatViewModel(
             session: SessionSummary(profile: "default"), server: URL(string: "https://hermes.example")!,
             streamingScrollCoalescingDelayNanoseconds: 0,

@@ -3,7 +3,7 @@ import UIKit
 /// Read-only UITextInput adapter. UIKit owns gestures, handles, and the edit menu;
 /// the existing SwiftUI leaves continue to own rendering and link interactions.
 final class ResponseSelectionInput: UIView, UITextInput, UITextInteractionDelegate {
-    /// Nil where there is no composer to quote into; the menu then omits Ask Hermex.
+    /// Nil where there is no composer to quote into; the menu then omits Ask ARC Hermes.
     var onAskHermex: ((String) -> Void)?
     let leaves = NSHashTable<ResponseSelectionLeafView>.weakObjects()
     var leafOrder: [UUID] = []

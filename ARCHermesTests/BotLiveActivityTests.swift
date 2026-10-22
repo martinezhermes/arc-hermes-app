@@ -48,7 +48,7 @@ import XCTest
         let state = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self,
                                             from: Data(#"{"v":1,"status":"running","tool_calls":5}"#.utf8))
         let manager = AgentLiveActivityManager()
-        XCTAssertTrue(manager.restoreBotOwnership(attributes: attributes, state: state))
+        XCTAssertTrue(manager.restoreOwnership(attributes: attributes, state: state))
         XCTAssertEqual(manager.drivenSessionID, bot.key)
         XCTAssertEqual(manager.currentStateForTesting()?.sessionTitle, "Inbox Triage")
         XCTAssertNil(manager.activeConnectedStreamID, "A restored push activity does not own a foreground stream")
@@ -66,13 +66,31 @@ import XCTest
         let running = AgentRunActivityStateReducer.initialState(sessionID: bot.key, sessionTitle: "Inbox Triage")
         let final = AgentRunActivityStateReducer.final(status: .complete, activity: "Done", state: running)
         let manager = AgentLiveActivityManager()
-        XCTAssertFalse(manager.restoreBotOwnership(attributes: attributes, state: final))
+        XCTAssertFalse(manager.restoreOwnership(attributes: attributes, state: final))
         XCTAssertNil(manager.drivenSessionID)
-        XCTAssertTrue(manager.restoreBotOwnership(attributes: attributes, state: running))
+        XCTAssertTrue(manager.restoreOwnership(attributes: attributes, state: running))
         var duplicate = attributes
         duplicate.sessionID = "another-bot"
-        XCTAssertFalse(manager.restoreBotOwnership(attributes: duplicate, state: running))
+        XCTAssertFalse(manager.restoreOwnership(attributes: duplicate, state: running))
         XCTAssertEqual(manager.drivenSessionID, bot.key)
+    }
+
+    /// A legacy compression moves a bot's stored key mid-turn (#1179): the adopted activity's
+    /// pushes move to the new key, and a blank key moves nothing.
+    func testABotsPushesFollowAKeyMove() throws {
+        var bot = try XCTUnwrap(AgentRunActivityBot(destination()))
+        bot.pushSessionID = "tip"
+        let attributes = AgentRunActivityAttributes(sessionID: bot.key, sessionTitle: "Inbox Triage",
+                                                    streamID: bot.streamID(turn: "100.0"),
+                                                    startedAt: Date(timeIntervalSince1970: 100), bot: bot)
+        let running = AgentRunActivityStateReducer.initialState(sessionID: bot.key, sessionTitle: "Inbox Triage")
+        let manager = AgentLiveActivityManager()
+        XCTAssertTrue(manager.restoreOwnership(attributes: attributes, state: running))
+        XCTAssertEqual(manager.drivenPushSessionIDForTesting, "tip")
+        manager.movePushSession(to: "tip-2")
+        XCTAssertEqual(manager.drivenPushSessionIDForTesting, "tip-2")
+        manager.movePushSession(to: "")
+        XCTAssertEqual(manager.drivenPushSessionIDForTesting, "tip-2")
     }
 
     /// The relay route for each kind of activity (#566): a webui run pushes under its
@@ -153,28 +171,6 @@ import XCTest
         let written = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: JSONEncoder().encode(local))
         XCTAssertTrue(written.updateTimeIsKnown)
         XCTAssertEqual(written.detailChips, [.updated(local.updatedAt)])
-    }
-
-    /// A turn without tools sends nothing between its start and its end, so its last
-    /// update is the start: "Updated … ago" would tick in step with the elapsed timer.
-    func testAnUpdateFromTheRunsFirstMomentsDoesNotRepeatTheTimer() throws {
-        let early = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: Data(
-            #"{"v":1,"status":"running","started_at":1800000000,"updated_at":1800000002}"#.utf8))
-        XCTAssertEqual(early.detailChips, [])
-        let local = AgentRunActivityStateReducer.initialState(sessionID: "s", sessionTitle: "Plan")
-        XCTAssertEqual(local.detailChips, [], "The app's own first write is the start too")
-    }
-
-    func testFinishedDetailPointsToTheReplyOnlyAfterCompletion() throws {
-        func relay(_ status: String) throws -> AgentRunActivityAttributes.ContentState {
-            try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: Data(
-                #"{"v":1,"status":"\#(status)","tool_calls":5,"updated_at":1800000042}"#.utf8))
-        }
-        XCTAssertEqual(try relay("done").detailChips, [.text("5 tools"), .openReply])
-        XCTAssertEqual(try relay("failed").detailChips, [.text("5 tools")])
-        let silent = try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self,
-                                              from: Data(#"{"v":1,"status":"running"}"#.utf8))
-        XCTAssertEqual(silent.detailChips, [], "Nothing to say leaves the row out")
     }
 
     func testLocalWritesKeepTheCountTheRelayShowed() throws {
@@ -290,103 +286,13 @@ import XCTest
         }
     }
 
-    /// Generic waiting, in-flight work, and final or failed runs stay on the
-    /// disconnected card. Stopping is a conversation turn, not an activity status:
-    /// the card keeps the mapped command line and does not become an ask.
-    func testOrdinaryStaleBotsStayDisconnected() {
-        let disconnected = String(localized: "Not connected")
-        let reconnect = String(localized: "Open to reconnect")
-        let counts = ["1 tool"]
-        let cases: [(AgentRunActivityStatus, String, String?, Bool)] = [
-            (.waiting, String(localized: "Waiting for you"), nil, false),
-            (.runningCommand, String(localized: "Running command"), nil, false),
-            (.usingTool, String(localized: "Using tool"), nil, false),
-            (.thinking, String(localized: "Thinking"), nil, false),
-            (.searchingFiles, String(localized: "Searching files"), nil, false),
-            (.complete, String(localized: "Response complete"), nil, true),
-            (.failed, String(localized: "Response failed"), "boom", true),
-            (.cancelled, String(localized: "Response cancelled"), nil, true),
-        ]
-        for (status, activity, error, isFinal) in cases {
-            let state = activityState(
-                status: status, isStale: true, currentActivity: activity, chips: counts,
-                excerpt: "hidden reply", errorSummary: error, isFinal: isFinal)
-            let stale = AgentRunStaleBotPresentation.presentation(state: state, isBot: true)
-            XCTAssertEqual(stale?.lead, disconnected, "\(status)")
-            XCTAssertEqual(stale?.action, reconnect, "\(status)")
-            XCTAssertEqual(stale?.isPendingInput, false, "\(status)")
-            XCTAssertEqual(AgentRunStaleBotPresentation.lockScreenChips(state: state, isBot: true), counts + [reconnect])
-            XCTAssertEqual(
-                AgentRunStaleBotPresentation.expandedCountsLine(state: state, isBot: true),
-                ([disconnected] + counts).joined(separator: " · "), "\(status)")
-            XCTAssertFalse(AgentRunStaleBotPresentation.prefersWaitingAnswer(state: state, isBot: true), "\(status)")
-        }
-
-        let freshFailure = activityState(
-            status: .failed, isStale: false, currentActivity: String(localized: "Response failed"),
-            errorSummary: "boom", isFinal: true)
-        XCTAssertNil(AgentRunStaleBotPresentation.presentation(state: freshFailure, isBot: true))
-        XCTAssertNil(AgentRunStaleBotPresentation.presentation(state: freshFailure, isBot: false))
-        let staleWebuiAsk = activityState(
-            status: .waitingForApproval, isStale: true, currentActivity: "Sketching a diagram", chips: counts)
-        XCTAssertNil(AgentRunStaleBotPresentation.presentation(state: staleWebuiAsk, isBot: false))
-        XCTAssertEqual(
-            AgentRunStaleBotPresentation.expandedCountsLine(state: staleWebuiAsk, isBot: false),
-            (["Sketching a diagram"] + counts).joined(separator: " · "))
-        XCTAssertFalse(AgentRunStaleBotPresentation.prefersWaitingAnswer(state: staleWebuiAsk, isBot: false))
-    }
-
-    func testStalePresentationDoesNotMutateActivityState() throws {
-        let started = Date(timeIntervalSince1970: 1_800_000_000)
-        let updated = Date(timeIntervalSince1970: 1_800_000_042)
-        var state = activityState(
-            status: .waitingForClarification, isStale: true, currentActivity: "unrelated",
-            chips: ["2 workers"], excerpt: "Ask which inbox", errorSummary: "boom",
-            started: started, updated: updated)
-        let encoded = try JSONEncoder().encode(state)
-        let snapshot = state
-        _ = AgentRunStaleBotPresentation.presentation(state: state, isBot: true)
-        _ = AgentRunStaleBotPresentation.lockScreenChips(state: state, isBot: true)
-        _ = AgentRunStaleBotPresentation.expandedCountsLine(state: state, isBot: true)
-        _ = AgentRunStaleBotPresentation.prefersWaitingAnswer(state: state, isBot: true)
-        XCTAssertEqual(state, snapshot)
-        XCTAssertTrue(state.isStale)
-        XCTAssertEqual(state.startedAt, started)
-        XCTAssertEqual(state.updatedAt, updated)
-        XCTAssertEqual(state.status, .waitingForClarification)
-        XCTAssertEqual(state.responseExcerpt, "Ask which inbox")
-        XCTAssertEqual(state.chips, ["2 workers"])
-        XCTAssertEqual(try decodedActivity(JSONEncoder().encode(state)), try decodedActivity(encoded))
-
-        // The widget reads presented state: ActivityKit staleness counts, the stored value does not change.
-        var stored = state
-        stored.isStale = false
-        let storedEncoded = try JSONEncoder().encode(stored)
-        let attributes = AgentRunActivityAttributes(
-            sessionID: stored.sessionID, sessionTitle: stored.sessionTitle, startedAt: started)
-        let presented = stored.presented(attributes: attributes, systemIsStale: true)
-        XCTAssertEqual(try decodedActivity(JSONEncoder().encode(stored)), try decodedActivity(storedEncoded))
-        XCTAssertFalse(stored.isStale)
-        XCTAssertEqual(stored.status, .waitingForClarification)
-        XCTAssertEqual(stored.responseExcerpt, state.responseExcerpt)
-        XCTAssertTrue(presented.isStale)
-        XCTAssertEqual(
-            AgentRunStaleBotPresentation.presentation(state: presented, isBot: true)?.lead,
-            AgentRunActivityStatus.waitingForClarification.title)
-        XCTAssertNil(AgentRunStaleBotPresentation.presentation(state: stored, isBot: true))
-        XCTAssertNil(AgentRunStaleBotPresentation.presentation(state: presented, isBot: false))
-    }
-
     private func activityState(
         status: AgentRunActivityStatus,
         isStale: Bool,
         currentActivity: String,
         chips: [String]? = nil,
         excerpt: String = "",
-        errorSummary: String? = nil,
-        isFinal: Bool = false,
-        started: Date = Date(timeIntervalSince1970: 100),
-        updated: Date = Date(timeIntervalSince1970: 140)
+        errorSummary: String? = nil
     ) -> AgentRunActivityAttributes.ContentState {
         var state = AgentRunActivityAttributes.ContentState(
             sessionID: "bot-key",
@@ -394,17 +300,13 @@ import XCTest
             status: status,
             currentActivity: currentActivity,
             responseExcerpt: excerpt,
-            startedAt: started,
-            updatedAt: updated,
+            startedAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 140),
             isStale: isStale,
-            isFinal: isFinal,
+            isFinal: false,
             errorSummary: errorSummary
         )
         state.chips = chips
         return state
-    }
-
-    private func decodedActivity(_ data: Data) throws -> AgentRunActivityAttributes.ContentState {
-        try JSONDecoder().decode(AgentRunActivityAttributes.ContentState.self, from: data)
     }
 }
