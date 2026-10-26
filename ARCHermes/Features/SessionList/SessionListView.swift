@@ -613,7 +613,7 @@ struct SessionListView: View {
 
             content
         }
-        .safeAreaBar(edge: .top, spacing: 0) {
+        .adaptiveTopBar {
             SessionListTopChrome(
                 headerLogoColor: selectedHeaderLogoColor,
                 headerLogoText: serverIdentity?.headerLogoText ?? "",
@@ -842,7 +842,7 @@ struct SessionListView: View {
         .scrollPosition(id: $sidebarScrollPosition)
         // Native scroll-edge treatment: rows fading under the pinned chrome
         // get the system soft edge instead of a material slab (#21).
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .nativeSoftScrollEdges(.top)
         .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
         // Disclosure subrows are real List rows; drive their fold from the List

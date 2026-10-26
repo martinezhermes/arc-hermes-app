@@ -80,7 +80,7 @@ operation. A skill does not confer authority to approve the agent's own work.
 Do not copy these skill bundles into this repository. If a required skill is
 missing, identify it rather than inventing its guidelines. The checked-in
 project remains authoritative: Swift 5 language mode, targeted concurrency,
-iOS 27+, and the team inherited from `Config/Shared.xcconfig`. Do not migrate
+iOS/iPadOS 18+, and the team inherited from `Config/Shared.xcconfig`. Do not migrate
 language mode or add architectural layers merely to match a generic example.
 
 The maintainer's main checkout is the Xcode/device workspace. Leave its branch

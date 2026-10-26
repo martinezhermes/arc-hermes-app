@@ -4147,7 +4147,7 @@ struct ChatNavigationBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
             .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
-            .scrollEdgeEffectStyle(.soft, for: .top)
+            .nativeSoftScrollEdges(.top)
     }
 }
 

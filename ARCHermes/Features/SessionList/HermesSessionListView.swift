@@ -106,7 +106,7 @@ struct HermesSessionListView: View {
             if !viewModel.isViewingCachedData && !viewModel.hermesShowsAllProfiles { archivedRow }
         }
         .listStyle(.plain)
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .nativeSoftScrollEdges(.top)
         .environment(\.defaultMinListRowHeight, 0)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: projectsAreExpanded)
         .overlay(alignment: .bottom) {
@@ -250,7 +250,7 @@ struct HermesSessionListView: View {
 
     private func sidebar(_ home: HermesHome) -> some View {
         list
-            .safeAreaBar(edge: .top, spacing: 0) {
+            .adaptiveTopBar {
                 SessionListTopChrome(
                     headerLogoColor: HeaderLogoColor.color(for: home.colorHex), headerLogoText: home.logoText,
                     searchText: $searchText, searchChromeIsExpanded: $isSearchExpanded,

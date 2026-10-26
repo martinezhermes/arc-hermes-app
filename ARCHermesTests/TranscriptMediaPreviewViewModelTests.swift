@@ -204,7 +204,9 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
 
     func testLoadLocalVideoUsesMediaEndpointAndCreatesPlayableFileURL() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
-        let videoData = Data("video-bytes".utf8)
+        let fixtureURL = try await Self.makeTestVideo()
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+        let videoData = try Data(contentsOf: fixtureURL)
         let mediaPath = "/tmp/generated/movie.mp4"
         let sessionID = "session-123"
         let client = makeClient { request in
@@ -230,6 +232,8 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(videoFileURL.pathExtension, "mp4")
         XCTAssertTrue(FileManager.default.fileExists(atPath: videoFileURL.path))
         XCTAssertEqual(try Data(contentsOf: videoFileURL), videoData)
+        let tracks = try await AVURLAsset(url: videoFileURL).loadTracks(withMediaType: .video)
+        XCTAssertEqual(tracks.count, 1, "The downloaded file must remain a playable video")
         XCTAssertEqual(viewModel.originalByteCount, videoData.count)
         XCTAssertFalse(viewModel.canSaveImageToPhotos)
         XCTAssertTrue(viewModel.canSaveVideoToPhotos)
@@ -505,26 +509,45 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         guard writer.canAdd(input) else {
             throw PhotoLibraryTestVideoError.cannotConfigureWriter
         }
-        let receiver = writer.inputPixelBufferReceiver(
-            for: input,
-            pixelBufferAttributes: CVPixelBufferCreationAttributes(
-                pixelFormatType: CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA),
-                size: CVImageSize(width: 64, height: 64)
-            )
+        // Keep the fixture executable on the app's oldest supported OS too.
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: 64,
+                kCVPixelBufferHeightKey as String: 64,
+            ]
         )
-        try writer.start()
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw writer.error ?? PhotoLibraryTestVideoError.cannotConfigureWriter
+        }
         writer.startSession(atSourceTime: .zero)
-        guard let pool = receiver.pixelBufferPool else {
+        guard let pool = adaptor.pixelBufferPool else {
             throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
         }
-        var pixelBuffer = try pool.makeMutablePixelBuffer()
-        pixelBuffer.accessUnsafeMutableRawPlaneBytes { planes in
-            for plane in planes {
-                _ = plane.bytes.initializeMemory(as: UInt8.self, repeating: 0x30)
+        var buffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess,
+              let pixelBuffer = buffer else {
+            throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        if let bytes = CVPixelBufferGetBaseAddress(pixelBuffer) {
+            memset(bytes, 0x30, CVPixelBufferGetDataSize(pixelBuffer))
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "TranscriptMediaPreviewTestVideo")) {
+                guard input.isReadyForMoreMediaData else { return }
+                let appended = adaptor.append(pixelBuffer, withPresentationTime: .zero)
+                input.markAsFinished()
+                if appended {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter)
+                }
             }
         }
-        try await receiver.append(CVReadOnlyPixelBuffer(pixelBuffer), with: .zero)
-        receiver.finish()
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter

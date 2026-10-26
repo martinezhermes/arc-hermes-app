@@ -8856,7 +8856,7 @@ extension AVSpeechSynthesizer: ChatSpeechSynthesizing {}
 enum ListenAudioSessionConfiguration {
     static let category = AVAudioSession.Category.playback
     static let mode = AVAudioSession.Mode.spokenAudio
-    static let deactivationOptions = AVAudioSessionDeactivationOptions.notifyOthersOnDeactivation
+    static let deactivationOptions = AVAudioSession.SetActiveOptions.notifyOthersOnDeactivation
 }
 
 /// Activates/deactivates the shared audio session around a "Listen" utterance.

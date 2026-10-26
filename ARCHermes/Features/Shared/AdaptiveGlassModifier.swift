@@ -39,6 +39,27 @@ private struct AdaptiveReadableScrollContentModifier: ViewModifier {
 }
 
 extension View {
+    /// Preserves the native edge treatment on newer systems without changing view
+    /// identity when accessibility preferences change. Older systems draw their normal edge.
+    @ViewBuilder
+    func nativeSoftScrollEdges(_ edges: Edge.Set) -> some View {
+        if #available(iOS 26, *) {
+            scrollEdgeEffectStyle(.soft, for: edges)
+        } else {
+            self
+        }
+    }
+
+    /// Pins session chrome using the native bar on newer systems and an inset on iOS 18.
+    @ViewBuilder
+    func adaptiveTopBar<Bar: View>(@ViewBuilder content: () -> Bar) -> some View {
+        if #available(iOS 26, *) {
+            safeAreaBar(edge: .top, spacing: 0, content: content)
+        } else {
+            modifier(InsetTopBarModifier(bar: content()))
+        }
+    }
+
     func adaptiveReadableContent(maxWidth: CGFloat) -> some View {
         modifier(AdaptiveReadableContentModifier(maxWidth: maxWidth))
     }
@@ -57,6 +78,17 @@ extension View {
 
     func adaptiveSecondaryNavigationTitle() -> some View {
         modifier(AdaptiveSecondaryNavigationTitleModifier())
+    }
+}
+
+/// Older systems reserve the header's measured height above the scroll content.
+struct InsetTopBarModifier<Bar: View>: ViewModifier {
+    let bar: Bar
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            bar.background(.bar)
+        }
     }
 }
 

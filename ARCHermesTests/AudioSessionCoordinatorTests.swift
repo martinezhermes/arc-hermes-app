@@ -7,6 +7,38 @@ final class AudioSessionCoordinatorTests: XCTestCase {
     private let playback = AudioSessionConfiguration(category: .playback, mode: .spokenAudio)
     private let capture = AudioSessionConfiguration(category: .playAndRecord, mode: .measurement)
 
+    func testLegacyActivationRunsOffMainThreadWithoutDeactivationOptions() async throws {
+        let activation = LegacyAudioSessionActivation { active, options in
+            XCTAssertFalse(Thread.isMainThread)
+            XCTAssertTrue(active)
+            XCTAssertTrue(options.isEmpty)
+        }
+
+        try await activation.setActive(true)
+    }
+
+    func testLegacyDeactivationNotifiesOtherAudioOffMainThread() async throws {
+        let activation = LegacyAudioSessionActivation { active, options in
+            XCTAssertFalse(Thread.isMainThread)
+            XCTAssertFalse(active)
+            XCTAssertEqual(options, [.notifyOthersOnDeactivation])
+        }
+
+        try await activation.setActive(false)
+    }
+
+    func testLegacyActivationPropagatesSystemFailure() async {
+        let failure = NSError(domain: "AudioSessionCoordinatorTests", code: 1)
+        let activation = LegacyAudioSessionActivation { _, _ in throw failure }
+
+        do {
+            try await activation.setActive(true)
+            XCTFail("A failed audio activation must not allow playback or capture to start")
+        } catch {
+            XCTAssertEqual(error as NSError, failure)
+        }
+    }
+
     func testIdleListenCleanupDoesNotDeactivateAudioOwnedElsewhere() async throws {
         let driver = AudioSessionTestDriver()
         let coordinator = AudioSessionCoordinator(driver: driver, captureChanged: { _ in })

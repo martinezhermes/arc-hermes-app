@@ -182,16 +182,32 @@ display name but is not its team ID. Do not add target-level or simulator-only
 team overrides: they mask the shared configuration and can break signing when
 switching branches. Contributors can use the ignored `Config/Local.xcconfig`.
 
-The app, share extension, Live Activity widget, and test target require iOS/iPadOS
-27.0 or newer and Xcode 27+. Use an iOS 27 simulator for all build and test commands.
+The app, share extension, Live Activity widget, notification service extension,
+and test target deploy to iOS/iPadOS 18.0 or newer and build with Xcode 27+.
+Use an iOS 27 simulator for the primary validation suite; compatibility changes
+also need runtime checks on iOS/iPadOS 18 and 26 when available.
+The deployment target controls the oldest supported OS, independently of the
+Xcode/SDK version used to build.
 Swift language mode remains 5 with targeted concurrency checking;
 `InferSendableFromCaptures` enables checked sendability inference for immutable
 key-path literals, including SwiftData predicates.
 
 Audio activation/deactivation uses the iOS 27 asynchronous APIs through
-`AudioSessionCoordinator`. Every playback/capture owns a token; only releasing the
-last owner deactivates the session. Capture keeps priority over playback. Tests
-use an injected driver and explicit continuations, with no microphone hardware.
+`AudioSessionCoordinator`. On iOS 18–26, a dedicated actor runs the older blocking
+`setActive` API off the main actor. Every playback/capture owns a token; only
+releasing the last owner deactivates the session. Capture keeps priority over
+playback. Tests use an injected driver and explicit continuations, with no
+microphone hardware.
+
+Newer-system UI remains availability-gated: Liquid Glass uses standard materials
+on iOS 18, pinned session headers use `safeAreaInset` before iOS 26, and native
+soft scroll edges and toolbar spacers apply only where supported. Keep these
+fallbacks in the existing adaptive view helpers rather than duplicating screens.
+For an installed older simulator runtime, run the same suite with
+`ARCHERMES_DESTINATION='platform=iOS Simulator,id=<simulator-udid>' scripts/validate`.
+On older hardware, check session-header placement, the keyboard/composer,
+recording/playback handoffs, share import, and Live Activity routing as well as
+streaming and foreground recovery.
 
 The hosted test bundle uses the app’s linked MarkdownUI implementation. Do not
 add a second MarkdownUI package-product link to the test target: Xcode then
