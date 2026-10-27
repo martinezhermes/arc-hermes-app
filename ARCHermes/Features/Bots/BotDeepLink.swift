@@ -13,7 +13,6 @@ struct BotDestination: Equatable, Hashable {
 }
 
 extension ARCHermesDeepLink {
-    private static let serverQueryItem = "server"
     private static let connectionQueryItem = "connection"
     private static let conversationQueryItem = "conversation"
 
@@ -153,9 +152,22 @@ enum BotDeepLinkOutcome: Equatable {
 /// The inbox's presented chat and optional linked root. Resolving a link replaces
 /// the whole selection, including when its Profile is no longer on the roster.
 struct BotInboxSelection {
-    var profile: BotProfile?
-    var room: BotRoomKey?
+    // The inbox owns one destination on every width: picking a room replaces
+    // the bot (including a linked conversation), and picking a bot replaces the room.
+    var profile: BotProfile? {
+        didSet {
+            if profile != nil { room = nil }
+            conversation = nil
+            pick = UUID()
+        }
+    }
+    var room: BotRoomKey? {
+        didSet { if room != nil { profile = nil; conversation = nil }; pick = UUID() }
+    }
     var conversation: String?
+    /// New on every pick, the same bot or room again included, so a regular-width detail
+    /// re-roots and pops what it pushed, as a Sessions row does.
+    private(set) var pick = UUID()
 
     @MainActor mutating func open(
         _ destination: BotDestination, connection: BotConnection?, profiles: [BotProfile]
@@ -168,7 +180,8 @@ struct BotInboxSelection {
     /// The chat the selected bot opens (#1146): its canonical Bot Chat in the regular chat, the
     /// one destination every bot route reaches (inbox row and tile, search, deep link, push and
     /// Live Activity taps, a Sessions search hit, an Archived Bot Chat row). A link's root is
-    /// seeded, so a chat the bot has since replaced is refused. Nil with no bot selected.
+    /// seeded, so a chat the host has since replaced opens the current one with its notice
+    /// (#1339). Nil with no bot selected.
     func chat(server: URL, connection: BotConnection) -> HermesSessionChat? {
         profile.map {
             HermesSessionChat(server: server, connection: connection, target: .canonicalChat(profile: $0.id),

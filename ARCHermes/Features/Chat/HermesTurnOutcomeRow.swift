@@ -34,7 +34,7 @@ struct HermesTurnOutcomeRow: View {
         }
     }
 
-    /// Hermex's title for a failure: the host's own sentence when it sends one, then
+    /// ARC Hermes's title for a failure: the host's own sentence when it sends one, then
     /// the custom endpoint when that is what failed, then a title for the code where
     /// the fix differs, then one for the layer that failed. The host's wording
     /// without its slash commands (`user_messages.py`).

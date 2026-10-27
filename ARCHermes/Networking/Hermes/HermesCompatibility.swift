@@ -1,10 +1,10 @@
 import Foundation
 
-/// The hermes-agent releases Hermex signs in to. `HermesConnection` refuses a host older
+/// The hermes-agent releases ARC Hermes signs in to. `HermesConnection` refuses a host older
 /// than `minimumVersion` before any password goes out; anything newer, or tested or not,
 /// connects without a warning (#626).
 enum HermesCompatibility {
-    /// The oldest release that publishes the gateway contract Hermex is built on.
+    /// The oldest release that publishes the gateway contract ARC Hermes is built on.
     static let minimumVersion = "0.21.3"
     /// The last ARC live-validated release, before the latest native integration.
     /// This historical pin may be below the current minimum. Mirrors line 2 of

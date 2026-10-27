@@ -8,7 +8,7 @@
 
 Your server. Your iPhone. No middleman.
 
-[![iOS 27+](https://img.shields.io/badge/iOS-27%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/id6816211053)
+[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/id6816211053)
 [![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
 [![Follow on X](https://img.shields.io/badge/Follow-%40uzairansar-000000?logo=x&logoColor=white)](https://x.com/uzairansar)
@@ -28,11 +28,12 @@ ARC Hermes is a native SwiftUI iPhone and iPad client for a self-hosted [Hermes 
 
 - **Free.** No subscriptions, no in-app purchases.
 - **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
-- **Native.** Real SwiftUI, built for iOS 27 and iPadOS 27, not a web wrapper.
+- **Native.** Real SwiftUI, built for iOS 18+ and iPadOS 18+, not a web wrapper.
 
 ## Features
 
 - **Chat with your agent** — send messages with model, reasoning-effort, workspace, and profile options; attach files and images; watch responses stream in real time with thinking and tool-call detail.
+- **Documents in direct-Hermes chats** — tap a PDF or other supported `MEDIA:` document to read it in Quick Look, then save or share it.
 - **Steer or stop a run** mid-flight.
 - **Sessions** — browse, search, and resume every conversation on your server; cached sessions stay readable offline.
 - **Pick your models** — switch between any model or provider your server is configured for, with recents and favorites.
@@ -75,6 +76,8 @@ ARCHermes is a client only — it does not ship with, host, or provision a backe
 2. **Make it reachable from your phone** (see options below).
 3. **Connect.** [Download ARCHermes](https://apps.apple.com/app/id6816211053), enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
 
+**Running a Hermes host instead?** Hermex can also sign in to Hermes's own dashboard (`hermes dashboard`, port 9119). Onboarding's first step gives your agent a prompt that sets it up: username and password sign-in under `dashboard.basic_auth`, a persistent `dashboard.basic_auth.secret` so sign-ins survive a restart, and `dashboard.public_url` set to the address your phone uses, reached through one of the options below. Those examples use the Web UI's port 8787; substitute your dashboard's port (9119 by default) in addresses and forwarding commands. Hermes refuses to serve beyond `127.0.0.1` without that sign-in.
+
 Self-hosting the server, securing it, and keeping it reachable are your responsibility.
 
 ### Making the server reachable
@@ -94,7 +97,7 @@ If connection testing fails, check these first:
 
 ## Building from source
 
-Prefer the [App Store build](https://apps.apple.com/app/id6816211053) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 27+, or a matching simulator.
+Prefer the [App Store build](https://apps.apple.com/app/id6816211053) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 18+, or a supported simulator.
 
 Clone the repo, open `ARCHermes.xcodeproj`, and run the `ARCHermes` scheme on an iPhone simulator (the Xcode target is `ARCHermes`; the on-device display name remains `ARC Hermes`). Dependencies are resolved automatically via Swift Package Manager.
 

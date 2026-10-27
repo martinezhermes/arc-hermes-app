@@ -23,6 +23,9 @@ import SwiftData
     /// An attach failed with `error`; the engine may be retrying. A host it can't reach shows
     /// the offline cache's copy (#1054).
     func hermesAttachDidFail(_ error: Error)
+    /// The host replaced the Bot Chat on screen with a new one (#1339), which this attach now
+    /// reads: the old chat's rows go, and the chat says where they went.
+    func hermesBotChatWasReplaced()
     /// The attach found the session's root: a Bot Chat's canonical root, or a session's key.
     func hermesDidIdentify(root: String)
     func hermesApplyUsage(_ usage: ContextWindowSnapshot)
@@ -51,7 +54,7 @@ struct HermesSessionChat: Hashable, Identifiable {
     let id = UUID()
     let server: URL
     let connection: BotConnection
-    let target: ConversationTarget
+    var target: ConversationTarget
     /// The session the row this chat opened from names as its parent (`parent_session_id`): the
     /// chat asks the host whether it is a branch of it, for its "Forked from" row (#1051). Nil
     /// asks nothing.
@@ -59,18 +62,21 @@ struct HermesSessionChat: Hashable, Identifiable {
     /// An archived Bot Chat's root, its row's lineage root, also for a legacy "Bot Chat
     /// (continued)" tip, which this chat opens by its key: the chat keeps Bot Chat's rules,
     /// caches under the root and reads its bot's Bot Chat's copy of it while it has none (#1144).
-    /// Its Live Activity keeps the interim `hermes:` session identity, since the Bot identity's
-    /// tap looks the chat up by title, which leaves a deliberate archive out. Nil for any other
-    /// row; a `.canonicalChat` target is a Bot Chat without it.
+    /// Its Live Activity keeps the `hermes:` session identity, whose tap reopens it by its key
+    /// (#1165, #1179), since the Bot identity's tap looks the chat up by title, which leaves a
+    /// deliberate archive out. Nil for any other row; a `.canonicalChat` target is a Bot Chat
+    /// without it.
     var botChatRoot: String? = nil
-    /// The root a bot's deep link named for its `.canonicalChat`: once the bot has replaced that
-    /// chat, the chat says so (`ChatView`'s `onChatReplaced`, #554) instead of opening the new one.
+    /// The root a bot's deep link named for its `.canonicalChat`: once the host has replaced that
+    /// chat, the chat follows it to the current one and says so (#1339).
     var linkedRoot: String? = nil
     /// The row's identity across a legacy compression chain (`SessionSummary.Hermes.lineageRoot`),
     /// which this chat, opened by its key, caches and keeps its draft under, so a chat a session
     /// link opened (#1176) shares the list row's copy and draft before any cached row names the
     /// root. Nil asks the cache, else takes the key.
     var lineageRoot: String? = nil
+    /// New Chat with Voice opened it on a Hermes server (#1180): its composer starts dictation.
+    var autoStartsVoiceInput = false
 
     /// What the chat lets the user do (#1145): a bot's Bot Chat keeps Bot Chat's rules.
     var policy: HermesChatPolicy { HermesChatPolicy(target: target, botChatRoot: botChatRoot) }
@@ -123,8 +129,10 @@ struct HermesChatTranscript: Equatable {
 /// both arrived. An `error` before the turn's `message.start` ends it at once; after it,
 /// an `error` with no completion ends it failed when the host settles.
 ///
-/// Each turn drives the shared Live Activity at the same points (#1014), under the interim
-/// key `hermes:<profile>:<stored key>`, with no push and no tap destination until #706. A bot's
+/// Each turn drives the shared Live Activity at the same points (#1014), under the key
+/// `hermes:<profile>:<root>` (#1179): the chat's identity, so a reconnect inside the turn adopts
+/// the same activity after a legacy compression moved the stored key. Its tap is the session's
+/// link (#1176) and its relay pushes come under the stored key, moved with it. A bot's
 /// `.canonicalChat` (#1145) keeps the Bot identity instead (`AgentRunActivityBot`), whose tap
 /// opens the bot's chat; a Bot Chat row opened by its key keeps the session's. Every Bot Chat
 /// (`policy`) has Bot Chat's `@`mentions (`mentions`) and pill state (`botProfile`, `titleFace`).
@@ -221,6 +229,10 @@ struct HermesChatTranscript: Equatable {
     /// Sends between their call and the host's answer: a page must not replace the
     /// transcript under a prompt the chat already shows.
     @ObservationIgnored private var submitsInFlight = 0
+    /// Bot Chats the host replaced that this chat followed (#1339), and how many of them the
+    /// chat's notice has shown (`replacedChatNoticeDidShow`).
+    @ObservationIgnored private var followedReplacements = 0
+    @ObservationIgnored private var shownReplacements = 0
     @ObservationIgnored private var draftKey: ChatDraftKey
     /// The chain this session belongs to (`HermesSessionChat.lineageRoot`), which keys its draft.
     @ObservationIgnored private let lineageRoot: String?
@@ -228,12 +240,16 @@ struct HermesChatTranscript: Equatable {
     /// (#1176): the segment it opened by. Nil when that is the draft key.
     @ObservationIgnored let segmentDraftKey: ChatDraftKey?
     private let isNetworkAvailable: @MainActor () -> Bool
+    /// The most a preview's download reads: a chip's thumbnail or inline audio, a MEDIA image.
+    @ObservationIgnored private let previewLimit: Int
     /// The shared Live Activity manager this chat's turns drive (#1014); nil drives none.
     @ObservationIgnored private let liveActivities: (any AgentLiveActivityManaging)?
-    /// The running turn's activity: its session key (a bot's `key` in a Bot Chat), and the turn,
-    /// the host's `turn_started_at` or this chat's own id when the turn began without one, which
-    /// is a session's stream id. Kept for the turn, so a reattach adopts the same activity.
-    @ObservationIgnored private var liveActivity: (sessionID: String, turn: String, bot: AgentRunActivityBot?)?
+    /// The running turn's activity: its session key (a bot's `key` in a Bot Chat), the turn, the
+    /// host's `turn_started_at` or this chat's own id when the turn began without one, which is a
+    /// session's stream id, and the stored key its pushes come under, as last told to the
+    /// manager (#1179). Kept for the turn, so a reattach adopts the same activity.
+    @ObservationIgnored private var liveActivity: (sessionID: String, turn: String, bot: AgentRunActivityBot?,
+                                                   pushSessionID: String?)?
     /// Renders a Bot Chat's avatar for its activity; nil writes none, so the widget keeps its dot.
     /// The file is named by connection and Profile, so drawing it again redraws the shown one.
     @ObservationIgnored private let writeBotAvatar: (@MainActor (BotProfile, BotDestination) -> String?)?
@@ -247,11 +263,14 @@ struct HermesChatTranscript: Equatable {
 
     /// A `.canonicalChat`, or a Bot Chat row opened by its key with its `botChatRoot`, is a Bot Chat.
     /// A session's draft goes under its `lineageRoot` when given (`HermesSessionChat.lineageRoot`).
+    /// `previewLimit` caps a preview's download; a test passes less than the 25 MB.
     init(engine: HermesConversation, botChatRoot: String? = nil, lineageRoot: String? = nil,
          liveActivities: (any AgentLiveActivityManaging)? = nil,
          writeBotAvatar: (@MainActor (BotProfile, BotDestination) -> String?)? = nil,
-         isNetworkAvailable: @escaping @MainActor () -> Bool = { NetworkPathMonitor.shared.isSatisfied }) {
+         isNetworkAvailable: @escaping @MainActor () -> Bool = { NetworkPathMonitor.shared.isSatisfied },
+         previewLimit: Int = BotArtifactBuffer.maximumBytes) {
         self.engine = engine
+        self.previewLimit = previewLimit
         let policy = HermesChatPolicy(target: engine.target, botChatRoot: botChatRoot)
         self.policy = policy
         self.liveActivities = liveActivities
@@ -357,6 +376,30 @@ struct HermesChatTranscript: Equatable {
         return task
     }
 
+    /// The chat found the Bot Chat it had cached, shown or not, replaced (#1339): the attach's
+    /// root is not the cached copy's, which the engine never held.
+    func noteReplacedChat() { followedReplacements += 1 }
+
+    /// The chat shows the notice for every replaced Bot Chat it followed: writes go out again.
+    func replacedChatNoticeDidShow() { shownReplacements = followedReplacements }
+
+    /// Attaches if the chat has not, and returns the runtime a deliberate write goes to. Throws
+    /// `NotSent` when it is not attached, or when the host replaced the Bot Chat and the user
+    /// acted before the chat showed the swap's notice, or during the attach this write waited on
+    /// (`followedReplacedChat`, #1339): they acted on the old chat, and see the swap before
+    /// anything goes to the new one.
+    private func attachForWrite() async throws -> String {
+        let followed = followedReplacements, seen = followed == shownReplacements
+        await activate()
+        guard engine.connectionState == .connected, let runtime = engine.runtime else {
+            throw NotSent(underlying: BotFailure.transport)
+        }
+        guard seen, followedReplacements == followed else {
+            throw NotSent(underlying: BotFailure.stale, followedReplacedChat: true)
+        }
+        return runtime
+    }
+
     private func cancelAttach() {
         attaching?.cancel(); attaching = nil
         attachGeneration += 1
@@ -367,6 +410,8 @@ struct HermesChatTranscript: Equatable {
     struct NotSent: Error {
         let underlying: Error
         var duringUpload = false
+        /// The attach before it followed a Bot Chat the host replaced (#1339).
+        var followedReplacedChat = false
     }
 
     /// A branch's row is no longer in the history, so it can't be counted to (#1051).
@@ -406,10 +451,7 @@ struct HermesChatTranscript: Equatable {
                 beforePrompt: () async throws -> Void = {}) async throws -> BotPromptOutcome {
         submitsInFlight += 1
         defer { submitsInFlight -= 1 }
-        await activate()
-        guard engine.connectionState == .connected, let runtime = engine.runtime else {
-            throw NotSent(underlying: BotFailure.transport)
-        }
+        let runtime = try await attachForWrite()
         // Only a fresh turn takes files (`docs/agents/bots.md`); the chat never offers more.
         guard attachments.isEmpty || mode.startsTurn else { throw NotSent(underlying: BotFailure.unsupported) }
         let attempt = engine.generation
@@ -518,14 +560,14 @@ struct HermesChatTranscript: Equatable {
     /// thumbnail and preview. Downloads through this attach
     /// (`HermesREST.downloadArtifact` with the session's Profile and stored key), so the
     /// host resolves a relative `@file:` path against the session. Throws `.stale` while
-    /// detached, and for a result that lands after a reattach or a cancel. `limit` caps a
-    /// preview at 25 MB; a MEDIA file's export passes nil for the whole file (#1112).
-    func attachmentData(path: String, limit: Int? = BotArtifactBuffer.maximumBytes) async throws -> Data {
+    /// detached, and for a result that lands after a reattach or a cancel. A preview stops at
+    /// `previewLimit`; a MEDIA file's export passes `whole` for the whole file (#1112).
+    func attachmentData(path: String, whole: Bool = false) async throws -> Data {
         guard engine.connectionState == .connected, let key = engine.storedKey else { throw BotFailure.stale }
         let attempt = engine.generation
         let context = BotArtifactContext(connectionID: engine.connection.id, profile: engine.target.profile,
                                          sessionID: key, generation: attempt)
-        let data = try await engine.wire.artifactData(path: path, context: context, limit: limit)
+        let data = try await engine.wire.artifactData(path: path, context: context, limit: whole ? nil : previewLimit)
         try engine.check(attempt)
         return data
     }
@@ -715,17 +757,22 @@ struct HermesChatTranscript: Equatable {
     /// turn starts as a send's does; its end re-reads the newest rows. Throws `NotSent` when it
     /// never went out, the host's refusal as `BotSettingFailure`, and any other failure when
     /// its reply was lost or unreadable, which only the next snapshot can settle.
-    func rewind(before rowID: Int, text: String) async throws {
+    /// `discardsLaterPrompts` says the user agreed to lose prompts after `rowID`: a host that
+    /// refuses such a cut until it is confirmed (4033, #1300) gets the cut again, confirmed. A
+    /// 4033 without that consent means the host holds prompts this chat doesn't show.
+    func rewind(before rowID: Int, text: String, discardsLaterPrompts: Bool) async throws {
         submitsInFlight += 1
         defer { submitsInFlight -= 1 }
-        await activate()
-        guard engine.connectionState == .connected, let runtime = engine.runtime else {
-            throw NotSent(underlying: BotFailure.transport)
-        }
+        let runtime = try await attachForWrite()
         let startsBefore = turnsStarted
         isSubmittingSend = true
         defer { isSubmittingSend = false }
-        let reply = try await writeOnce(.promptRewind(sessionID: runtime, text: text, beforeRowID: rowID), runtime: runtime)
+        let reply: BotJSON
+        do {
+            reply = try await writeOnce(.promptRewind(sessionID: runtime, text: text, beforeRowID: rowID, deep: false), runtime: runtime)
+        } catch BotSettingFailure.rejected(4033, _) where discardsLaterPrompts {
+            reply = try await writeOnce(.promptRewind(sessionID: runtime, text: text, beforeRowID: rowID, deep: true), runtime: runtime)
+        }
         // A cut only ever starts a turn; any other reply is a shape this build can't read.
         guard reply["status"].text == "streaming" else { throw BotFailure.unsupported }
         history.cut(before: rowID)
@@ -742,10 +789,7 @@ struct HermesChatTranscript: Equatable {
     /// nothing, and nothing is read. Throws as `rewind` does, and throws the read's failure
     /// when the host removed the exchange but the chat still shows it.
     func undo() async throws {
-        await activate()
-        guard engine.connectionState == .connected, let runtime = engine.runtime else {
-            throw NotSent(underlying: BotFailure.transport)
-        }
+        let runtime = try await attachForWrite()
         let attempt = engine.generation
         let reply = try await writeOnce(.sessionUndo(runtime: runtime), runtime: runtime)
         guard reply["removed"].integer != 0 else { return }
@@ -776,10 +820,7 @@ struct HermesChatTranscript: Equatable {
     /// attach, now or once the chat is back, reads the history from the newest page and
     /// rebuilds, since the host may have compacted it.
     func compress(focus: String?) async throws -> Compression {
-        await activate()
-        guard engine.connectionState == .connected, let runtime = engine.runtime else {
-            throw NotSent(underlying: BotFailure.transport)
-        }
+        let runtime = try await attachForWrite()
         let attempt = engine.generation
         let reply: BotJSON
         do {
@@ -790,6 +831,7 @@ struct HermesChatTranscript: Equatable {
             throw error
         }
         engine.adoptStoredKey(reply["info"]["stored_session_id"].text)
+        syncLiveActivityPushKey()
         let summary = reply["summary"]
         let reason = [reply["message"], summary["note"], summary["headline"]].lazy.compactMap(Self.words).first
         switch reply["status"].text {
@@ -864,10 +906,7 @@ struct HermesChatTranscript: Equatable {
     /// out, `BranchRowGone` for a row the history no longer holds,
     /// `BranchContinuesEarlierSession`, and the host's refusal as `BotSettingFailure`.
     func branch(through rowID: Int?, name: String?) async throws -> String {
-        await activate()
-        guard engine.connectionState == .connected, let runtime = engine.runtime else {
-            throw NotSent(underlying: BotFailure.transport)
-        }
+        let runtime = try await attachForWrite()
         var count: Int?
         if let rowID {
             let own: BotJSON?
@@ -924,10 +963,12 @@ struct HermesChatTranscript: Equatable {
         delegate?.streamCoordinatorDidStartConnection(isReplay: false)
         let turn = startedAt.map { String($0) } ?? UUID().uuidString
         if let bot = botActivity() {
-            liveActivity = (sessionID: bot.key, turn: turn, bot: bot)
+            liveActivity = (sessionID: bot.key, turn: turn, bot: bot, pushSessionID: bot.pushSessionID)
         } else {
             liveActivity = engine.storedKey.map { key in
-                (sessionID: "\(AgentRunTapTarget.hermesSessionPrefix)\(engine.target.profile):\(key)", turn: turn, bot: nil)
+                let root = engine.root ?? key
+                return (sessionID: "\(AgentRunTapTarget.hermesSessionPrefix)\(engine.target.profile):\(root)", turn: turn,
+                        bot: nil, pushSessionID: key)
             }
         }
         startLiveActivity()
@@ -1073,6 +1114,7 @@ struct HermesChatTranscript: Equatable {
         if let model = info["model"].text, !model.isEmpty { delegate?.hermesApplyModel(model) }
         // A legacy compaction, `/compress` or mid-turn, moves the session to a new key (#1050).
         engine.adoptStoredKey(info["stored_session_id"].text)
+        syncLiveActivityPushKey()
         noteInfo(info)
         // A rename on this runtime (`/title`, #1048) reports the new title here.
         if let title = info["title"].text, !title.isEmpty, title != infoTitle {
@@ -1097,7 +1139,15 @@ struct HermesChatTranscript: Equatable {
     }
 
     private func complete(_ payload: BotJSON) {
-        guard activeStreamID != nil else { return }
+        guard activeStreamID != nil else {
+            // A turn this chat never saw start, such as another client's the host failed
+            // before it began (#1158): it counts as a turn, so reads begun before it drop, and
+            // the last outcome goes. A failure is read again for that turn's own Retry.
+            turnsStarted += 1
+            activity.unseenTurnDidComplete()
+            if payload["status"].text == "error" { readFailedTurn() }
+            return
+        }
         let ending: TranscriptTurnRunOutcome.Ending
         switch payload["status"].text {
         case "interrupted": ending = .cancelled
@@ -1422,21 +1472,40 @@ struct HermesChatTranscript: Equatable {
     }
 
     /// Starts the turn's activity, or adopts it again: the manager reuses the activity of the
-    /// same session key and stream id. An open request then shows as waiting, and a bot's
-    /// activity its count chips.
+    /// same session key and stream id. A session's taps through to its link (#1179). Its pushes
+    /// then follow the stored key the attach found, an open request shows as waiting, and a
+    /// bot's activity its count chips.
     private func startLiveActivity() {
         guard let liveActivities, let liveActivity else { return }
         if let bot = liveActivity.bot {
             let title = botProfile.map { BotProfileAppearance(profile: $0).title } ?? engine.target.profile
             liveActivities.startBot(bot, title: title, turn: liveActivity.turn, startedAt: activeRunStartedAt ?? Date())
-        } else {
-            liveActivities.start(sessionID: liveActivity.sessionID, server: engine.server,
-                                 sessionTitle: delegate?.streamCoordinatorDisplayTitle ?? String(localized: "Untitled Session"),
-                                 streamID: liveActivity.turn, startedAt: activeRunStartedAt ?? Date())
+        } else if let key = liveActivity.pushSessionID {
+            let link = ARCHermesDeepLink.sessionURL(for: HermesSessionDestination(
+                server: engine.server, profile: engine.target.profile, key: engine.root ?? key))
+            liveActivities.startSession(sessionID: liveActivity.sessionID, server: engine.server, destinationURL: link,
+                                        pushSessionID: key,
+                                        sessionTitle: delegate?.streamCoordinatorDisplayTitle ?? String(localized: "Untitled Session"),
+                                        turn: liveActivity.turn, startedAt: activeRunStartedAt ?? Date())
         }
+        // Always: a start that took the activity back from another run drives the key it
+        // named, and a bot's names the turn's first.
+        syncLiveActivityPushKey(always: true)
         shownWaiting = nil
         syncLiveActivityWaiting()
         syncBotWorkSummary()
+    }
+
+    /// Moves the driven activity's pushes to the stored key, once per move (#1179): a legacy
+    /// compression, mid-turn or by `/compress`, or one an attach found, moved it, and the plugin
+    /// reports progress under the new key. A bot's and a session's alike. `always` applies the
+    /// key even when this chat already reported it, after a start that may have named an older
+    /// one; the manager ignores a key it already drives.
+    private func syncLiveActivityPushKey(always: Bool = false) {
+        guard let key = engine.storedKey, always || key != liveActivity?.pushSessionID,
+              let driven = drivenLiveActivity else { return }
+        liveActivity?.pushSessionID = key
+        driven.movePushSession(to: key)
     }
 
     /// A `.canonicalChat`'s activity identity (#709): the bot on this connection, whose tap opens
@@ -1560,7 +1629,7 @@ struct HermesChatTranscript: Equatable {
     }
 
     /// A user row as a Hermes session's transcript shows it (#1012): a trailing mention note
-    /// goes (#523), the reference lines a Hermex send appends become chips and the host's
+    /// goes (#523), the reference lines a ARC Hermes send appends become chips and the host's
     /// context footer goes (`MessageAttachment.hermesReferences`), so the text shows no host
     /// path. Each chip keeps the path it names for `attachmentData` (#1030); chips show only
     /// their name. Every other row is returned as it is.
@@ -1670,6 +1739,18 @@ extension HermesChatTurnCoordinator: ChatTurnCoordinating {
 }
 
 extension HermesChatTurnCoordinator: HermesConversationOwner {
+    /// The old chat's turn, history, question and background tasks go, quietly: its turn ends
+    /// as cancelled, with no alert and nothing read for it. This attach reads the new chat's
+    /// history and snapshot and rebuilds.
+    func conversationDidFollowReplacedChat() {
+        followedReplacements += 1
+        savedTurn = nil; completedFailed = false; queuedPrompt = nil
+        finish(.cancelled)
+        sideTasks.forgetChat()
+        forgetHistoryUntilRebuild()
+        delegate?.hermesBotChatWasReplaced()
+    }
+
     func conversationDidIdentify(root: String) {
         delegate?.hermesDidIdentify(root: root)
     }

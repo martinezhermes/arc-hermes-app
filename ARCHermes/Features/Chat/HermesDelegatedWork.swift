@@ -57,7 +57,7 @@ struct HermesDelegatedTail: Equatable, Sendable {
 
 /// A durable async-delegation delivery projected from transcript display
 /// metadata. The report itself stays opaque so future host formatting remains
-/// readable without Hermex having to parse server-authored prose.
+/// readable without ARC Hermes having to parse server-authored prose.
 struct HermesDelegationCompletion: Identifiable, Equatable, Sendable {
     static let displayKind = "async_delegation_complete"
     static let maximumDisplayCount = 999

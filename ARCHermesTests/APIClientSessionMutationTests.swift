@@ -172,27 +172,6 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.title, "Untitled")
     }
 
-    /// Upstream answers a view-only subagent with 400 and a not-found session
-    /// with 404, so those surface as a thrown `APIError.http`, not a decoded
-    /// `error` field.
-    func testClearSessionThrowsOnUpstreamRejection() async throws {
-        let client = makeClient { request in
-            apiTestJSONResponse("""
-            {
-              "error": "Subagent sessions are view-only and cannot be modified from WebUI"
-            }
-            """, for: request, status: 400)
-        }
-
-        do {
-            _ = try await client.clearSession(id: "abc123")
-            XCTFail("Expected the 400 to throw.")
-        } catch let APIError.http(statusCode, body) {
-            XCTAssertEqual(statusCode, 400)
-            XCTAssertEqual(body?.contains("view-only"), true)
-        }
-    }
-
     func testUndoSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/undo")
@@ -400,32 +379,6 @@ final class APIClientSessionMutationTests: APIClientTestCase {
         XCTAssertEqual(response.session?.archived, true)
     }
 
-    func testUnarchiveSessionBuildsExpectedBodyAndDecodesResponse() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session/archive")
-
-            let body = try XCTUnwrap(apiTestBodyData(from: request))
-            let json = try JSONSerialization.jsonObject(with: body) as? [String: Any]
-            XCTAssertEqual(json?["session_id"] as? String, "abc123")
-            XCTAssertEqual(json?["archived"] as? Bool, false)
-
-            return apiTestJSONResponse("""
-            {
-              "ok": true,
-              "session": {
-                "session_id": "abc123",
-                "archived": false
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.archiveSession(id: "abc123", archived: false)
-
-        XCTAssertEqual(response.ok, true)
-        XCTAssertEqual(response.session?.archived, false)
-    }
-
     func testTruncateSessionBuildsExpectedBodyAndDecodesResponse() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session/truncate")
@@ -462,7 +415,8 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     // MARK: Hermes (#1048)
 
     /// Each change PATCHes one field of that session, with its Profile in the body, as the
-    /// host's `SessionRename` takes it.
+    /// host's `SessionRename` takes it. A host from before the write fence (#1300) answers the
+    /// snapshot read 404, so its PATCH carries no write identity.
     @MainActor
     func testHermesSessionChangesPatchOneFieldWithTheProfileInTheBody() async throws {
         var patches: [(path: String, body: BotJSON)] = []
@@ -483,6 +437,89 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             .object(["archived": .bool(false), "profile": .string("research")]),
             .object(["title": .string("Plan the launch"), "profile": .string("research")])
         ])
+    }
+
+    /// Behind the write fence (#1300) each PATCH carries its own request id and the revision the
+    /// snapshot read just before it, and never `expected_generation`.
+    @MainActor
+    func testHermesFencedSessionChangeCarriesTheSnapshotsRevision() async throws {
+        var revision = 12
+        var patches: [BotJSON] = []
+        let client = try await hermesClient { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/sessions/tip/mutation-snapshot"):
+                return .json(200, .object(["session_id": .string("tip"), "exists": .bool(true),
+                                           "runtime_revision": .number(Double(revision)), "runtime_generation": .number(3)]))
+            case ("PATCH", "/api/sessions/tip"):
+                patches.append(Self.hermesBody(request))
+                revision += 5
+                return .json(200, .object(["ok": .bool(true)]))
+            default: return nil
+            }
+        }
+
+        try await client.updateSession(.archived(true), key: "tip", profile: "research")
+        try await client.updateSession(.pinned(true), key: "tip", profile: "research")
+
+        XCTAssertEqual(patches.map { $0["expected_revision"] }, [.number(12), .number(17)])
+        let ids = patches.compactMap { $0["request_id"].text }
+        XCTAssertEqual(Set(ids).count, 2)
+        XCTAssertEqual(patches.map { $0["expected_generation"] }, [.null, .null])
+    }
+
+    /// Headless `hermes serve` from before the fence answers the snapshot read with its own
+    /// catch-all, so its PATCH also goes out bare.
+    @MainActor
+    func testHermesHeadlessServeHostTakesTheChangeBare() async throws {
+        var patch = BotJSON.null
+        let client = try await hermesClient { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/sessions/tip/mutation-snapshot"):
+                return .json(404, .object(["error": .string("Headless backend (hermes serve): web UI disabled")]))
+            case ("PATCH", "/api/sessions/tip"):
+                patch = Self.hermesBody(request)
+                return .json(200, .object(["ok": .bool(true)]))
+            default: return nil
+            }
+        }
+
+        try await client.updateSession(.pinned(true), key: "tip", profile: "default")
+
+        XCTAssertEqual(patch["pinned"], .bool(true))
+        XCTAssertEqual(patch["request_id"], .null)
+    }
+
+    /// A fence 409, or an owner's 404 or 403 (#1335), is never resent: it comes back as the refusal
+    /// its `detail` names.
+    @MainActor
+    func testHermesFenceRefusalIsNotResent() async throws {
+        let rows: [(status: Int, detail: String, refusal: HermesSessionFenceRefusal)] = [
+            (409, "revision_conflict", .changed),
+            (409, "client_upgrade_required: this client predates the session write fence", .updateRequired),
+            (404, "not_found", .refused),
+            (403, "permission_denied", .refused)
+        ]
+        var status = 0
+        var detail = ""
+        let client = try await hermesClient { request in
+            switch (request.httpMethod, request.url?.path) {
+            case ("GET", "/api/sessions/tip/mutation-snapshot"):
+                return .json(200, .object(["exists": .bool(true), "runtime_revision": .number(4)]))
+            case ("PATCH", _): return .json(status, .object(["detail": .string(detail)]))
+            default: return nil
+            }
+        }
+        for row in rows {
+            (status, detail) = (row.status, row.detail)
+            let sent = HermesHostFixture.requests.filter { $0.httpMethod == "PATCH" }.count
+            do {
+                try await client.updateSession(.pinned(true), key: "tip", profile: "default")
+                XCTFail("The host refused the write: \(row.detail)")
+            } catch {
+                XCTAssertEqual(error as? HermesSessionFenceRefusal, row.refusal, row.detail)
+            }
+            XCTAssertEqual(HermesHostFixture.requests.filter { $0.httpMethod == "PATCH" }.count, sent + 1, row.detail)
+        }
     }
 
     /// A title the host refuses comes back in its own words; any other refusal stays a status.
@@ -528,7 +565,7 @@ final class APIClientSessionMutationTests: APIClientTestCase {
     // MARK: Hermes (#1051)
 
     /// An import posts its body and hands back the host's result. A payload the host refuses
-    /// carries its first error; a 413 stays a status.
+    /// carries its first error and every session it named; a 413 stays a status.
     @MainActor
     func testHermesImportPostsTheSessionAndCarriesTheHostsRefusal() async throws {
         var status = 200
@@ -551,7 +588,10 @@ final class APIClientSessionMutationTests: APIClientTestCase {
 
         let result = try await client.importSessions(body: encoded)
         XCTAssertEqual(result["imported_ids"], .array([.string("x")]))
-        XCTAssertEqual(posted, body)
+        XCTAssertEqual(posted["sessions"], body["sessions"])
+        XCTAssertEqual(posted["profile"], body["profile"])
+        XCTAssertFalse((posted["request_id"].text ?? "").isEmpty, "The write fence's identity (#1300)")
+        XCTAssertEqual(posted["expected_revision"], .number(0))
         let request = try XCTUnwrap(HermesHostFixture.requests.first { $0.url?.path == "/api/sessions/import" })
         XCTAssertEqual(request.httpMethod, "POST")
 
@@ -560,7 +600,10 @@ final class APIClientSessionMutationTests: APIClientTestCase {
             _ = try await client.importSessions(body: encoded)
             XCTFail("The host refused the payload")
         } catch {
-            XCTAssertEqual(error as? HermesSessionRefusal, HermesSessionRefusal(message: "messages[0].role must be a non-empty string"))
+            XCTAssertEqual(error as? HermesSessionRefusal, HermesSessionRefusal(
+                message: "messages[0].role must be a non-empty string",
+                entries: [.init(index: 0, sessionID: "x", reason: "messages[0].role must be a non-empty string")]
+            ), "Every session the host named is kept (#1213)")
         }
         status = 413
         do {

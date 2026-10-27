@@ -33,10 +33,11 @@ final class ComposerVoiceInputController {
     private(set) var errorMessage: String?
     private(set) var liveTranscript = ""
 
-    private let speechRecognizerFactory: (Locale) -> SFSpeechRecognizer?
+    private let speechRecognizerFactory: (Locale) -> (any ComposerSpeechRecognizing)?
+    private let supportedLocales: () -> Set<Locale>
     private let onDeviceAvailability: (() -> Bool)?
     private let audioEngineFactory: () -> AVAudioEngine
-    private var speechRecognizer: SFSpeechRecognizer?
+    private var speechRecognizer: (any ComposerSpeechRecognizing)?
     private var audioEngine: AVAudioEngine?
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -69,7 +70,8 @@ final class ComposerVoiceInputController {
     @ObservationIgnored var providerPreference = ComposerSTTProviderPreference.defaultValue
 
     init(
-        speechRecognizerFactory: @escaping (Locale) -> SFSpeechRecognizer? = { SFSpeechRecognizer(locale: $0) },
+        speechRecognizerFactory: @escaping (Locale) -> (any ComposerSpeechRecognizing)? = { SFSpeechRecognizer(locale: $0) },
+        supportedLocales: @escaping () -> Set<Locale> = { SFSpeechRecognizer.supportedLocales() },
         onDeviceAvailability: (() -> Bool)? = nil,
         audioEngineFactory: @escaping () -> AVAudioEngine = { AVAudioEngine() },
         microphonePermission: @escaping () async -> Bool = { await ComposerVoiceMicrophonePermissionRequester.request() },
@@ -88,6 +90,7 @@ final class ComposerVoiceInputController {
     ) {
         self.speechRecognizerFactory = speechRecognizerFactory
         self.onDeviceAvailability = onDeviceAvailability
+        self.supportedLocales = supportedLocales
         self.audioEngineFactory = audioEngineFactory
         self.microphonePermission = microphonePermission
         self.speechAuthorization = speechAuthorization
@@ -636,7 +639,7 @@ final class ComposerVoiceInputController {
 
     private func recognizeRecordedFile(
         _ recordingURL: URL,
-        speechRecognizer: SFSpeechRecognizer
+        speechRecognizer: any ComposerSpeechRecognizing
     ) async throws -> String {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -686,7 +689,7 @@ final class ComposerVoiceInputController {
         }
     }
 
-    private func startRecognition(speechRecognizer: SFSpeechRecognizer) async throws {
+    private func startRecognition(speechRecognizer: any ComposerSpeechRecognizing) async throws {
         stopAudio(cancelTask: true)
         logger.info("Voice input audio startup preparing")
 
@@ -857,7 +860,7 @@ final class ComposerVoiceInputController {
     /// The on-device recognizer for the first dictation locale candidate that
     /// has a model, cached for the controller's lifetime. Live dictation and
     /// the server-failure file fallback both record through this pick.
-    private func onDeviceSpeechRecognizerForRecording() -> SFSpeechRecognizer? {
+    private func onDeviceSpeechRecognizerForRecording() -> (any ComposerSpeechRecognizing)? {
         if let speechRecognizer {
             return speechRecognizer.supportsOnDeviceRecognition ? speechRecognizer : nil
         }
@@ -867,8 +870,8 @@ final class ComposerVoiceInputController {
                 current: .current,
                 preferredLanguages: Locale.preferredLanguages
             ),
-            supportedLocales: SFSpeechRecognizer.supportedLocales()
-        ) { locale -> SFSpeechRecognizer? in
+            supportedLocales: supportedLocales()
+        ) { locale -> (any ComposerSpeechRecognizing)? in
             guard let recognizer = self.speechRecognizerFactory(locale),
                   recognizer.supportsOnDeviceRecognition
             else { return nil }
@@ -1243,6 +1246,18 @@ final class ComposerDictationLease {
         }
     }
 }
+
+/// The part of `SFSpeechRecognizer` dictation uses, so tests can stand in a
+/// recognizer without the simulator's speech service.
+protocol ComposerSpeechRecognizing: AnyObject {
+    var supportsOnDeviceRecognition: Bool { get }
+    func recognitionTask(
+        with request: SFSpeechRecognitionRequest,
+        resultHandler: @escaping (SFSpeechRecognitionResult?, (any Error)?) -> Void
+    ) -> SFSpeechRecognitionTask
+}
+
+extension SFSpeechRecognizer: ComposerSpeechRecognizing {}
 
 /// Owns the physical server-STT recorder and its audio session. The controller owns
 /// the returned file, including retention across inactivity and eventual deletion.

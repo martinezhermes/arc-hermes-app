@@ -67,7 +67,7 @@ import Observation
         XCTAssertEqual(conversation.target, .session(profile: profile, key: "fresh"))
         XCTAssertEqual(conversation.storedKey, "fresh")
         XCTAssertEqual(host.requests.first?["method"].text, "session.create")
-        XCTAssertEqual(host.requests.first?["params"], .object(["profile": .string(profile)]),
+        XCTAssertEqual(host.requests.first?["params"], .object(["profile": .string(profile), "source": .string("gui")]),
                        "no Bot Chat title, and not hidden")
         XCTAssertEqual(host.requests.dropFirst().compactMap { $0["params"]["session_id"].text }, ["fresh", "runtime", "fresh"])
         XCTAssertEqual(owner.log, ["root fresh", "snapshot", "connected"])
@@ -130,12 +130,13 @@ import Observation
         XCTAssertEqual(wire.calls.map(\.0), ["session.list", "session.resume", "session.events.since", "session.resume"])
         XCTAssertEqual(wire.calls[1].1["session_id"], .string("tip"))
         XCTAssertEqual(wire.calls[1].1["close_on_disconnect"], .bool(false))
+        XCTAssertEqual(wire.platformNotes, ["\(profile) after 0 calls"], "The Profile's note is settled before the lookup (#1278)")
         conversation.suspend()
     }
 
-    /// A compaction moves the tip and keeps the root; a replaced chat (another root under the
-    /// title) is refused before any resume, which could auto-continue it, and is not retried.
-    func testABotChatFollowsANewTipButRefusesAChangedRoot() async {
+    /// A compaction moves the tip and keeps the root. Another root under the title is the
+    /// host's new Bot Chat (#1339): the attach follows it, and tells the owner first.
+    func testABotChatFollowsANewTipAndARootTheHostReplaced() async {
         let wire = BotFixtureWire()
         let (conversation, owner) = attach(wire, .canonicalChat(profile: profile))
         await conversation.activate()
@@ -145,12 +146,11 @@ import Observation
         XCTAssertEqual(conversation.root, "root")
         XCTAssertEqual(conversation.storedKey, "compacted")
 
-        wire.root = "replacement"; wire.calls = []
+        wire.root = "replacement"; owner.log = []
         await conversation.activate()
-        XCTAssertEqual(wire.calls.map(\.0), ["session.list"])
-        XCTAssertEqual(conversation.connectionState, .disconnected)
-        XCTAssertEqual(owner.disconnects.last?.failure, .wrongIdentity)
-        XCTAssertFalse(conversation.isReconnecting)
+        XCTAssertEqual(conversation.connectionState, .connected)
+        XCTAssertEqual(conversation.root, "replacement")
+        XCTAssertEqual(owner.log, ["replaced", "root replacement", "snapshot", "connected"])
         conversation.suspend()
     }
 
@@ -405,6 +405,7 @@ import Observation
     var log: [String] = []
 
     func conversationDidReset() {}
+    func conversationDidFollowReplacedChat() { log.append("replaced") }
     func conversationDidIdentify(root: String) { log.append("root \(root)") }
     func conversationDidReplay(_ reply: BotJSON, frames: [BotJSON]) {
         log += frames.map { "replay \($0["seq"].integer ?? 0)" }

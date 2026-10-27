@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import SwiftData
 import Observation
@@ -5,6 +6,7 @@ import Observation
 @MainActor struct BotConnectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.webAuthenticationSession) private var webAuthenticationSession
     @State private var setup: BotConnectionSetup
     @State private var operation: Task<Void, Never>?
     @State private var confirmingRemoval = false
@@ -52,10 +54,17 @@ import Observation
                         .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
                         .accessibilityIdentifier("hermes-connection-address")
                 }
-                TextField("Username", text: $setup.username).textContentType(.username)
-                    .textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("Password", text: $setup.password).textContentType(.password)
-                    .focused($passwordFocused)
+                switch setup.signInMethod {
+                case .browser:
+                    Text("This server signs in through your browser.").foregroundStyle(.secondary)
+                case .open:
+                    OpenDashboardWarning()
+                case .password:
+                    TextField("Username", text: $setup.username).textContentType(.username)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    SecureField("Password", text: $setup.password).textContentType(.password)
+                        .focused($passwordFocused)
+                }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     // Under the password, so the focused field's keyboard never covers it.
@@ -67,6 +76,15 @@ import Observation
                         }
                         .foregroundStyle(.red)
                         .accessibilityIdentifier("hermes-connection-error")
+                    }
+                    if setup.offersStatusRetry {
+                        // A signed-out server's status says whether it signs in through the
+                        // browser; there is no status section to check it again from.
+                        Button("Check again") {
+                            statusCheck?.cancel()
+                            statusCheck = Task { await setup.checkStatus() }
+                        }
+                        .accessibilityIdentifier("hermes-connection-check-status")
                     }
                     if !setup.isServerSignIn {
                         // The trailing mark keeps a URL ending in a neutral character, such as an
@@ -82,8 +100,8 @@ import Observation
             .disabled(setup.isConnecting)
             headersSection
             Section {
-                Button(setup.isConnecting ? String(localized: "Connecting…") : String(localized: "Connect")) {
-                    operation = Task { if await setup.connect() { onSaved(); if !Task.isCancelled { dismiss() } } }
+                Button(connectTitle) {
+                    operation = Task { if await setup.connect(browser: browser) { onSaved(); if !Task.isCancelled { dismiss() } } }
                 }
                 .frame(maxWidth: .infinity)
                 .disabled(!setup.canConnect)
@@ -91,7 +109,7 @@ import Observation
                 if setup.offersHostReplacement {
                     Button("Connect to this host instead", role: .destructive) {
                         operation = Task {
-                            if await setup.connect(replacingHost: true) { onSaved(); if !Task.isCancelled { dismiss() } }
+                            if await setup.connect(replacingHost: true, browser: browser) { onSaved(); if !Task.isCancelled { dismiss() } }
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -151,6 +169,13 @@ import Observation
             Text("Saved sign-in details, this connection’s drafts and its notification keys will be deleted. This iPhone stops receiving this host’s notifications. Bots and their work remain on the host.")
         }
     }
+
+    private var connectTitle: String {
+        if setup.isConnecting { return String(localized: "Connecting…") }
+        return setup.signInMethod == .browser ? String(localized: "Sign In with Browser") : String(localized: "Connect")
+    }
+
+    private var browser: HermesBrowserSignIn.Presenter { HermesBrowserSignIn.Presenter(webAuthenticationSession) }
 
     /// The Connection Headers row, which pushes the shared editor, and a footer that puts
     /// a rejected header or a half Cloudflare Access pair above what headers are for.
@@ -332,6 +357,8 @@ extension BotHostStatus {
     @ObservationIgnored private var client: (any BotTransport)?
     @ObservationIgnored private let probe: (URL, HermesHeaders) async -> Result<BotHostStatus, BotHostProbeFailure>
     @ObservationIgnored private let relay: (URL) -> URL?
+    /// The URL session setup of a browser sign-in's own connection; tests script the host with it.
+    @ObservationIgnored private let hermesConfiguration: () -> URLSessionConfiguration
     @ObservationIgnored private var attempt: UUID?
     @ObservationIgnored private var statusCheck: UUID?
 
@@ -345,8 +372,10 @@ extension BotHostStatus {
          makeWire: ((BotConnection) -> any BotTransport)? = nil,
          discard: ((BotConnection) async -> Void)? = nil,
          probe: ((URL, HermesHeaders) async -> Result<BotHostStatus, BotHostProbeFailure>)? = nil,
-         relay: ((URL) -> URL?)? = nil) {
+         relay: ((URL) -> URL?)? = nil,
+         hermesConfiguration: @escaping () -> URLSessionConfiguration = { .ephemeral }) {
         self.server = server; self.store = store ?? BotConnectionStore()
+        self.hermesConfiguration = hermesConfiguration
         self.isServerSignIn = isServerSignIn
             ?? ServerRegistry.shared.servers.contains { $0.id == server.absoluteString && $0.kind == .hermes }
         // The candidate is not saved yet, so it signs in on its own cookie jar, never the
@@ -371,15 +400,27 @@ extension BotHostStatus {
     var addressPreview: URL? { try? BotConnection.address(address) }
 
     var canConnect: Bool {
-        !isConnecting && !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard !isConnecting, headerRejection == nil else { return false }
+        if signInMethod != .password { return true }
+        return !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !password.isEmpty
-            && headerRejection == nil
+    }
+
+    /// How this Hermes server signs in: as its host's status says, or, until the status answers,
+    /// as its saved sign-in did, through the browser (#708) or without credentials (#1314). Only a
+    /// Hermes server's own sign-in; a webui server's Bots connection keeps the password form.
+    var signInMethod: HermesSignInMethod {
+        guard isServerSignIn else { return .password }
+        if case .reachable(let status) = hostStatus { return status.signInMethod }
+        if saved?.oauth != nil { return .browser }
+        return saved?.hasNoCredentials == true ? .open : .password
     }
 
     /// Why the edited headers can't be sent to Hermes (`HermesHeaders`), shown under the
     /// Connection Headers row; Connect stays off until it is fixed. Nil when they can.
     var headerRejection: String? {
-        do { _ = try HermesHeaders(headers.sanitizedForStorage()); return nil } catch { return error.localizedDescription }
+        do { _ = try HermesHeaders(headers.sanitizedForStorage(), signsInWithBrowser: signInMethod == .browser); return nil }
+        catch { return error.localizedDescription }
     }
 
     /// Shown under the Connection Headers row when only one of Cloudflare Access's two
@@ -411,18 +452,31 @@ extension BotHostStatus {
         notificationRelay = relay(server)
     }
 
+    /// A signed-out Hermes server's status read failed, so the form can't tell how it signs in:
+    /// the sign-in section offers to read it again, such as after the network or the Connection
+    /// Headers change.
+    var offersStatusRetry: Bool {
+        guard isServerSignIn, saved == nil, case .unreachable = hostStatus else { return false }
+        return true
+    }
+
+    /// The address whose status the form reads: the saved one, else a Hermes server's own.
+    private var statusAddress: URL? { saved?.address ?? (isServerSignIn ? server : nil) }
+
     func cancel() {
         attempt = nil; client?.close(); client = nil; isConnecting = false
         statusCheck = nil
     }
 
-    /// Reads the saved host's public status once, with its saved headers. Nothing retries;
-    /// a newer check, `cancel()` or a changed saved address drops a late reply.
+    /// Reads the saved host's public status once, with its saved headers, or a signed-out
+    /// Hermes server's with the form's, which says how it signs in.
+    /// Nothing retries; a newer check, `cancel()` or a changed saved address drops a late reply.
     func checkStatus() async {
-        guard let checked = saved else { hostStatus = nil; return }
+        guard let checked = statusAddress else { hostStatus = nil; return }
+        let sent = saved.map(HermesHeaders.init(saved:)) ?? (try? HermesHeaders(headers.sanitizedForStorage())) ?? .none
         let id = UUID(); statusCheck = id; hostStatus = .checking
-        let result = await probe(checked.address, HermesHeaders(saved: checked))
-        guard statusCheck == id, !Task.isCancelled, saved?.address == checked.address else { return }
+        let result = await probe(checked, sent)
+        guard statusCheck == id, !Task.isCancelled, statusAddress == checked else { return }
         statusCheck = nil
         switch result {
         case .success(let status): hostStatus = .reachable(status)
@@ -436,8 +490,12 @@ extension BotHostStatus {
     /// otherwise the old connection's data is discarded. An unchanged address must still
     /// reach the saved install before the password is sent. `replacingHost` is the user's
     /// answer to `.differentHost`: it drops that expectation and always starts a new connection.
-    func connect(replacingHost: Bool = false) async -> Bool {
+    /// A server that signs in through the browser shows its host's page with `browser` instead,
+    /// and one without sign-in saves no username or password.
+    func connect(replacingHost: Bool = false, browser: HermesBrowserSignIn.Presenter = .unavailable) async -> Bool {
         guard !isConnecting, !Task.isCancelled else { return false }
+        if signInMethod == .browser { return await connectThroughBrowser(browser, replacingHost: replacingHost) }
+        let isOpen = signInMethod == .open
         let id = UUID(); attempt = id; isConnecting = true; errorMessage = nil; differentHostAddress = nil
         defer { if attempt == id { isConnecting = false; client = nil; attempt = nil } }
         var attempted: URL?
@@ -445,11 +503,12 @@ extension BotHostStatus {
             let admitted = try HermesHeaders(headers.sanitizedForStorage()).values
             let sent = admitted.isEmpty ? nil : admitted
             let url = isServerSignIn ? server : try BotConnection.address(address); attempted = url
-            let account = username.trimmingCharacters(in: .whitespacesAndNewlines)
+            let account = isOpen ? "" : username.trimmingCharacters(in: .whitespacesAndNewlines)
+            let secret = isOpen ? "" : password
             let label = name.isEmpty ? (url.host ?? "Hermes") : name
             let expected = replacingHost || saved?.address != url ? nil : saved?.installID
             let wire = makeWire(BotConnection(id: UUID(), name: label, address: url, username: account,
-                                              password: password, installID: expected, headers: sent))
+                                              password: secret, installID: expected, headers: sent))
             client = wire
             defer { wire.close() }
             try await wire.connect()
@@ -459,27 +518,11 @@ extension BotHostStatus {
             let sameAccount = saved?.address == url && saved?.username == account
             let kept = replacingHost ? nil : (sameInstall || sameAccount ? saved : nil)
             let candidate = BotConnection(id: kept?.id ?? UUID(), name: label, address: url, username: account,
-                password: password, hermesVersion: wire.serverVersion, installID: live ?? kept?.installID, headers: sent)
+                password: secret, hermesVersion: wire.serverVersion, installID: live ?? kept?.installID, headers: sent)
             let result = try await wire.call(.profilesList(includeSessions: true))
             guard attempt == id, !Task.isCancelled else { return false }
             guard result["profiles"].list != nil else { throw BotFailure.unsupported }
-            let old = saved
-            do { try store.save(candidate, server: server) } catch {
-                errorMessage = String(localized: "Could not save sign-in details on this iPhone.")
-                return false
-            }
-            saved = candidate
-            // The old host's status and any check still in flight describe a host
-            // this screen no longer shows.
-            if old?.address != candidate.address { statusCheck = nil; hostStatus = nil }
-            // Persistence is the commit point, with no suspension after the last
-            // cancellation check. Old-account cleanup must finish even if the
-            // sheet disappears afterwards; a committed replacement is success.
-            if let old, old.id != candidate.id {
-                await discardData(of: old)
-                notificationRelay = relay(server)
-            }
-            return true
+            return await commit(candidate)
         } catch {
             guard attempt == id, !Task.isCancelled else { return false }
             if error as? BotFailure == .differentHost { differentHostAddress = attempted }
@@ -489,6 +532,59 @@ extension BotHostStatus {
                 ?? error.localizedDescription
             return false
         }
+    }
+
+    /// A Hermes server's sign-in through its host's browser page (#708), shown by `browser`.
+    /// The UUID, and with it drafts, cache and push pairing, is kept when the host reports
+    /// the saved `install_id` or the same account signs in again; otherwise the old
+    /// connection's data is discarded, as in `connect`. Closing the sheet shows no error.
+    private func connectThroughBrowser(_ browser: HermesBrowserSignIn.Presenter, replacingHost: Bool) async -> Bool {
+        let id = UUID(); attempt = id; isConnecting = true; errorMessage = nil; differentHostAddress = nil
+        defer { if attempt == id { isConnecting = false; attempt = nil } }
+        do {
+            let admitted = try HermesHeaders(headers.sanitizedForStorage(), signsInWithBrowser: true).values
+            let label = name.isEmpty ? (server.host ?? "Hermes") : name
+            let expected = replacingHost || saved?.address != server ? nil : saved?.installID
+            let http = HermesConnection(connection: BotConnection(
+                id: UUID(), name: label, address: server, username: "", password: "",
+                installID: expected, headers: admitted.isEmpty ? nil : admitted), configuration: hermesConfiguration())
+            try await HermesBrowserSignIn.signIn(http, presenter: browser)
+            guard attempt == id, !Task.isCancelled else { return false }
+            let signedIn = http.connection
+            let sameInstall = http.serverInstallID != nil && http.serverInstallID == saved?.installID
+            let sameAccount = saved?.address == server && saved?.oauth?.provider == signedIn.oauth?.provider
+                && saved?.oauth?.userID == signedIn.oauth?.userID
+            let kept = replacingHost ? nil : (sameInstall || sameAccount ? saved : nil)
+            return await commit(BotConnection(
+                id: kept?.id ?? signedIn.id, name: label, address: server, username: signedIn.username, password: "",
+                hermesVersion: http.serverVersion, installID: http.serverInstallID ?? kept?.installID,
+                headers: signedIn.headers, oauth: signedIn.oauth))
+        } catch {
+            guard attempt == id, !Task.isCancelled, !(error is CancellationError) else { return false }
+            if error as? BotFailure == .differentHost { differentHostAddress = server }
+            errorMessage = BotConnectionAdvice.message(for: error, address: server)
+            return false
+        }
+    }
+
+    /// Saves `candidate`, the commit point, and then drops the data of the connection it
+    /// replaced, if another. Old-account cleanup must finish even if the sheet disappears
+    /// afterwards; a committed replacement is success.
+    private func commit(_ candidate: BotConnection) async -> Bool {
+        let old = saved
+        do { try store.save(candidate, server: server) } catch {
+            errorMessage = String(localized: "Could not save sign-in details on this iPhone.")
+            return false
+        }
+        saved = candidate
+        // The old host's status and any check still in flight describe a host
+        // this screen no longer shows.
+        if old?.address != candidate.address { statusCheck = nil; hostStatus = nil }
+        if let old, old.id != candidate.id {
+            await discardData(of: old)
+            notificationRelay = relay(server)
+        }
+        return true
     }
 
     func remove() async -> Bool {
@@ -574,5 +670,17 @@ struct BotConnectionWelcomeView: View {
         } else {
             BotAnimatedFaceView(name: name, appearance: appearance, size: size, motion: .still)
         }
+    }
+}
+
+/// The warning shown wherever a Hermes dashboard with no password is signed in to or saved (#1314).
+struct OpenDashboardWarning: View {
+    var body: some View {
+        Label {
+            Text(HermesSignInMethod.openWarning)
+        } icon: {
+            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        }
+        .accessibilityIdentifier("hermes-open-dashboard-warning")
     }
 }

@@ -4,8 +4,55 @@ import Foundation
 /// such as a title already in use, over 100 characters, or the canonical Bot Chat's. The
 /// message is the host's own words, shown as they are.
 struct HermesSessionRefusal: LocalizedError, Equatable {
+    /// One session an import's 400 named (#1213): its place in the payload, its id when it had
+    /// one, and the host's reason. The host wrote none of the payload.
+    struct Entry: Equatable, Sendable {
+        let index: Int
+        let sessionID: String?
+        let reason: String
+    }
+
     let message: String
+    /// Every session an import refusal named; empty for any other refusal.
+    var entries: [Entry] = []
     var errorDescription: String? { message }
+}
+
+/// A session write the host's write fence refused (#1300), with 409, or with 404 or 403 when the
+/// session's owner won't take it (#1335). Nothing was written, and the write is never resent: its
+/// caller rolls back and reads the list again.
+enum HermesSessionFenceRefusal: LocalizedError, Equatable {
+    /// The session moved past the revision the write read, or its runtime changed under it.
+    case changed
+    /// A turn holds the session.
+    case busy
+    /// The host asks for a write identity this build doesn't send.
+    case updateRequired
+    /// The host won't let this client edit the session: a gateway beside the dashboard refuses a
+    /// session it hasn't loaded whose stored source isn't local, as 2.0 builds' `hermex` (#1335).
+    case refused
+
+    /// The refusal a 409's, 404's or 403's `detail` names; nil for any other reason.
+    init?(detail: String?) {
+        switch detail {
+        case "revision_conflict"?, "stale_generation"?, "admission_conflict"?: self = .changed
+        case "session_busy"?: self = .busy
+        case "mutation_identity_required"?: self = .updateRequired
+        case let detail? where detail.hasPrefix("client_upgrade_required"): self = .updateRequired
+        case "not_found"?, "permission_denied"?: self = .refused
+        default: return nil
+        }
+    }
+
+    var errorDescription: String? {
+        switch self {
+        case .changed: return String(localized: "This session changed on the server. Try again.")
+        case .busy: return String(localized: "This session is busy. Try again when it finishes.")
+        case .updateRequired: return String(localized: "Update ARC Hermes to change sessions on this server.")
+        case .refused:
+            return String(localized: "The server refused to change this session. If an earlier ARC Hermes 2.0 build created it, duplicate it and change the copy.")
+        }
+    }
 }
 
 /// Duplicate on a Hermes row (#1051): an independent copy with every row the session's export
@@ -114,7 +161,7 @@ enum HermesSessionDuplication {
     static func row(of key: String, profile: String, on wire: any BotTransport) async throws -> HermesSessionRow? {
         guard let own = try await wire.sessionRow(key: key, profile: profile),
               let parent = own["parent_session_id"].text, !parent.isEmpty,
-              branchedFrom(own["model_config"]) == parent,
+              own.modelConfigText("_branched_from") == parent,
               let row = try await wire.sessionRow(key: parent, profile: profile) else { return nil }
         let grandparent = row["parent_session_id"].text
         return HermesSessionRow(id: parent, title: row["title"].text, profile: profile,
@@ -126,13 +173,17 @@ enum HermesSessionDuplication {
     /// other parent, a legacy compression segment or a reset continuation, puts that parent's
     /// rows first, and the session's own transcript pages never show them.
     static func standsAlone(_ own: BotJSON) -> Bool {
-        (own["parent_session_id"].text ?? "").isEmpty || !(branchedFrom(own["model_config"]) ?? "").isEmpty
+        (own["parent_session_id"].text ?? "").isEmpty || !(own.modelConfigText("_branched_from") ?? "").isEmpty
     }
+}
 
-    /// `_branched_from` in a `model_config` stored as a JSON string, or sent as an object.
-    private static func branchedFrom(_ config: BotJSON) -> String? {
+extension BotJSON {
+    /// `key` in a stored session row's `model_config`, which the host stores as a JSON string
+    /// and may send as an object: `_branched_from` on a branch, `_delegate_from` on a subagent.
+    func modelConfigText(_ key: String) -> String? {
+        let config = self["model_config"]
         let object = config.text.flatMap { try? JSONDecoder().decode(BotJSON.self, from: Data($0.utf8)) } ?? config
-        return object["_branched_from"].text
+        return object[key].text
     }
 }
 

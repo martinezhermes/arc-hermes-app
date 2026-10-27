@@ -17,21 +17,47 @@ protocol AudioSessionDriving {
 
 @MainActor
 private final class SystemAudioSessionDriver: AudioSessionDriving {
+    private let legacyActivation = LegacyAudioSessionActivation()
+
     func activate(_ configuration: AudioSessionConfiguration) async throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(configuration.category, mode: configuration.mode, options: configuration.options)
-        guard try await session.activate(options: []) else {
-            throw NSError(domain: NSOSStatusErrorDomain,
-                          code: Int(AVAudioSession.ErrorCode.cannotStartPlaying.rawValue))
+        if #available(iOS 27, *) {
+            guard try await session.activate(options: []) else {
+                throw NSError(domain: NSOSStatusErrorDomain,
+                              code: Int(AVAudioSession.ErrorCode.cannotStartPlaying.rawValue))
+            }
+        } else {
+            try await legacyActivation.setActive(true)
         }
     }
 
     func deactivate() async {
-        _ = try? await AVAudioSession.sharedInstance().deactivate(options: [.notifyOthersOnDeactivation])
+        if #available(iOS 27, *) {
+            _ = try? await AVAudioSession.sharedInstance().deactivate(options: [.notifyOthersOnDeactivation])
+        } else {
+            try? await legacyActivation.setActive(false)
+        }
     }
 }
 
-/// Serializes the iOS 27 async audio-session transitions. Each capture/playback
+/// Keeps the blocking pre-iOS 27 activation API off the main actor. The coordinator
+/// awaits each transition before starting another, including cancellation cleanup.
+actor LegacyAudioSessionActivation {
+    private let activate: @Sendable (Bool, AVAudioSession.SetActiveOptions) throws -> Void
+
+    init(activate: @escaping @Sendable (Bool, AVAudioSession.SetActiveOptions) throws -> Void = {
+        try AVAudioSession.sharedInstance().setActive($0, options: $1)
+    }) {
+        self.activate = activate
+    }
+
+    func setActive(_ active: Bool) throws {
+        try activate(active, active ? [] : [.notifyOthersOnDeactivation])
+    }
+}
+
+/// Serializes audio-session transitions across supported OS versions. Each capture/playback
 /// owns a token, so stale cleanup cannot deactivate another operation's audio.
 /// Capture takes precedence; releasing it restores any remaining playback lease.
 @MainActor

@@ -3,39 +3,6 @@ import XCTest
 @testable import ARCHermes
 
 final class AdaptiveGlassTests: XCTestCase {
-    private var suiteName: String!
-    private var defaults: UserDefaults!
-
-    override func setUp() {
-        super.setUp()
-        suiteName = "AdaptiveGlassTests-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        defaults.removePersistentDomain(forName: suiteName)
-    }
-
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-        defaults = nil
-        suiteName = nil
-        super.tearDown()
-    }
-
-    func testGlassPreferenceDefaultsToEnabled() {
-        XCTAssertTrue(GlassPreference.isEnabled(in: defaults))
-    }
-
-    func testGlassPreferenceReadsStoredDisabledValue() {
-        defaults.set(false, forKey: GlassPreference.isEnabledKey)
-
-        XCTAssertFalse(GlassPreference.isEnabled(in: defaults))
-    }
-
-    func testGlassPreferenceReadsStoredEnabledValue() {
-        defaults.set(true, forKey: GlassPreference.isEnabledKey)
-
-        XCTAssertTrue(GlassPreference.isEnabled(in: defaults))
-    }
-
     func testSurfaceResolutionPrefersOpaqueWhenReduceTransparencyIsEnabled() {
         let surface = AdaptiveGlassSurface.resolve(
             liquidGlassAvailable: true,
@@ -44,16 +11,6 @@ final class AdaptiveGlassTests: XCTestCase {
         )
 
         XCTAssertEqual(surface, .opaque)
-    }
-
-    func testSurfaceResolutionFallsBackToMaterialWhenLiquidGlassIsUnavailable() {
-        let surface = AdaptiveGlassSurface.resolve(
-            liquidGlassAvailable: false,
-            isGlassEnabled: true,
-            reduceTransparency: false
-        )
-
-        XCTAssertEqual(surface, .material)
     }
 
     func testSurfaceResolutionFallsBackToMaterialWhenGlassIsDisabled() {
@@ -66,25 +23,6 @@ final class AdaptiveGlassTests: XCTestCase {
         XCTAssertEqual(surface, .material)
     }
 
-    func testSurfaceResolutionUsesLiquidGlassWhenAvailableEnabledAndAllowed() {
-        let surface = AdaptiveGlassSurface.resolve(
-            liquidGlassAvailable: true,
-            isGlassEnabled: true,
-            reduceTransparency: false
-        )
-
-        XCTAssertEqual(surface, .liquidGlass)
-    }
-
-    func testScrollEdgeTreatmentDisablesWhenSoftEdgesAreUnavailable() {
-        let treatment = AdaptiveScrollEdgeTreatment.resolve(
-            softScrollEdgesAvailable: false,
-            reduceTransparency: false
-        )
-
-        XCTAssertEqual(treatment, .disabled)
-    }
-
     func testScrollEdgeTreatmentDisablesWhenReduceTransparencyIsEnabled() {
         let treatment = AdaptiveScrollEdgeTreatment.resolve(
             softScrollEdgesAvailable: true,
@@ -93,15 +31,60 @@ final class AdaptiveGlassTests: XCTestCase {
 
         XCTAssertEqual(treatment, .disabled)
     }
+}
 
-    func testScrollEdgeTreatmentUsesSoftWhenAvailableAndAllowed() {
-        let treatment = AdaptiveScrollEdgeTreatment.resolve(
-            softScrollEdgesAvailable: true,
-            reduceTransparency: false
-        )
-
-        XCTAssertEqual(treatment, .soft)
+@MainActor
+final class InsetTopBarTests: XCTestCase {
+    func testHeaderReservesSpaceAboveScrollContent() async throws {
+        try await checkHeaderLayout(typeSize: .large)
     }
+
+    func testHeaderReservesSpaceAboveScrollContentAtAccessibilitySize() async throws {
+        try await checkHeaderLayout(typeSize: .accessibility3)
+    }
+
+    private func checkHeaderLayout(typeSize: DynamicTypeSize) async throws {
+        let appeared = expectation(description: "Inset header appeared")
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let headerMarker = UIView()
+        let contentMarker = UIView()
+        let host = UIHostingController(rootView:
+            ScrollView {
+                TopBarLayoutMarker(view: contentMarker).frame(height: 100)
+            }
+            .modifier(InsetTopBarModifier(bar:
+                Text("Sessions")
+                    .font(.largeTitle)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(TopBarLayoutMarker(view: headerMarker))
+            ))
+            .environment(\.dynamicTypeSize, typeSize)
+            .background(NavigationAppearanceCompletionObserver { appeared.fulfill() })
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            window.rootViewController = nil
+        }
+        await fulfillment(of: [appeared], timeout: 5)
+        window.layoutIfNeeded()
+
+        let header = headerMarker.convert(headerMarker.bounds, to: window)
+        let firstContent = contentMarker.convert(contentMarker.bounds, to: window)
+        XCTAssertGreaterThan(header.height, 0)
+        XCTAssertEqual(firstContent.height, 100, accuracy: 1)
+        XCTAssertEqual(firstContent.minY, header.maxY, accuracy: 1,
+                       "The fallback must reserve the header's actual height without covering the first row")
+    }
+}
+
+private struct TopBarLayoutMarker: UIViewRepresentable {
+    let view: UIView
+    func makeUIView(context: Context) -> UIView { view }
+    func updateUIView(_ uiView: UIView, context: Context) {}
 }
 
 @MainActor

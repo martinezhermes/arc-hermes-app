@@ -1,7 +1,7 @@
 import Foundation
 import LocalAuthentication
 
-/// What the device can unlock Hermex with right now.
+/// What the device can unlock ARC Hermes with right now.
 struct AppLockCapability: Equatable {
     enum Method: Equatable {
         case faceID

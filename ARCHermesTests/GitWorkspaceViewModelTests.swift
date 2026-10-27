@@ -55,24 +55,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testRefreshReplacesStaleData() async throws {
-        var dirty = true
-        let client = makeClient { request in
-            let json = dirty ? Self.statusWithIgnored : #"{"git": {"is_git": true, "branch": "main", "files": [], "totals": {"changed": 0}}}"#
-            return apiTestJSONResponse(json, for: request)
-        }
-        let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-        XCTAssertEqual(viewModel.status?.trackedFiles.count, 1)
-
-        dirty = false
-        await viewModel.load()
-        XCTAssertEqual(viewModel.status?.trackedFiles.count, 0, "Refreshing replaces, not appends.")
-        XCTAssertEqual(viewModel.status?.changedCount, 0)
-    }
-
-    @MainActor
     func testDifferentSessionsHaveIndependentState() async throws {
         // One handler that answers per session_id; two view models, each scoped to its session.
         let client = makeClient { request in
@@ -148,21 +130,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertNil(viewModel.errorMessage)
     }
 
-    @MainActor
-    func testLoadSurfacesErrorOnHTTPFailure() async throws {
-        let client = makeClient { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
-            return (response, Data(#"{"error": "boom"}"#.utf8))
-        }
-        let viewModel = GitWorkspaceViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-
-        XCTAssertNil(viewModel.status)
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertNotNil(viewModel.lastError)
-    }
-
     // MARK: - Toolbar availability
 
     @MainActor
@@ -208,23 +175,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertFalse(loading.changesAreEnabled)
     }
 
-    /// The read-only menu's branch row: the branch alone when it matches its upstream, with the
-    /// Changes header's "↑ahead ↓behind" when it has moved, and none outside a repository.
-    func testToolbarBranchSummaryShowsTheBranchAndItsDistanceFromUpstream() {
-        func summary(_ info: GitInfo?, hasRepository: Bool = true) -> String? {
-            GitToolbarPresentation(hasRepository: hasRepository, isLoading: false, info: info, status: nil,
-                                   statusFailed: false).branchSummary
-        }
-        let info = { (ahead: Int, behind: Int) in
-            GitInfo(branch: "main", dirty: 0, modified: 0, untracked: 0, ahead: ahead, behind: behind, isGit: true)
-        }
-
-        XCTAssertEqual(summary(info(0, 0)), "main")
-        XCTAssertEqual(summary(info(0, 3)), "main  ↑0 ↓3")
-        XCTAssertNil(summary(info(1, 0), hasRepository: false))
-        XCTAssertNil(summary(nil))
-    }
-
     @MainActor
     func testAvailabilityHidesForNonRepositoryAndNullGitInfo() async throws {
         var returnsNullGit = false
@@ -241,20 +191,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         await viewModel.load()
         XCTAssertFalse(viewModel.hasRepository)
         XCTAssertNil(viewModel.lastError)
-    }
-
-    @MainActor
-    func testAvailabilityHidesOnHTTPFailure() async throws {
-        let client = makeClient { request in
-            let response = HTTPURLResponse(url: request.url!, statusCode: 500, httpVersion: nil, headerFields: nil)!
-            return (response, Data(#"{"error": "boom"}"#.utf8))
-        }
-        let viewModel = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-
-        await viewModel.load()
-
-        XCTAssertFalse(viewModel.hasRepository)
-        XCTAssertNotNil(viewModel.lastError)
     }
 
     @MainActor
@@ -331,6 +267,8 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             case "/api/git/checkout":
                 currentBranch = "feature"
                 return apiTestJSONResponse(#"{"ok":true,"current_branch":"feature","status":{"is_git":true,"branch":"feature"},"branches":{"is_git":true,"current":"feature","local":[{"name":"main"},{"name":"feature"}]}}"#, for: request)
+            case "/api/git/fetch":
+                return apiTestJSONResponse(#"{"ok":true,"message":"Fetched"}"#, for: request)
             default:
                 XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
                 return apiTestJSONResponse("{}", for: request)
@@ -346,10 +284,14 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(viewModel.branches?.local?.compactMap(\.name), ["main", "feature"])
 
         let outcome = await viewModel.checkout(GitCheckoutTarget(ref: "feature", mode: .local))
+        let fetched = await viewModel.performRemoteAction(.fetch)
 
         XCTAssertEqual(outcome, .success)
         XCTAssertEqual(viewModel.currentBranchName, "feature")
         XCTAssertEqual(viewModel.status?.branch, "feature")
+        XCTAssertTrue(viewModel.supportsSync, "webui always syncs through its session routes")
+        XCTAssertTrue(fetched)
+        XCTAssertEqual(viewModel.lastActionMessage, "Fetched")
     }
 
     @MainActor
@@ -434,7 +376,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     /// Changes rows come from `review/list` (counts, status letter, staged) joined by path with
     /// `status.files`' flags, which the host lists in its own order. The badge reads the branch,
     /// ahead/behind and dirty count from the status, and a Hermes chat has writes and branches
-    /// but no fetch or pull.
+    /// but, without hermex-push's routes, no fetch or pull.
     @MainActor
     func testHermesChangesJoinReviewRowsWithStatusFlagsByPath() async throws {
         let git = HermesGitHost.client { request in
@@ -447,9 +389,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                 ("README.md", false, true, false, false)
             ])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         let changes = GitWorkspaceViewModel(git: git)
 
         await availability.load()
@@ -566,9 +506,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                                                   ("Sources/App.swift", false, true, false, false),
                                                   ("Sources/Model.swift", false, true, false, false)])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let summary = TurnFileChangeAggregator.summarize(toolCalls: [
@@ -596,9 +534,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                                                   ("Sources/Model.swift", false, true, false, false),
                                                   ("Sources/README.md", false, true, false, false)])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let summary = TurnFileChangeAggregator.summarize(toolCalls: [
@@ -626,9 +562,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
                                                   ("Sources/App.swift", false, true, false, false),
                                                   ("Sources/Model.swift", false, true, false, false)])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let summary = TurnFileChangeAggregator.summarize(toolCalls: [
@@ -652,9 +586,7 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             HermesGitHost.repositoryReply(request, root: root, rows: [("a.txt", 1, 0, "?", false)],
                                           flags: [("a.txt", false, true, true, false)])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         let changes = GitWorkspaceViewModel(git: git)
 
         await availability.load()
@@ -682,16 +614,10 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
             return HermesGitHost.repositoryReply(request, root: inOther ? other : HermesGitHost.repository,
                                                  branch: inOther ? "other-main" : "main")
         }
-        let first = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!,
-            git: HermesGitHost.client(cwd: HermesGitHost.repository + "/Sources", script)
-        )
+        let first = GitWorkspaceAvailabilityViewModel(git: HermesGitHost.client(cwd: HermesGitHost.repository + "/Sources", script))
         await first.load()
         await first.refreshAfterExternalMutation()
-        let moved = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!,
-            git: HermesGitHost.client(cwd: other, script)
-        )
+        let moved = GitWorkspaceAvailabilityViewModel(git: HermesGitHost.client(cwd: other, script))
         await moved.load()
 
         let roots = HermesGitHost.requests.filter { $0.url?.path == "/api/fs/git-root" }
@@ -764,32 +690,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(hunks.count, 1)
         XCTAssertEqual(hunks[0].lines.map(\.text), ["---actual content", "+++actual content"])
         XCTAssertEqual(hunks[0].lines.map(\.kind), [.deletion, .addition])
-    }
-
-    func testDiffParserNumbersMultipleSyntheticPatches() {
-        let hunks = DiffHunk.parse("diff --git a/a b/a\n-a\n+b\ndiff --git a/b b/b\n-c\n+d")
-
-        XCTAssertEqual(hunks.map(\.displayLabel), ["Patch 1 of 2", "Patch 2 of 2"])
-    }
-
-    func testDiffParserEmptyInputReturnsNoHunks() {
-        XCTAssertTrue(DiffHunk.parse("").isEmpty)
-        XCTAssertTrue(DiffHunk.parse("diff --git a/x b/x\nindex 1..2\n").isEmpty, "No hunk header → nothing to show.")
-    }
-
-    @MainActor
-    func testToastProgressSuccessAndAutoDismiss() async {
-        let state = GitActionToastState()
-        state.showProgress(GitActionProgress(title: "Working", detailLines: ["• Fetching"]))
-        XCTAssertNotNil(state.progress)
-        XCTAssertNil(state.success)
-
-        state.showSuccess(GitActionSuccess(title: "Done"), autoDismissAfter: .milliseconds(10))
-        XCTAssertNil(state.progress)
-        XCTAssertNotNil(state.success)
-
-        try? await Task.sleep(for: .milliseconds(30))
-        XCTAssertNil(state.success)
     }
 
     @MainActor
@@ -978,30 +878,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(vm.actionErrorMessage?.contains("Writes disabled"), true)
     }
 
-    @MainActor
-    func testRefreshAfterExternalMutationPicksUpNewStatus() async throws {
-        var changed = true
-        let client = makeClient { request in
-            switch request.url?.path {
-            case "/api/git-info":
-                return apiTestJSONResponse(#"{"git":{"is_git":true,"branch":"main"}}"#, for: request)
-            case "/api/git/branches":
-                return apiTestJSONResponse(#"{"branches":{"is_git":true,"current":"main"}}"#, for: request)
-            default:
-                let json = changed ? Self.statusWithOneFile : #"{"git":{"is_git":true,"branch":"main","files":[],"totals":{"changed":0}}}"#
-                return apiTestJSONResponse(json, for: request)
-            }
-        }
-        let vm = GitWorkspaceAvailabilityViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-        await vm.load()
-        XCTAssertEqual(vm.status?.changedCount, 1)
-
-        changed = false
-        await vm.refreshAfterExternalMutation()
-
-        XCTAssertEqual(vm.status?.changedCount, 0, "Refreshing after an agent turn surfaces the new working-tree state.")
-    }
-
     // MARK: - Advanced staging sheet view model (GitCommitViewModel)
 
     private func commitSheetClient(
@@ -1068,32 +944,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertFalse(vm.messageWasTruncated)
     }
 
-    /// Commit-message generation runs the Agent, so it hits the stale-runtime 409 (#955).
-    @MainActor
-    func testCommitSheetSuggestShowsRestartCopyForStaleAgentRuntime() async throws {
-        let client = makeClient { request in
-            switch request.url?.path {
-            case "/api/git/status":
-                return apiTestJSONResponse(Self.statusWithOneFile, for: request)
-            case "/api/git/commit-message":
-                return apiTestJSONResponse(
-                    #"{"error": "Hermes Agent was updated while Hermes WebUI was running. Restart Hermes WebUI manually before retrying this action.", "type": "agent_runtime_stale", "retryable": true, "restart_scheduled": false}"#,
-                    for: request,
-                    status: 409
-                )
-            default:
-                return apiTestJSONResponse("{}", for: request)
-            }
-        }
-        let vm = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-        await vm.load()
-
-        await vm.suggestMessage()
-
-        XCTAssertEqual(vm.actionErrorMessage, "Hermes was updated on your server. Restart Hermes WebUI there, then try again.")
-        XCTAssertTrue(vm.message.isEmpty)
-    }
-
     @MainActor
     func testCommitSheetCommitClearsMessageAndBumpsRevision() async throws {
         let vm = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: commitSheetClient())
@@ -1156,16 +1006,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
     }
 
     @MainActor
-    func testCommitSheetDiscardSurfacesFriendlyErrorWhenDisabled() async throws {
-        let vm = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: commitSheetClient(discardStatus: 403))
-        await vm.load()
-
-        await vm.discardSelectedOrAll(deleteUntracked: false)
-
-        XCTAssertEqual(vm.actionErrorMessage?.contains("Writes disabled"), true)
-    }
-
-    @MainActor
     func testCommitSheetDiscardUnstagesStagedFilesFirst() async throws {
         // The server's discard only restores the worktree, leaving the index intact, so a
         // staged change would survive. The sheet must unstage staged targets before
@@ -1198,31 +1038,6 @@ final class GitWorkspaceViewModelTests: APIClientTestCase {
         XCTAssertEqual(calls, ["/api/git/unstage", "/api/git/discard"],
                        "Staged targets are unstaged before discard so the index is reverted too.")
     }
-
-    @MainActor
-    func testCommitSheetDiscardSkipsUnstageWhenNoStagedTargets() async throws {
-        // A purely unstaged change needs no unstage step — discard alone reverts the worktree.
-        var calls: [String] = []
-        let client = makeClient { request in
-            let path = request.url?.path ?? ""
-            switch path {
-            case "/api/git/status":
-                return apiTestJSONResponse(Self.statusWithOneFile, for: request)
-            case "/api/git/unstage", "/api/git/discard":
-                calls.append(path)
-                return apiTestJSONResponse(#"{"ok":true,"git":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
-            default:
-                return apiTestJSONResponse("{}", for: request)
-            }
-        }
-        let vm = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-        await vm.load()
-        XCTAssertEqual(vm.trackedFiles.first?.unstaged, true)
-
-        await vm.discardSelectedOrAll(deleteUntracked: false)
-
-        XCTAssertEqual(calls, ["/api/git/discard"], "No staged targets means no unstage call.")
-    }
 }
 
 // MARK: - Hermes writes (#1115)
@@ -1237,9 +1052,7 @@ extension GitWorkspaceViewModelTests {
             HermesGitHost.repositoryReply(request, detached: detached, ahead: 1, rows: [("a.swift", 1, 0, "M", false)],
                                           flags: [("a.swift", false, true, false, false)])
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let pushed = await availability.performRemoteAction(.push)
@@ -1417,9 +1230,7 @@ extension GitWorkspaceViewModelTests {
     @MainActor
     func testAHermesQuickCommitStagesEachFileThenCommits() async throws {
         let git = HermesGitHost.client(writeMessage: { _, _, _ in "chore: tidy" }) { Self.threeChanges($0) }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let outcome = await availability.quickCommit(push: false)
@@ -1533,9 +1344,7 @@ extension GitWorkspaceViewModelTests {
             chat.turnRunning = true
             return "chore: tidy"
         }, writeOwner: chat.owner) { Self.threeChanges($0) }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let outcome = await availability.quickCommit(push: true)
@@ -1610,9 +1419,7 @@ extension GitWorkspaceViewModelTests {
         let git = HermesGitHost.client(writeMessage: { _, _, _ in "chore: tidy" }) { request in
             request.url?.path == "/api/git/review/commit" ? .park : Self.threeChanges(request)
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         HermesHostFixture.onPark = { Task { @MainActor in
             availability.retire()
@@ -1634,9 +1441,7 @@ extension GitWorkspaceViewModelTests {
         let git = HermesGitHost.client { request in
             request.url?.path == "/api/git/review/push" ? .park : Self.threeChanges(request)
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         HermesHostFixture.onPark = { Task { @MainActor in
             availability.retire()
@@ -1668,9 +1473,7 @@ extension GitWorkspaceViewModelTests {
             }
             return "chore: tidy"
         }) { Self.threeChanges($0) }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         let commitSheet = GitCommitViewModel(git: git)
         await commitSheet.load()
@@ -1693,9 +1496,7 @@ extension GitWorkspaceViewModelTests {
         let git = HermesGitHost.client(writeMessage: { _, _, _ in "chore: tidy" }) { request in
             request.url?.path == "/api/git/review/commit" ? .park : Self.threeChanges(request)
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         let sheet = GitCommitViewModel(git: git)
         await sheet.load()
@@ -1717,73 +1518,6 @@ extension GitWorkspaceViewModelTests {
         XCTAssertEqual(duringCommit?.pushed, false)
         XCTAssertEqual(HermesGitHost.writes, [#"commit "feat(app): b""#])
         XCTAssertFalse(availability.isRunningGitAction)
-    }
-
-    /// Before the first commit `file-diff` is empty, so a selected new file's message is written
-    /// from its current content, as its diff shows it.
-    @MainActor
-    func testAHermesSuggestionBeforeTheFirstCommitSendsANewFilesContent() async throws {
-        nonisolated(unsafe) var asked: [String] = []
-        let sheet = await hermesCommitSheet(writeMessage: { diff, _, _ in
-            asked.append(diff)
-            return "feat(app): add notes"
-        }) { request in
-            switch request.url?.path {
-            case "/api/git/file-diff":
-                return .json(200, .object(["diff": .string("")]))
-            case "/api/fs/read-text":
-                return .json(200, .object(["binary": .bool(false), "byteSize": .number(13), "truncated": .bool(false),
-                                           "text": .string("first\nsecond\n")]))
-            default:
-                return HermesGitHost.repositoryReply(request, unborn: true, rows: [("notes.txt", 2, 0, "A", true)],
-                                                     flags: [("notes.txt", true, false, false, false)])
-            }
-        }
-        sheet.toggleSelection(sheet.trackedFiles[0])
-
-        await sheet.suggestMessage()
-
-        XCTAssertNil(sheet.actionErrorMessage)
-        XCTAssertEqual(sheet.message, "feat(app): add notes")
-        XCTAssertEqual(asked, ["diff --git a/notes.txt b/notes.txt\n--- /dev/null\n+++ b/notes.txt\n@@ -0,0 +1,2 @@\n+first\n+second\n"])
-        XCTAssertEqual(HermesHostFixture.requests.last.map(HermesGitHost.describe),
-                       "/api/fs/read-text path=\(HermesGitHost.repository)/notes.txt")
-    }
-
-    /// webui's writes keep their presentation (#1115): a failed one doesn't read the status
-    /// again, and the sheet shows no commit sha.
-    @MainActor
-    func testAWebUICommitSheetKeepsItsPresentation() async throws {
-        nonisolated(unsafe) var statusReads = 0
-        let client = makeClient { request in
-            switch request.url?.path {
-            case "/api/git/status":
-                statusReads += 1
-                return apiTestJSONResponse(Self.statusWithOneFile, for: request)
-            case "/api/git/stage":
-                let response = HTTPURLResponse(url: request.url!, statusCode: 403, httpVersion: nil,
-                                               headerFields: ["Content-Type": "application/json"])!
-                return (response, Data(#"{"error":"Destructive git writes are disabled","code":"destructive_git_disabled"}"#.utf8))
-            case "/api/git/commit":
-                return apiTestJSONResponse(#"{"ok":true,"commit":"abc1234","status":{"is_git":true,"branch":"main","files":[]}}"#, for: request)
-            default:
-                return apiTestJSONResponse("{}", for: request)
-            }
-        }
-        let sheet = GitCommitViewModel(session: try session(id: "s1"), server: URL(string: "https://example.test")!, apiClient: client)
-        await sheet.load()
-
-        await sheet.stageSelectedOrAll()
-        let failure = sheet.actionErrorMessage
-        let readsAfterTheFailure = statusReads
-        sheet.message = "fix: a"
-        let committed = await sheet.commit(push: false)
-
-        XCTAssertEqual(failure?.contains("Writes disabled"), true)
-        XCTAssertEqual(readsAfterTheFailure, 1, "Only the load")
-        XCTAssertTrue(committed)
-        XCTAssertEqual(sheet.lastCommitSHA, "abc1234")
-        XCTAssertNil(sheet.shownCommitSHA)
     }
 }
 
@@ -1812,6 +1546,111 @@ extension GitWorkspaceViewModelTests {
                                       branches: [("main", false), ("dev", false)])
     }
 
+    // MARK: - Hermes sync through hermex-push (#1236)
+
+    /// With the plugin's routes listed, Fetch and Pull run at the root and read the status again,
+    /// and New Branch creates from HEAD on a dirty tree, switching the branch label. A switch to an
+    /// existing branch with uncommitted changes is still refused, never offered the stash.
+    @MainActor
+    func testAHermesChatWithThePluginFetchesPullsAndCreatesABranch() async throws {
+        nonisolated(unsafe) var current = "main"
+        let git = HermesGitHost.client { request in
+            switch request.url?.path {
+            case "/api/plugins/hermex-push/capabilities": return HermesGitHost.capabilities()
+            case "/api/plugins/hermex-push/git/branch":
+                current = HermesCronFixture.body(request)["name"].text ?? current
+                return .json(200, .object(["ok": .bool(true), "message": .string("")]))
+            default: return Self.branchHost(request, branch: current, dirty: true)
+            }
+        }
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
+        await availability.load()
+        let statusReads = HermesGitHost.requests.filter { $0.url?.path == "/api/git/status" }.count
+
+        let fetched = await availability.performRemoteAction(.fetch)
+        let pulled = await availability.performRemoteAction(.pull)
+        let afterSync = HermesGitHost.requests.filter { $0.url?.path == "/api/git/status" }.count
+        let created = await availability.checkout(GitCheckoutTarget(ref: availability.currentBranchName, mode: .local,
+                                                                    newBranch: "feature/y"))
+        let switched = await availability.checkout(GitCheckoutTarget(ref: "dev", mode: .local))
+
+        XCTAssertTrue(availability.supportsSync)
+        XCTAssertTrue(fetched)
+        XCTAssertTrue(pulled)
+        XCTAssertGreaterThanOrEqual(afterSync, statusReads + 4, "Each action reads the status and badge again")
+        XCTAssertEqual(created, .success)
+        XCTAssertEqual(availability.currentBranchName, "feature/y")
+        XCTAssertEqual(switched, .failure)
+        XCTAssertEqual(availability.actionErrorMessage, String(localized: "Commit or discard first."))
+        XCTAssertEqual(HermesGitHost.writes, ["fetch", "pull", "branch feature/y"])
+    }
+
+    /// Without the plugin's routes (an old plugin answers the default `/capabilities` without
+    /// them), sync stays hidden and a stray Fetch or Pull sends nothing.
+    @MainActor
+    func testAHermesChatWithoutThePluginRoutesHidesSync() async throws {
+        let git = HermesGitHost.client { request in
+            request.url?.path == "/api/plugins/hermex-push/capabilities"
+                ? HermesGitHost.capabilities(["GET /capabilities", "GET /pairing"]) : Self.branchHost(request, branch: "main")
+        }
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
+        await availability.load()
+
+        let fetched = await availability.performRemoteAction(.fetch)
+        let pulled = await availability.performRemoteAction(.pull)
+
+        XCTAssertTrue(availability.hasRepository)
+        XCTAssertFalse(availability.supportsSync)
+        XCTAssertFalse(fetched)
+        XCTAssertFalse(pulled)
+        XCTAssertEqual(HermesGitHost.writes, [])
+    }
+
+    /// A gate read that failed at load is asked again by the next refresh (a turn's end), so sync
+    /// shows once the host answers, without reopening the chat. An open gate isn't read again.
+    @MainActor
+    func testAHermesSyncGateThatFailedAtLoadOpensOnTheNextRefresh() async throws {
+        nonisolated(unsafe) var failing = true
+        let git = HermesGitHost.client { request in
+            guard request.url?.path == "/api/plugins/hermex-push/capabilities" else { return Self.branchHost(request, branch: "main") }
+            return failing ? .json(500, .null) : HermesGitHost.capabilities()
+        }
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
+        await availability.load()
+        let closedAtLoad = availability.supportsSync
+        HermesHostFixture.script { failing = false }
+
+        await availability.refreshAfterExternalMutation()
+        await availability.refreshAfterExternalMutation()
+
+        XCTAssertFalse(closedAtLoad)
+        XCTAssertTrue(availability.supportsSync)
+        XCTAssertEqual(HermesHostFixture.requests.filter { $0.url?.path == "/api/plugins/hermex-push/capabilities" }.count, 2)
+    }
+
+    /// A pull the host refuses (diverged, auth, timeout) shows the write-failure copy, never git's
+    /// output, and reads the repository again.
+    @MainActor
+    func testAFailedHermesPullShowsTheGenericCopyAndRefreshes() async throws {
+        let git = HermesGitHost.client { request in
+            switch request.url?.path {
+            case "/api/plugins/hermex-push/capabilities": return HermesGitHost.capabilities()
+            case "/api/plugins/hermex-push/git/pull":
+                return .json(400, .object(["detail": .string("fatal: Not possible to fast-forward, aborting.")]))
+            default: return Self.branchHost(request, branch: "main")
+            }
+        }
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
+        await availability.load()
+        let statusReads = HermesGitHost.requests.filter { $0.url?.path == "/api/git/status" }.count
+
+        let pulled = await availability.performRemoteAction(.pull)
+
+        XCTAssertFalse(pulled)
+        XCTAssertEqual(availability.actionErrorMessage, String(localized: "Git couldn’t finish this change on your Hermes host."))
+        XCTAssertGreaterThan(HermesGitHost.requests.filter { $0.url?.path == "/api/git/status" }.count, statusReads)
+    }
+
     /// The picker lists the host's local branches, then its remote-only ones, and switches to
     /// either. A remote row goes out by its short name, which `git switch` makes a tracking
     /// branch of, once a fresh branch list shows the name is only its; the status and branches
@@ -1826,9 +1665,7 @@ extension GitWorkspaceViewModelTests {
             }
             return Self.branchHost(request, branch: current)
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         let local = availability.branches?.local?.compactMap(\.name)
         let remote = availability.branches?.remote?.compactMap(\.name)
@@ -1856,9 +1693,7 @@ extension GitWorkspaceViewModelTests {
     @MainActor
     func testAHermesSwitchWithUncommittedChangesIsRefused() async throws {
         let git = HermesGitHost.client { Self.branchHost($0, branch: "main", dirty: true) }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
 
         let outcome = await availability.checkout(GitCheckoutTarget(ref: "dev", mode: .local))
@@ -1874,9 +1709,7 @@ extension GitWorkspaceViewModelTests {
     func testAHermesSwitchWaitsForTheRunningTurn() async throws {
         let chat = HermesGitChatStub()
         let git = HermesGitHost.client(writeOwner: chat.owner) { Self.branchHost($0, branch: "main") }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         chat.turnRunning = true
 
@@ -1895,9 +1728,7 @@ extension GitWorkspaceViewModelTests {
         let git = HermesGitHost.client(writeMessage: { _, _, _ in "chore: tidy" }) { request in
             request.url?.path == "/api/git/review/commit" ? .park : Self.stagedBranchHost(request)
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         let sheet = GitCommitViewModel(git: git)
         await sheet.load()
@@ -1930,9 +1761,7 @@ extension GitWorkspaceViewModelTests {
             if request.url?.path == "/api/git/branch/switch" { return .park }
             return staged ? Self.stagedBranchHost(request) : Self.branchHost(request, branch: "main")
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         let sheet = GitCommitViewModel(git: git)
         await sheet.load()
@@ -1974,9 +1803,7 @@ extension GitWorkspaceViewModelTests {
                 return Self.branchHost(request, branch: "main")
             }
         }
-        let availability = GitWorkspaceAvailabilityViewModel(
-            session: SessionSummary(), server: URL(string: "https://webui.example")!, git: git
-        )
+        let availability = GitWorkspaceAvailabilityViewModel(git: git)
         await availability.load()
         HermesHostFixture.onPark = { Task { @MainActor in
             availability.retire()

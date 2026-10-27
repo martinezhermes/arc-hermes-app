@@ -256,7 +256,8 @@ struct SessionListView: View {
             .sheet(item: $settingsPresentation, onDismiss: { returnRefreshID = UUID() }) { presentation in
                 NavigationStack {
                     SettingsView(authManager: authManager, server: server,
-                                 initialScrollTarget: presentation.scrollTarget)
+                                 initialScrollTarget: presentation.scrollTarget,
+                                 onDefaultProfileSelected: viewModel.adoptDefaultProfileSelection)
                         .toolbar {
                             ToolbarItem(placement: .confirmationAction) {
                                 Button("Close", systemImage: "xmark") {
@@ -434,6 +435,7 @@ struct SessionListView: View {
             .onChange(of: viewModel.isLoading) {
                 refreshAfterForegroundReturnIfReady()
             }
+            .onChange(of: viewModel.sessions.count, initial: true) { LaunchSignpost.end(rows: viewModel.sessions.count) }
             .onChange(of: didCompleteInitialLoad) {
                 refreshAfterForegroundReturnIfReady()
             }
@@ -556,15 +558,10 @@ struct SessionListView: View {
     /// Opens Settings → Notifications for a chat's one-time offer (#863). On compact
     /// width a fork or a chat under Settings → Archived Sessions can sit above the
     /// destination, and retargeting the destination leaves it on top. So compact pops
-    /// to the list first, and the list opens Settings once it is back on screen.
+    /// to the list first, and the list opens Notifications once it is back on screen.
     /// Regular width pops the detail column on every root selection already.
     private func showNotificationSettings() {
-        guard horizontalSizeClass != .regular, navigationState.destination != nil else {
-            selectDestination(.settings(.notifications))
-            return
-        }
-        opensNotificationSettingsOnReturn = true
-        navigationState.clearDestination()
+        settingsPresentation = SettingsPresentation(scrollTarget: .notifications)
     }
 
     /// A bot deep link opens this server's Bots inbox, which owns resolving it. Only
@@ -613,7 +610,7 @@ struct SessionListView: View {
 
             content
         }
-        .safeAreaBar(edge: .top, spacing: 0) {
+        .adaptiveTopBar {
             SessionListTopChrome(
                 headerLogoColor: selectedHeaderLogoColor,
                 headerLogoText: serverIdentity?.headerLogoText ?? "",
@@ -642,6 +639,9 @@ struct SessionListView: View {
                 .padding(.bottom, 8)
             }
         }
+        // The Move question waits for this list: hidden under a pushed chat or a closed sidebar.
+        .onAppear { MoveToHermesNotices.shared.noteChatList(of: server.absoluteString, onScreen: true) }
+        .onDisappear { MoveToHermesNotices.shared.noteChatList(of: server.absoluteString, onScreen: false) }
     }
 
     @ViewBuilder
@@ -698,13 +698,15 @@ struct SessionListView: View {
     private func utilityDestination(_ destination: SessionListUtilityDestination) -> some View {
         Group {
             switch destination {
-            case .settings(let scrollTo):
+            case .settings(let anchor):
                 SettingsView(
                     authManager: authManager,
                     server: server,
-                    initialScrollTarget: scrollTo,
+                    initialScrollTarget: anchor,
                     onDefaultProfileSelected: viewModel.adoptDefaultProfileSelection
                 )
+            case .notificationSettings:
+                SettingsNotificationsPage(server: server)
             case .bots:
                 BotsInboxView(server: server, pendingDestination: $pendingBotDestination)
             case .tasks:
@@ -759,6 +761,8 @@ struct SessionListView: View {
                 TipJarCard()
                     .sessionsScreenListRow()
             }
+
+            MoveToHermesBanner(serverID: server.absoluteString)
 
             if viewModel.isViewingCachedData {
                 OfflineCacheBanner()
@@ -842,7 +846,7 @@ struct SessionListView: View {
         .scrollPosition(id: $sidebarScrollPosition)
         // Native scroll-edge treatment: rows fading under the pinned chrome
         // get the system soft edge instead of a material slab (#21).
-        .scrollEdgeEffectStyle(.soft, for: .top)
+        .nativeSoftScrollEdges(.top)
         .background(Color(.systemBackground))
         .scrollDismissesKeyboard(.interactively)
         // Disclosure subrows are real List rows; drive their fold from the List
@@ -1601,6 +1605,14 @@ struct SessionListView: View {
     }
 
     private func selectDestination(_ utility: SessionListUtilityDestination) {
+        if case .settings(let anchor) = utility {
+            settingsPresentation = SettingsPresentation(scrollTarget: anchor)
+            return
+        }
+        if case .notificationSettings = utility {
+            settingsPresentation = SettingsPresentation(scrollTarget: .notifications)
+            return
+        }
         viewModel.invalidateSessionOpening()
         navigationState.select(utility)
         if usesCompactSidebar { isSidebarPresented = false }
@@ -1801,10 +1813,9 @@ struct PendingNewChatRoute: Identifiable, Hashable {
 }
 
 enum SessionListUtilityDestination: Hashable, Identifiable {
-    /// Optional section to scroll to when Settings opens — "Manage Servers"
-    /// passes `.servers`, a plain avatar tap passes `nil` (#283), and the chat's
-    /// notification offer passes `.notifications` (#863).
     case settings(SettingsScrollAnchor?)
+    /// Settings → Notifications on its own, for the chat's one-time offer (#863).
+    case notificationSettings
     /// The direct-Hermes Bots inbox, shown while Bot Mode (beta) is on.
     case bots
     case tasks

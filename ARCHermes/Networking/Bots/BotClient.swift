@@ -86,6 +86,10 @@ import Foundation
         } onCancel: { task.cancel() }
     }
 
+    func keepPlatformNote(profile: String) async {
+        await http.keepPlatformNote(profile: profile)
+    }
+
     func deleteProfile(_ name: String) async throws {
         guard gateway.isAttached(consumerID), BotProfileName.isValid(name) else { throw BotFailure.stale }
         let attempt = self.attempt
@@ -125,9 +129,10 @@ import Foundation
 
     /// Listen's speech (#1072). The host may install its TTS engine on first use, so this runs
     /// on the provisioning deadline. Its reply is read bounded, like a download, and decoded off
-    /// the main actor. Not sent once this screen closes; the caller drops a late result itself.
+    /// the main actor. Plain HTTP, so it needs no attached socket and reaches the host while the
+    /// chat reconnects. A close or reconnect during its sign-in stops the send; the caller drops
+    /// a late result itself.
     func speech(text: String, profile: String) async throws -> Data {
-        guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
         let attempt = self.attempt
         let request = try HermesREST.speak(text: text, profile: profile).request(base: http.connection.address)
         return try await http.authorized(request, deadline: .provisioning,
@@ -155,11 +160,46 @@ import Foundation
         return page
     }
 
+    func scheduledSessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage {
+        guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
+        let attempt = self.attempt
+        let data = try await http.data(.sessionList(profile: profile, offset: offset, archived: archived, scheduled: true),
+                                       validateDispatch: { try self.checkOwner(attempt) })
+        try checkOwner(attempt)
+        guard let page = try? JSONDecoder().decode(HermesSessionPage.self, from: data) else { throw BotFailure.unsupported }
+        return page
+    }
+
+    func searchScheduledSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult] {
+        guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
+        let attempt = self.attempt
+        let data = try await http.data(.sessionSearch(query: query, profile: profile, limit: limit, scheduled: true),
+                                       validateDispatch: { try self.checkOwner(attempt) })
+        try checkOwner(attempt)
+        guard let search = try? JSONDecoder().decode(HermesSessionSearch.self, from: data) else { throw BotFailure.unsupported }
+        return search.results
+    }
+
+    func sessionScanPage(profile: String, offset: Int) async throws -> HermesScanPage {
+        guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
+        let attempt = self.attempt
+        let data = try await http.data(.sessionScan(profile: profile, offset: offset),
+                                       validateDispatch: { try self.checkOwner(attempt) })
+        try checkOwner(attempt)
+        guard let page = try? JSONDecoder().decode(HermesScanPage.self, from: data) else { throw BotFailure.unsupported }
+        return page
+    }
+
+    /// Writes `change` and returns the title the host kept. Behind the write fence (#1300) it reads
+    /// the session's revision first, since any activity moves it. A 400's reason is a
+    /// `HermesSessionRefusal`, a fence 409 or an owner's 404 or 403 a `HermesSessionFenceRefusal`;
+    /// neither is resent.
     @discardableResult
     func updateSession(_ change: HermesSessionChange, key: String, profile: String) async throws -> String? {
         guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
         let attempt = self.attempt
-        let reply = try await http.reply(.updateSession(key: key, profile: profile, change: change),
+        let identity = try await writeIdentity(key: key, profile: profile, attempt: attempt)
+        let reply = try await http.reply(.updateSession(key: key, profile: profile, change: change, identity: identity),
                                          validateDispatch: { try self.checkOwner(attempt) })
         try checkOwner(attempt)
         let body = try? JSONDecoder().decode(BotJSON.self, from: reply.body)
@@ -168,9 +208,31 @@ import Foundation
                !detail.isEmpty {
                 throw HermesSessionRefusal(message: detail)
             }
+            if let refusal = HermesSessionFenceRefusal(detail: body?["detail"].text) { throw refusal }
             throw BotFailure.rejected(reply.status)
         }
         return body?["title"].text
+    }
+
+    /// The identity a write to `key` carries, from the session's mutation snapshot. Nil on a host
+    /// from before the fence, whose catch-all answers the route 404: `hermes dashboard`'s
+    /// "No such API endpoint", or headless `hermes serve`'s "Headless backend…".
+    private func writeIdentity(key: String, profile: String, attempt: Int) async throws -> HermesSessionWriteIdentity? {
+        let reply = try await http.reply(.sessionMutationSnapshot(key: key, profile: profile),
+                                         validateDispatch: { try self.checkOwner(attempt) })
+        try checkOwner(attempt)
+        let body = try? JSONDecoder().decode(BotJSON.self, from: reply.body)
+        switch reply.status {
+        case 200:
+            guard body?["exists"] != .bool(false) else { throw BotFailure.rejected(404) }
+            guard let revision = body?["runtime_revision"].integer, revision >= 0 else { throw BotFailure.unsupported }
+            return HermesSessionWriteIdentity(expectedRevision: revision)
+        case 404 where body?["detail"].text?.hasPrefix("No such API endpoint") == true
+            || body?["error"].text?.hasPrefix("Headless backend") == true:
+            return nil
+        default:
+            throw BotFailure.rejected(reply.status)
+        }
     }
 
     func exportSession(key: String, profile: String) async throws -> Data {
@@ -198,19 +260,26 @@ import Foundation
     }
 
     /// A refused payload's reason is the host's `detail`: its text, or the first of its
-    /// `errors`, one per session it refused.
+    /// `errors`, one per session it refused, each kept in the refusal's `entries`. A write fence
+    /// 409 (#1300) is a `HermesSessionFenceRefusal`.
     func importSessions(body: Data) async throws -> BotJSON {
         guard gateway.isAttached(consumerID) else { throw BotFailure.stale }
         let attempt = self.attempt
-        let reply = try await http.reply(.importSessions(body: body), deadline: .provisioning,
+        let reply = try await http.reply(.importSessions(body: body, identity: HermesSessionWriteIdentity(expectedRevision: 0)),
+                                         deadline: .provisioning,
                                          validateDispatch: { try self.checkOwner(attempt) })
         try checkOwner(attempt)
         let body = try? JSONDecoder().decode(BotJSON.self, from: reply.body)
         guard reply.status == 200 else {
-            let detail = body?["detail"].text ?? body?["detail"]["errors"].list?.first?["error"].text
-            if reply.status == 400, let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
-                throw HermesSessionRefusal(message: detail)
+            let entries = (body?["detail"]["errors"].list ?? []).compactMap { error -> HermesSessionRefusal.Entry? in
+                guard let index = error["index"].integer, let reason = error["error"].text else { return nil }
+                return HermesSessionRefusal.Entry(index: index, sessionID: error["session_id"].text, reason: reason)
             }
+            let detail = body?["detail"].text ?? entries.first?.reason
+            if reply.status == 400, let detail = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+                throw HermesSessionRefusal(message: detail, entries: entries)
+            }
+            if reply.status == 409, let refusal = HermesSessionFenceRefusal(detail: body?["detail"].text) { throw refusal }
             throw BotFailure.rejected(reply.status)
         }
         guard let body, body.fields != nil else { throw BotFailure.unsupported }

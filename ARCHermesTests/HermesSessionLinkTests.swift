@@ -34,6 +34,13 @@ import XCTest
         }
     }
 
+    /// A subagent's push asks for its parent (#1177); every other link opens its own key.
+    func testASubagentLinkKeepsItsParentStep() throws {
+        let sent = HermesSessionDestination(server: hermes, profile: nil, key: "child", opensParent: true)
+        XCTAssertEqual(HermesSessionDestination(url: try XCTUnwrap(ARCHermesDeepLink.sessionURL(for: sent))), sent)
+        XCTAssertEqual(HermesSessionDestination(url: try url("server=https://hermes.example&id=child"))?.opensParent, false)
+    }
+
     /// The registry keeps normalized addresses, so a link written with a trailing slash or a
     /// dashboard path still names its configured server.
     func testParsingNormalizesTheServer() throws {
@@ -190,6 +197,242 @@ import XCTest
             XCTAssertEqual(covers.navigation.destination, destination)
             XCTAssertNotNil(covers.renaming)
             XCTAssertNotNil(covers.navigation.destination)
+        }
+    }
+}
+
+/// A moved webui server's old links (#1217): where the session actually is on its Hermes
+/// destination first, the webui server only after every Profile lacks it, runs on the webui
+/// server where they run, and bare links only where no other server could own them.
+@MainActor final class MovedWebuiLinkTests: XCTestCase {
+    private let hermes = URL(string: "https://hermes.example")!
+    private let studio = URL(string: "https://studio.example:9119")!
+    private let webui = URL(string: "https://webui.example")!
+    private let otherWebui = URL(string: "https://other-webui.example")!
+
+    private func account(_ server: URL, _ kind: ServerKind, moved sources: [URL] = []) -> ServerAccount {
+        ServerAccount(id: server.absoluteString, urlString: server.absoluteString, displayName: "", initials: "",
+                      headerLogoColorHex: HeaderLogoColor.defaultHex, createdAt: Date(timeIntervalSince1970: 0),
+                      updatedAt: Date(timeIntervalSince1970: 0), kind: kind,
+                      movedWebuiServers: sources.map {
+                          MovedWebuiServer(sourceServerID: $0.absoluteString,
+                                           profiles: [MovedWebuiProfile(source: "default", destination: .hermes(profile: "work"))])
+                      })
+    }
+
+    private func moved(to destination: URL, from sources: [URL]) -> ServerAccount {
+        account(destination, .hermes, moved: sources)
+    }
+
+    /// A link naming the moved server opens on its destination with no Profile, so the lookup
+    /// reads every Profile for where the session is, never Review's mapping, and the webui server
+    /// is only its fallback.
+    func testAMovedServersLinkOpensOnItsDestinationFirst() throws {
+        let servers = [moved(to: hermes, from: [webui]), account(webui, .webui)]
+        let expected = HermesSessionDestination(server: hermes, profile: nil, key: "abc", movedFrom: webui)
+
+        var links = PendingLinks()
+        XCTAssertEqual(links.open(WebuiPushDestination(server: webui, sessionID: "abc"), state: .loggedIn(server: webui),
+                                  servers: servers), servers[0])
+        XCTAssertEqual(links.hermesSession, expected)
+        XCTAssertNil(links.webuiPush)
+
+        let named = try XCTUnwrap(HermesSessionDestination(url: XCTUnwrap(URL(
+            string: "\(ARCHermesDeepLink.scheme)://session?server=https://webui.example&id=abc&profile=default"))))
+        links = PendingLinks()
+        XCTAssertNil(links.open(named, state: .loggedIn(server: hermes), servers: servers))
+        XCTAssertEqual(links.hermesSession, expected, "Its webui Profile is no Hermes Profile")
+    }
+
+    /// The fallback opens on the webui server and never redirects again; once that server is
+    /// removed, the link has no fallback and the list says the chat is gone.
+    func testTheFallbackOpensOnTheWebuiServerWithoutComingBack() throws {
+        let link = HermesSessionDestination(server: hermes, profile: nil, key: "abc", movedFrom: webui)
+        let fallback = try XCTUnwrap(WebuiPushDestination(url: XCTUnwrap(MovedWebuiRoute.fallback(for: link))))
+        XCTAssertEqual(fallback, WebuiPushDestination(server: webui, sessionID: "abc", opensOnSource: true))
+
+        let servers = [moved(to: hermes, from: [webui]), account(webui, .webui)]
+        var links = PendingLinks()
+        XCTAssertEqual(links.open(fallback, state: .loggedIn(server: hermes), servers: servers), servers[1])
+        XCTAssertEqual(links.webuiPush, fallback)
+        XCTAssertNil(links.hermesSession)
+
+        let removed = [moved(to: hermes, from: [webui])]
+        XCTAssertNil(links.open(fallback, state: .loggedIn(server: hermes), servers: removed))
+        let gone = try XCTUnwrap(links.hermesSession)
+        XCTAssertNil(gone.movedFrom)
+        XCTAssertNil(MovedWebuiRoute.fallback(for: gone))
+        XCTAssertNil(MovedWebuiRoute.fallback(for: HermesSessionDestination(server: hermes, profile: nil, key: "abc")))
+    }
+
+    /// The record outlives the webui entry: its links still reach the destination, and wait for
+    /// the destination's sign-in.
+    func testARemovedWebuiServersLinksReachItsDestination() throws {
+        let servers = [moved(to: hermes, from: [webui])]
+        let expected = HermesSessionDestination(server: hermes, profile: nil, key: "abc")
+        let named = try XCTUnwrap(HermesSessionDestination(url: XCTUnwrap(URL(
+            string: "\(ARCHermesDeepLink.scheme)://session?server=https://webui.example&id=abc"))))
+
+        var links = PendingLinks()
+        XCTAssertNil(links.open(named, state: .loggedOut(server: hermes), servers: servers))
+        XCTAssertEqual(links.hermesSession, expected, "Held for the destination's sign-in")
+        XCTAssertNil(links.reroute(state: .loggedIn(server: hermes), servers: servers, isBotModeEnabled: true))
+        XCTAssertEqual(links.hermesSession, expected)
+
+        links = PendingLinks()
+        XCTAssertEqual(links.open(WebuiPushDestination(server: webui, sessionID: "abc", opensOnSource: true),
+                                  state: .loggedIn(server: studio), servers: servers + [account(studio, .hermes)]),
+                       servers[0], "A run's link has nowhere else to go")
+        XCTAssertEqual(links.hermesSession, expected)
+    }
+
+    /// Removing the destination removes its record, and every route is today's again.
+    func testRemovingTheDestinationRestoresTodaysRoutes() throws {
+        var links = PendingLinks()
+        let push = WebuiPushDestination(server: webui, sessionID: "abc")
+        let unmoved = [account(hermes, .hermes), account(webui, .webui)]
+        XCTAssertEqual(links.open(push, state: .loggedIn(server: hermes), servers: unmoved), unmoved[1])
+        XCTAssertEqual(links.webuiPush, push)
+
+        let named = try XCTUnwrap(HermesSessionDestination(url: XCTUnwrap(URL(
+            string: "\(ARCHermesDeepLink.scheme)://session?server=https://webui.example&id=abc"))))
+        links = PendingLinks()
+        XCTAssertNil(links.open(named, state: .loggedIn(server: hermes), servers: [account(hermes, .hermes)]))
+        XCTAssertNil(links.hermesSession)
+        XCTAssertNil(links.webuiPush)
+    }
+
+    /// A Live Activity's tap or a push names a run on the webui server: it opens there, where its
+    /// stream and approval card are, while that server is configured.
+    func testARunsLinkStaysOnItsRetainedWebuiServer() throws {
+        let servers = [moved(to: hermes, from: [webui]), account(webui, .webui)]
+        var components = try XCTUnwrap(URLComponents(
+            url: XCTUnwrap(ARCHermesDeepLink.webuiSessionURL(server: webui, sessionID: "abc")), resolvingAgainstBaseURL: false))
+        components.queryItems?.append(URLQueryItem(name: "activity", value: "run-1"))
+        let tap = try XCTUnwrap(WebuiPushDestination(url: XCTUnwrap(components.url)))
+        XCTAssertTrue(tap.opensOnSource)
+
+        for link in [tap, WebuiPushDestination(server: webui, sessionID: "abc", opensOnSource: true)] {
+            var links = PendingLinks()
+            XCTAssertEqual(links.open(link, state: .loggedIn(server: hermes), servers: servers), servers[1])
+            XCTAssertEqual(links.webuiPush, link)
+            XCTAssertNil(links.hermesSession)
+        }
+    }
+
+    /// A bare `session?id=` link opens on a destination only when no other server could own it,
+    /// whichever server is active.
+    func testABareLinkOpensOnlyWhereNoOtherServerCouldOwnIt() {
+        func route(_ servers: [ServerAccount], active: URL?) -> MovedWebuiRoute.Outcome<HermesSessionDestination> {
+            MovedWebuiRoute.bareSession("abc", active: active, servers: servers)
+        }
+        let unmoved = [account(hermes, .hermes), account(webui, .webui)]
+        XCTAssertEqual(route(unmoved, active: hermes), .webui(.switchServer(unmoved[1])), "No move: today's route")
+        XCTAssertEqual(route(unmoved, active: webui), .webui(.stay))
+
+        XCTAssertEqual(route([moved(to: hermes, from: [webui]), account(webui, .webui)], active: webui),
+                       .hermes(HermesSessionDestination(server: hermes, profile: nil, key: "abc", movedFrom: webui)))
+        XCTAssertEqual(route([moved(to: hermes, from: [webui])], active: hermes),
+                       .hermes(HermesSessionDestination(server: hermes, profile: nil, key: "abc")))
+        XCTAssertEqual(route([moved(to: hermes, from: [webui, otherWebui]), account(webui, .webui)], active: hermes),
+                       .hermes(HermesSessionDestination(server: hermes, profile: nil, key: "abc", movedFrom: webui)))
+
+        let withUnmoved = [moved(to: hermes, from: [webui]), account(webui, .webui), account(otherWebui, .webui)]
+        for active in [hermes, webui, otherWebui] {
+            XCTAssertEqual(route(withUnmoved, active: active), .refuse, "An unmoved webui server could own it")
+        }
+        let twoDestinations = [moved(to: hermes, from: [webui]), moved(to: studio, from: [otherWebui])]
+        XCTAssertEqual(route(twoDestinations, active: hermes), .refuse, "The active destination breaks no tie")
+        let twoFallbacks = [moved(to: hermes, from: [webui, otherWebui]), account(webui, .webui), account(otherWebui, .webui)]
+        XCTAssertEqual(route(twoFallbacks, active: webui), .refuse, "Either webui server could be its fallback")
+    }
+}
+
+/// Upstream chat-identity guarantees exercised through ARC's unified drawer destination.
+@MainActor final class HermesHomeIntegrationTests: XCTestCase {
+    private let server = URL(string: "https://arc-integration.example")!
+
+    func testNewSessionIdentityStaysWithItsCurrentSelection() {
+        let connection = BotConnection(id: UUID(), name: "Fixture", address: server,
+                                       username: "fixture", password: "fixture-only")
+        let first = HermesSessionChat(server: server, connection: connection, target: .new(profile: "default"))
+        let second = HermesSessionChat(server: server, connection: connection, target: .new(profile: "default"))
+        let identity = ChatDraftKey.hermesSession(server: server, connectionID: connection.id, profile: "default", key: "fresh")
+        var covers = HermesSessionListCovers()
+        covers.chat = first
+        covers.identifyChat(first.id, draftKey: identity)
+        XCTAssertEqual(covers.selectedSessionID, "fresh")
+        covers.chat = second
+        XCTAssertNil(covers.selectedSessionID)
+        covers.identifyChat(first.id, draftKey: identity)
+        for invalid in [
+            ChatDraftKey.hermesSession(server: URL(string: "https://other.example")!, connectionID: connection.id, profile: "default", key: "fresh"),
+            .hermesSession(server: server, connectionID: UUID(), profile: "default", key: "fresh"),
+            .hermesSession(server: server, connectionID: connection.id, profile: "other", key: "fresh")
+        ] {
+            covers.identifyChat(second.id, draftKey: invalid)
+        }
+        XCTAssertNil(covers.selectedSessionID, "Old chats and other scopes cannot supply this selection's identity")
+        covers.closeChat(for: SessionSummary(sessionId: "fresh", profile: "default"))
+        XCTAssertEqual(covers.chat?.id, second.id)
+        covers.identifyChat(second.id, draftKey: identity)
+        covers.closeChat(for: SessionSummary(sessionId: "fresh", profile: "other"))
+        XCTAssertEqual(covers.chat?.id, second.id)
+        covers.closeChat(for: SessionSummary(sessionId: "fresh", profile: "default"))
+        XCTAssertNil(covers.chat)
+        XCTAssertNil(covers.selectedSessionID)
+    }
+
+    func testRebuiltNewSessionReopensTheSessionItsFirstPromptCreated() {
+        let connection = BotConnection(id: UUID(), name: "Fixture", address: server,
+                                       username: "fixture", password: "fixture-only")
+        var started = HermesSessionChat(server: server, connection: connection, target: .new(profile: "default"))
+        started.autoStartsVoiceInput = true
+        var covers = HermesSessionListCovers()
+        covers.chat = started
+        XCTAssertEqual(covers.building(started).target, .new(profile: "default"))
+        covers.identifyChat(started.id, draftKey: .hermesSession(server: server, connectionID: connection.id,
+                                                                 profile: "default", key: "fresh"))
+        let rebuilt = covers.building(started)
+        XCTAssertEqual(rebuilt.target, .session(profile: "default", key: "fresh"))
+        XCTAssertEqual(rebuilt.id, started.id, "The live chat keeps its view identity")
+        XCTAssertFalse(rebuilt.autoStartsVoiceInput, "A rebuild doesn't dictate again")
+    }
+
+    func testConfirmedSearchRowRemovalClosesOnlyItsOwnChat() {
+        let connection = BotConnection(id: UUID(), name: "Fixture", address: server,
+                                       username: "fixture", password: "fixture-only")
+        let row = SessionSummary(sessionId: "chat-1", profile: "default",
+                                 hermes: .init(lineageRoot: "root-1", unread: false, preview: nil))
+        var covers = HermesSessionListCovers()
+        let newer = HermesSessionChat(server: server, connection: connection,
+            target: .session(profile: "default", key: "chat-2"))
+        covers.chat = newer
+        covers.closeChat(for: row)
+        XCTAssertEqual(covers.chat, newer, "A delayed mutation must not close a different chat")
+        covers.chat = HermesSessionChat(server: server, connection: connection,
+            target: .session(profile: "other", key: "chat-1"))
+        covers.closeChat(for: row)
+        XCTAssertNotNil(covers.chat, "Session keys are scoped to their Profile")
+        covers.chat = HermesSessionChat(server: server, connection: connection,
+            target: .session(profile: "default", key: "chat-1"))
+        covers.closeChat(for: row)
+        XCTAssertNil(covers.chat, "Search rows do not have to be in the loaded pages")
+    }
+
+    func testShortcutReplacesScheduledDetailAndClosesOnlyTheCompactDrawer() {
+        let connection = BotConnection(id: UUID(), name: "Fixture", address: server,
+                                       username: "fixture", password: "fixture-only")
+        let entry = HermesSessionListEntry(server: server, connection: connection, profile: "default")
+        for compact in [true, false] {
+            var covers = HermesSessionListCovers()
+            covers.navigation.isCompact = compact
+            covers.showingScheduled = true
+            let request = HermesNewChatDestination(server: server, profile: "research")
+            XCTAssertTrue(covers.open(request, on: entry, listed: "default", isLive: true))
+            XCTAssertEqual(covers.navigation.destination?.chat?.target, .new(profile: "research"))
+            XCTAssertFalse(covers.showingScheduled)
+            XCTAssertEqual(covers.navigation.isSidebarPresented, !compact)
         }
     }
 }

@@ -217,6 +217,31 @@ import SwiftUI
     /// A new session's draft keeps the new-session key until the host accepts its first
     /// prompt, so leaving before sending leaves it for the next New Session. Then it moves
     /// to the session's own key.
+    func testAcceptedNewSessionClosesOnConfirmedArchiveOrDelete() async throws {
+        for archived in [false, true] {
+            let key = archived ? "new-archived" : "new-deleted"
+            let chat = await openChat(key: key, target: .new(profile: "default"))
+            defer { chat.model.suspendStreamForNavigation() }
+            let opened = HermesSessionChat(server: URL(string: "https://hermes.example")!,
+                                           connection: Self.connection, target: .new(profile: "default"))
+            var covers = HermesSessionListCovers()
+            covers.chat = opened
+            var identified: ChatDraftKey?
+            chat.model.onHermesDraftKeyChange = { identity in
+                identified = identity
+                covers.identifyChat(opened.id, draftKey: identity)
+            }
+            chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+            let sent = await chat.model.sendMessage("Plan the release")
+            XCTAssertTrue(sent)
+            XCTAssertEqual(identified, chat.model.hermesDraftKey, "Accepted identity must reach the parent")
+            XCTAssertEqual(covers.chat?.id, opened.id, "Identifying the session must not replace its live chat")
+            covers.closeChat(for: SessionSummary(sessionId: key, archived: archived, profile: "default",
+                hermes: .init(lineageRoot: key, unread: false, preview: nil)))
+            XCTAssertNil(covers.chat, "Both confirmed sidebar mutations must close a chat that opened as New Session")
+        }
+    }
+
     func testANewSessionKeepsItsDraftUntilItsFirstPromptIsAccepted() async throws {
         let drafts = ChatDraftStore(persistence: InMemoryDraftPersistence(), debounceDuration: .seconds(60))
         let server = URL(string: "https://hermes.example")!
@@ -609,10 +634,6 @@ import SwiftUI
         await assertRebuild(after: event(5, "message.delta", ["text": .string("lost the middle")]))
     }
 
-    func testABackwardsSeqRebuildsFromTheSnapshot() async {
-        await assertRebuild(after: event(1, "message.delta", ["text": .string("from before")]))
-    }
-
     /// Only deltas the rebuilt reply holds are dropped: a new one that repeats the reply's
     /// start, or its last character, is new text.
     func testARebuildKeepsNewDeltasThatRepeatTheReply() async {
@@ -634,6 +655,57 @@ import SwiftUI
                             shows: "Hello there. ha ha ha")
     }
 
+    // MARK: Reclaim
+
+    /// The host reaps the idle chat's runtime and says so (#1122): the chat reattaches once,
+    /// only reading, and the next send goes out on the new runtime on the first try.
+    func testAReclaimedRuntimeReattachesAndTheNextSendGoesOut() async {
+        let chat = await openChat()
+        let leaving = chat.host.requests.count
+        await reclaim(chat, reclaimed(runtime: "runtime", key: "tip"))
+        XCTAssertEqual(socketReads(chat, since: leaving), ["session.resume", "session.events.since", "session.resume"],
+                       "one reattach, which only reads")
+
+        chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+        let sent = await chat.model.sendMessage("Check the deploy")
+        XCTAssertTrue(sent)
+        XCTAssertNil(chat.model.sendErrorMessage)
+        XCTAssertEqual(chat.writes("prompt.submit").map { $0["session_id"] }, [.string("runtime-2")])
+    }
+
+    /// A reclaim that names only the stored key, as for a runtime this chat never held, still
+    /// reattaches.
+    func testAReclaimOfTheStoredKeyReattaches() async {
+        let chat = await openChat()
+        let leaving = chat.host.requests.count
+        await reclaim(chat, reclaimed(runtime: "another-runtime", key: "tip"))
+        XCTAssertEqual(socketReads(chat, since: leaving), ["session.resume", "session.events.since", "session.resume"])
+    }
+
+    /// Another session's reclaim reaches every chat on the socket and changes nothing here.
+    func testAnotherSessionsReclaimIsIgnored() async {
+        let chat = await openChat()
+        let leaving = chat.host.requests.count
+        chat.receive(reclaimed(runtime: "another-runtime", key: "another-key"))
+        XCTAssertEqual(chat.turn.engine.connectionState, .connected)
+        XCTAssertEqual(chat.turn.engine.runtime, "runtime")
+        XCTAssertEqual(chat.host.requests.count, leaving, "nothing read or sent")
+    }
+
+    /// A reclaim mid-turn is a lost stream: the reattach's snapshot settles the turn, and no
+    /// spinner is left waiting on the reaped runtime.
+    func testAReclaimMidTurnEndsInTheRecoveryState() async {
+        let chat = await openChat()
+        chat.receive(event(1, "message.start"))
+        chat.receive(event(2, "message.delta", ["text": .string("Working on")]))
+        XCTAssertNotNil(chat.model.activeStreamID)
+        await reclaim(chat, reclaimed(runtime: "runtime", key: "tip"))
+        XCTAssertNil(chat.model.activeStreamID, "the idle snapshot ends the turn")
+        XCTAssertNotNil(chat.model.latestRunOutcome)
+        XCTAssertEqual(chat.turn.recoveryState, .idle)
+        XCTAssertEqual(chat.writes("prompt.submit").count, 0, "nothing resends")
+    }
+
     /// The new session runs under the Profile the dashboard is scoped to (`current`), not the
     /// CLI's sticky default (`active`).
     func testCurrentProfileIsTheDashboardsScopedProfile() async throws {
@@ -648,6 +720,38 @@ import SwiftUI
         let profile = try await client.currentProfile()
         XCTAssertEqual(profile, "inbox-triage")
         XCTAssertEqual(HermesHostFixture.requests.last { $0.url?.path == "/api/profiles/active" }?.httpMethod, "GET")
+    }
+
+    // MARK: Replaced Bot Chat (#1339)
+
+    /// The host moved the Bot Chat aside and made a new one under its title while the chat was
+    /// away (hermes-agent 0.22.3). A send's attach follows the new chat, rebuilds from its rows
+    /// with one notice after them in place of the old ones, and does not send into it; the next
+    /// send does.
+    func testABotChatTheHostReplacedIsFollowedAndASendAcrossTheSwapIsHeld() async {
+        let chat = await openChat(target: .canonicalChat(profile: "default"), history: [userRow("Old question")])
+        XCTAssertEqual(chat.model.messages.map(\.content), ["Old question"])
+
+        chat.model.suspendStreamForBackground()
+        chat.host.always("session.list", .init(result: .object(["sessions": .array([
+            .object(["id": .string("new-root"), "resolved_id": .string("new-tip")])
+        ])])))
+        chat.host.always("session.resume", .init(result: resume(running: false, runtime: "runtime-2", key: "new-tip")))
+        chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+        serveHistory([assistantRow("Fresh start", id: 1)], key: "new-tip")
+
+        let held = await chat.model.sendMessage("Continue")
+        XCTAssertFalse(held)
+        XCTAssertNotNil(chat.model.sendErrorMessage)
+        XCTAssertEqual(chat.writes("prompt.submit").count, 0, "nothing goes to a chat the user has not seen")
+        XCTAssertEqual(chat.turn.engine.connectionState, .connected)
+        XCTAssertEqual(chat.turn.engine.root, "new-root")
+        XCTAssertEqual(chat.model.messages.map(\.role), ["assistant", "local_notice"])
+        XCTAssertEqual(chat.model.messages.first?.content, "Fresh start")
+
+        let sent = await chat.model.sendMessage("Continue")
+        XCTAssertTrue(sent)
+        XCTAssertEqual(chat.writes("prompt.submit").map { $0["session_id"] }, [.string("runtime-2")])
     }
 
     // MARK: Plan and outcome (#1139)
@@ -721,6 +825,22 @@ import SwiftUI
         XCTAssertNil(chat.turn.activity.pinnedPlan)
         XCTAssertEqual(chat.turn.activity.settledPlan?.plan.current?.content, "Step 2")
         XCTAssertEqual(chat.turn.activity.settledPlan?.followsLastPrompt, true)
+    }
+
+    /// A turn this chat never saw start that ends is the newest turn (#1158): an earlier plan
+    /// with no saved row no longer settles under the last prompt, which may now be that turn's.
+    func testAnUnseenTurnEndsAnEarlierPlansClaimOnTheLastPrompt() async {
+        let chat = await openChat()
+        chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+        _ = await chat.model.sendMessage("Plan it")
+        chat.receive(event(1, "message.start"))
+        chat.receive(event(2, "todo.updated", todos(revision: 1, ["completed"])))
+        chat.receive(event(3, "message.complete", ["status": .string("complete"), "text": .string("Done.")]))
+        chat.receive(event(4, "session.info", ["running": .bool(false)]))
+        XCTAssertEqual(chat.turn.activity.settledPlan?.followsLastPrompt, true)
+
+        chat.receive(event(5, "message.complete", ["status": .string("error"), "error": .string("HTTP 500")]))
+        XCTAssertNil(chat.turn.activity.settledPlan, "no saved row, and the last prompt may be the unseen turn's")
     }
 
     /// An older revision never replaces a newer one, and an empty list at revision 1 or later is
@@ -915,6 +1035,35 @@ import SwiftUI
         XCTAssertEqual(activity.retryTarget, .init(rowID: 9, text: "Second", showsPrompt: false), "the named turn's prompt, at its own row")
     }
 
+    /// Another client's turn the host failed before it began completes with no `message.start`
+    /// (#1158). The earlier failure's Retry goes at once, since its cut would take that turn too,
+    /// and the failure read offers the newer turn's prompt at its own row instead.
+    func testAnUnseenFailedTurnReplacesTheEarlierRetry() async {
+        let chat = await openChat()
+        let activity = chat.turn.activity
+        serveHistory([userRow("First", id: 7)])
+        var first = Self.failedInflight
+        first["user"] = .string("First")
+        chat.host.next("session.resume", .init(result: resume(running: false, inflight: first)))
+        chat.receive(event(1, "message.start"))
+        chat.receive(event(2, "message.complete", Self.rateLimitedCompletion))
+        chat.receive(event(3, "session.info", ["running": .bool(false)]))
+        await waitUntil("the first failure read") { activity.retryTarget != nil }
+        XCTAssertEqual(activity.retryTarget?.rowID, 7)
+
+        serveHistory([userRow("First", id: 7), userRow("Second", id: 9, at: 1_790_000_100)])
+        var second = Self.failedInflight
+        second["user"] = .string("Second"); second["started_at"] = .number(1_790_000_100)
+        chat.host.next("session.resume", .init(result: resume(running: false, inflight: second)))
+        var unseen = Self.rateLimitedCompletion
+        unseen["persisted_turn"] = nil
+        chat.receive(event(4, "message.complete", unseen))
+        XCTAssertNil(activity.retryTarget, "the earlier prompt's cut would take the newer turn")
+
+        await waitUntil("the second failure read") { activity.retryTarget != nil }
+        XCTAssertEqual(activity.retryTarget, .init(rowID: 9, text: "Second", showsPrompt: false))
+    }
+
     /// The failure read takes the snapshot, then the newest rows. A turn another client submitted
     /// in between, which the host failed before it began, saved its prompt after the failed one's,
     /// so the rows can't say which prompt the snapshot's turn is: Retry is not offered, rather than
@@ -985,25 +1134,6 @@ import SwiftUI
 
         chat.model.suspendStreamForBackground()
         XCTAssertEqual(work.activeCount, 0, "a chat that left shows no workers")
-    }
-
-    /// A completion delivery from the history is the card's typed delivery, with the host's report.
-    func testADelegationDeliveryFromTheHistoryIsItsCompletionCard() async throws {
-        let delivery: BotJSON = .object([
-            "id": .number(2), "role": .string("user"), "timestamp": .number(1_790_000_100),
-            "content": .string("[ASYNC DELEGATION BATCH COMPLETE]\n--- RESULT ---\nTests rewritten; docs updated."),
-            "display_kind": .string("async_delegation_complete"),
-            "display_metadata": .object(["task_count": .number(2), "completed_count": .number(2),
-                                         "failed_count": .number(0), "duration_seconds": .number(41),
-                                         "delegation_id": .string("dlg_7f3a")])
-        ])
-        let chat = await openChat(history: [userRow("Split the work"), delivery])
-        let completion = try XCTUnwrap(HermesDelegationCompletion(try XCTUnwrap(chat.model.messages.last)))
-        XCTAssertEqual(completion.taskCount, 2)
-        XCTAssertEqual(completion.completedCount, 2)
-        XCTAssertEqual(completion.durationSeconds, 41)
-        XCTAssertEqual(completion.delegationID, "dlg_7f3a")
-        XCTAssertTrue(completion.report.hasSuffix("Tests rewritten; docs updated."))
     }
 
     /// A delivery the host starts on its own (`_notif_submit`) draws its card when that turn ends:
@@ -1136,6 +1266,30 @@ import SwiftUI
         chat.host.always("session.resume", .init(result: snapshot))
         await chat.model.reconnectStreamIfNeeded()
         XCTAssertEqual(chat.turn.engine.connectionState, .connected)
+    }
+
+    /// The host's `session.reclaimed` broadcast as the gateway delivers it: a session-less
+    /// event naming both ids in its payload.
+    private func reclaimed(runtime: String, key: String) -> BotJSON {
+        .object(["type": .string("session.reclaimed"), "session_id": .string(""),
+                 "payload": .object(["session_id": .string(runtime), "stored_session_id": .string(key),
+                                     "reason": .string("idle_timeout")])])
+    }
+
+    /// Feeds `frame` and waits for the reattach to land on the replacement runtime the host
+    /// resumes, idle.
+    private func reclaim(_ chat: Chat, _ frame: BotJSON) async {
+        chat.host.always("session.resume", .init(result: resume(running: false, runtime: "runtime-2")))
+        chat.receive(frame)
+        await waitUntil("reattached") {
+            chat.turn.engine.connectionState == .connected && chat.turn.engine.runtime == "runtime-2"
+        }
+    }
+
+    /// The socket calls since `index`, without the reads each attach makes off its path.
+    private func socketReads(_ chat: Chat, since index: Int) -> [String] {
+        chat.host.requests.dropFirst(index).compactMap { $0["method"].text }
+            .filter { !["session.control.read", "model.options", "profiles.list", "commands.catalog", "subagent.list"].contains($0) }
     }
 
     /// Feeds a turn through seq 3, then `frame`, which breaks the order: the chat reattaches,

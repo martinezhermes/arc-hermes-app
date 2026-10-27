@@ -191,14 +191,17 @@ import Observation
         XCTAssertEqual(chat.writes("prompt.submit").map { $0["session_id"] }, [.string("runtime")])
     }
 
-    /// The host's own compaction mid-turn reports the new key the same way.
-    func testAutoCompressionMidTurnAdoptsTheRotatedKey() async {
+    /// Pushes and run alerts name the session by its current stored key (#1177), so the open
+    /// chat's replies stay quiet and its alert opens it after the key moves.
+    func testPushPresenceAndTheRunAlertFollowTheRotatedKey() async {
         let chat = await openChat(threeTurns)
-        chat.receive(event(1, "message.start"))
-        chat.receive(event(2, "session.info", ["stored_session_id": .string("tip-2"), "running": .bool(true)]))
+        let server = URL(string: "https://hermes.example")!
+        XCTAssertEqual(chat.model.pushPresence, PushPresence.Viewer(server: server, sessionID: "tip"))
 
-        XCTAssertEqual(chat.turn.engine.storedKey, "tip-2")
-        XCTAssertEqual(chat.turn.engine.root, "tip")
+        chat.receive(event(1, "session.info", ["stored_session_id": .string("tip-2"), "running": .bool(false)]))
+
+        XCTAssertEqual(chat.model.pushPresence, PushPresence.Viewer(server: server, sessionID: "tip-2"))
+        XCTAssertEqual(chat.model.hermesSessionLink, HermesSessionDestination(server: server, profile: "default", key: "tip-2"))
     }
 
     // MARK: Clear
@@ -262,10 +265,12 @@ import Observation
         await engine.activate()
 
         XCTAssertEqual(engine.connectionState, .connected)
-        XCTAssertEqual(host.requests.filter { $0["method"].text == "session.create" }.compactMap { $0["params"].fields }, [[
-            "profile": .string("default"), "cwd": .string("/work/app"),
-            "model": .string("claude-opus"), "provider": .string("anthropic")
-        ]])
+        let creates = host.requests.filter { $0["method"].text == "session.create" }.compactMap { $0["params"].fields }
+        XCTAssertEqual(creates.count, 1, "created once, then only resumed")
+        XCTAssertEqual(creates.first?["profile"], .string("default"))
+        XCTAssertEqual(creates.first?["cwd"], .string("/work/app"))
+        XCTAssertEqual(creates.first?["model"], .string("claude-opus"))
+        XCTAssertEqual(creates.first?["provider"], .string("anthropic"))
     }
 
     // MARK: Fixture

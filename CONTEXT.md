@@ -5,16 +5,36 @@ Canonical language for ARCHermes concepts that need consistent names across the 
 ## Servers
 
 **Webui server**:
-A configured `hermes-webui` server. ARC Hermes signs in to it with its password and cookie, and it opens on the session list.
+A configured `hermes-webui` server, shown as **Legacy**. It keeps working and gets fixes only; new features come to Hermes servers, and Move to Hermes switches it over. ARC Hermes signs in to it with its password and cookie, and it opens on the session list.
 _Avoid_: server (alone, when the kind matters), WebUI
 
 **Hermes server**:
-A configured Hermes dashboard that ARC Hermes reaches directly. Its sign-in is its own Hermes connection, and it opens on the last selected Bots or Sessions side, with Sessions selected initially.
+A configured Hermes dashboard that ARC Hermes reaches directly, and the default kind when adding a server. Its sign-in is its own Hermes connection, and it opens on the Bots inbox.
 _Avoid_: Hermes connection (that is the sign-in), bot server
 
 **Connection mode**:
 How this iPhone reaches the server, chosen in the connect form: Same Wi-Fi, Private network or Cloudflare Tunnel. It changes only the form's placeholder, help and header rows, and is not saved.
 _Avoid_: network type, connection type
+
+**Move to Hermes**:
+Copying a webui server's chats to a Hermes server and routing its old links, Shortcuts and notifications there. The webui server stays configured and usable, marked **Moved**, until the user removes it.
+_Avoid_: migration (in UI copy), import
+
+**Destination**:
+The Hermes server a webui server moved to. It holds the move's record, so old entry points keep working after the webui server is removed, and stop when the destination is removed.
+
+**Keep on webui**:
+A webui Profile the user chose not to move. Its chats stay on the webui server, and its Shortcuts keep opening there while it is configured.
+
+**Copy Missing Chats Again**:
+A later pass that scans the webui server again and copies only chats the destination still lacks. It doesn't finish titles, pins, folders or drafts for chats already in Hermes.
+
+**Finish with What's Done**:
+Ends a paused move without retrying the rest. Nothing in Hermes is undone; what stayed behind is reported.
+
+**Unchecked**:
+A chat the move couldn't confirm is in Hermes or missing from it. Never counted as missing, and never as copied.
+_Avoid_: missing, failed
 
 ## Kanban
 
@@ -113,6 +133,14 @@ _Avoid_: job run, execution
 **Project**:
 A named group of sessions in the session list. On a webui server it is a tag the session carries, which Move to Project sets. On a Hermes server it is a set of host folders: a session belongs to the project with the deepest folder its working folder sits in, the host groups the rest into automatic per-repository projects, and Move to Project changes the session's working folder.
 _Avoid_: tag (for a Hermes project), workspace
+
+**Stored key**:
+The durable id that names a Hermes session, together with its Profile. ARC Hermes caches, links, drafts and registers push by it, and REST routes and `session.resume` take it. Lists and caches identify a row by its lineage root (`_lineage_root_id ?? id`), so a session that a legacy compression continued under a new key stays one row.
+_Avoid_: session id (when the kind matters)
+
+**Runtime ID**:
+The id of the host's live runtime for a session, returned by `session.resume` or `session.create`. Session-scoped RPCs and the event `seq` use it. It changes when the host reaps the runtime (4001), so ARC Hermes never stores it; reattaching to the stored key returns the new one.
+_Avoid_: session id (when the kind matters)
 
 ## Chat
 

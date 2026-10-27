@@ -6,7 +6,7 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Local setup
 
-- **Xcode 27 or newer**, with an iOS 27 simulator (the deployment target is iOS 27).
+- **Xcode 27 or newer**, with an iOS 27 simulator for the primary validation suite. The deployment target is iOS/iPadOS 18; older-system compatibility also needs runtime checks on 18 and 26.
 - Clone the repo and open `ARCHermes.xcodeproj`. Dependencies resolve
   automatically via Swift Package Manager — the dependency list is locked in
   `AGENTS.md`; do not add new ones without maintainer approval.

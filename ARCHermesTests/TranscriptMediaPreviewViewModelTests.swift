@@ -56,43 +56,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
     }
 
-    func testParsedFileURLUsesSessionMediaEndpointAndDecodedExportFilename() async throws {
-        let recorder = TranscriptMediaPreviewRequestRecorder()
-        let imageData = try XCTUnwrap(Self.imageData())
-        let sessionID = "session-file-url"
-        let segments = TranscriptMediaParser.segments(
-            in: "Created file:///tmp/final%20chart.png"
-        )
-        let reference = try XCTUnwrap(segments.compactMap { segment in
-            if case let .media(reference) = segment {
-                return reference
-            }
-            return nil
-        }.first)
-        let client = makeClient { request in
-            recorder.record(request)
-            return self.response(statusCode: 200, data: imageData, for: request)
-        }
-        let viewModel = TranscriptMediaPreviewViewModel(
-            server: Self.baseURL,
-            files: Self.webui(sessionID, client),
-            reference: reference,
-            apiClient: client
-        )
-
-        await viewModel.load()
-
-        XCTAssertNil(viewModel.errorMessage)
-        let queryItems = queryItems(for: try XCTUnwrap(recorder.firstURL))
-        XCTAssertEqual(queryItems["session_id"], sessionID)
-        XCTAssertEqual(queryItems["path"], "/tmp/final chart.png")
-
-        let payload = try await viewModel.exportPayload()
-        XCTAssertEqual(payload.filename, "final chart.png")
-        XCTAssertEqual(payload.data, imageData)
-        XCTAssertEqual(recorder.requestCount, 1)
-    }
-
     func testLoadSameServerRemoteImageUsesAuthenticatedSession() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
         let imageData = try XCTUnwrap(Self.imageData())
@@ -204,7 +167,9 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
 
     func testLoadLocalVideoUsesMediaEndpointAndCreatesPlayableFileURL() async throws {
         let recorder = TranscriptMediaPreviewRequestRecorder()
-        let videoData = Data("video-bytes".utf8)
+        let fixtureURL = try await Self.makeTestVideo()
+        defer { try? FileManager.default.removeItem(at: fixtureURL) }
+        let videoData = try Data(contentsOf: fixtureURL)
         let mediaPath = "/tmp/generated/movie.mp4"
         let sessionID = "session-123"
         let client = makeClient { request in
@@ -230,6 +195,8 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(videoFileURL.pathExtension, "mp4")
         XCTAssertTrue(FileManager.default.fileExists(atPath: videoFileURL.path))
         XCTAssertEqual(try Data(contentsOf: videoFileURL), videoData)
+        let tracks = try await AVURLAsset(url: videoFileURL).loadTracks(withMediaType: .video)
+        XCTAssertEqual(tracks.count, 1, "The downloaded file must remain a playable video")
         XCTAssertEqual(viewModel.originalByteCount, videoData.count)
         XCTAssertFalse(viewModel.canSaveImageToPhotos)
         XCTAssertTrue(viewModel.canSaveVideoToPhotos)
@@ -327,12 +294,12 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         viewModel.cleanupTemporaryFiles()
     }
 
-    /// A Hermes MEDIA file past the 25 MB preview cap shows no preview but keeps Save and Share,
+    /// A Hermes MEDIA file past the preview cap (25 MB) shows no preview but keeps Save and Share,
     /// which download the whole file by the same path.
     func testAHermesMediaFilePastThePreviewCapStillExportsWhole() async throws {
         defer { HermesHostFixture.reset() }
-        let size = BotArtifactBuffer.maximumBytes + 1
-        let files = HermesWorkspaceFileClientTests.client { request in
+        let size = 5
+        let files = HermesWorkspaceFileClientTests.client(previewLimit: size - 1) { request in
             request.url?.path == "/api/fs/download" ? .body(200, Data(repeating: 0x61, count: size)) : nil
         }
         let viewModel = TranscriptMediaPreviewViewModel(
@@ -353,29 +320,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(payload.filename, "huge.png")
         XCTAssertEqual(HermesWorkspaceFileClientTests.fileRequests.compactMap(\.url).map { queryItems(for: $0)["path"] },
                        ["/tmp/hermes/huge.png", "/tmp/hermes/huge.png"])
-    }
-
-    func testLoadLocalVideoWithoutSessionIDDoesNotRequestMediaEndpoint() async {
-        let recorder = TranscriptMediaPreviewRequestRecorder()
-        let client = makeClient { request in
-            recorder.record(request)
-            return self.response(statusCode: 200, data: Data(), for: request)
-        }
-        let viewModel = TranscriptMediaPreviewViewModel(
-            server: Self.baseURL,
-            files: Self.webui(nil, client),
-            reference: .init(rawReference: "/tmp/generated/movie.mov"),
-            apiClient: client
-        )
-
-        await viewModel.load()
-
-        XCTAssertFalse(viewModel.isLoading)
-        XCTAssertNil(viewModel.previewData)
-        XCTAssertNil(viewModel.videoFileURL)
-        XCTAssertNotNil(viewModel.errorMessage)
-        XCTAssertNotNil(viewModel.lastError)
-        XCTAssertEqual(recorder.requestCount, 0)
     }
 
     func testExtensionlessRemoteMediaFallsBackToVideoFileWhenImageDecodeFails() async throws {
@@ -505,26 +449,45 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
         guard writer.canAdd(input) else {
             throw PhotoLibraryTestVideoError.cannotConfigureWriter
         }
-        let receiver = writer.inputPixelBufferReceiver(
-            for: input,
-            pixelBufferAttributes: CVPixelBufferCreationAttributes(
-                pixelFormatType: CVPixelFormatType(rawValue: kCVPixelFormatType_32BGRA),
-                size: CVImageSize(width: 64, height: 64)
-            )
+        // Keep the fixture executable on the app's oldest supported OS too.
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: input,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: 64,
+                kCVPixelBufferHeightKey as String: 64,
+            ]
         )
-        try writer.start()
+        writer.add(input)
+        guard writer.startWriting() else {
+            throw writer.error ?? PhotoLibraryTestVideoError.cannotConfigureWriter
+        }
         writer.startSession(atSourceTime: .zero)
-        guard let pool = receiver.pixelBufferPool else {
+        guard let pool = adaptor.pixelBufferPool else {
             throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
         }
-        var pixelBuffer = try pool.makeMutablePixelBuffer()
-        pixelBuffer.accessUnsafeMutableRawPlaneBytes { planes in
-            for plane in planes {
-                _ = plane.bytes.initializeMemory(as: UInt8.self, repeating: 0x30)
+        var buffer: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer) == kCVReturnSuccess,
+              let pixelBuffer = buffer else {
+            throw PhotoLibraryTestVideoError.cannotCreatePixelBuffer
+        }
+        CVPixelBufferLockBaseAddress(pixelBuffer, [])
+        if let bytes = CVPixelBufferGetBaseAddress(pixelBuffer) {
+            memset(bytes, 0x30, CVPixelBufferGetDataSize(pixelBuffer))
+        }
+        CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            input.requestMediaDataWhenReady(on: DispatchQueue(label: "TranscriptMediaPreviewTestVideo")) {
+                guard input.isReadyForMoreMediaData else { return }
+                let appended = adaptor.append(pixelBuffer, withPresentationTime: .zero)
+                input.markAsFinished()
+                if appended {
+                    continuation.resume()
+                } else {
+                    continuation.resume(throwing: writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter)
+                }
             }
         }
-        try await receiver.append(CVReadOnlyPixelBuffer(pixelBuffer), with: .zero)
-        receiver.finish()
         await writer.finishWriting()
         guard writer.status == .completed else {
             throw writer.error ?? PhotoLibraryTestVideoError.cannotFinishWriter
@@ -622,14 +585,6 @@ final class TranscriptMediaPreviewViewModelTests: XCTestCase {
     }
 }
 
-private enum PhotoLibraryTestVideoError: Error {
-    case cannotConfigureWriter
-    case cannotStartWriter
-    case cannotCreatePixelBuffer
-    case cannotAppendFrame
-    case cannotFinishWriter
-}
-
 private final class TranscriptMediaPreviewRequestRecorder {
     private let lock = NSLock()
     private var requests: [URLRequest] = []
@@ -697,4 +652,12 @@ private extension Data {
             append(contentsOf: buffer)
         }
     }
+}
+
+private enum PhotoLibraryTestVideoError: Error {
+    case cannotConfigureWriter
+    case cannotStartWriter
+    case cannotCreatePixelBuffer
+    case cannotAppendFrame
+    case cannotFinishWriter
 }

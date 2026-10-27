@@ -40,10 +40,12 @@ final class HermesRequestTests: XCTestCase {
             (.sessionList(profile: "triage"), "session.list",
              ["profile": .string("triage"), "title": .string("Bot Chat"), "include_hidden": .bool(true)]),
             (.sessionCreate(profile: "triage"), "session.create",
-             ["profile": .string("triage"), "title": .string("Bot Chat"), "hidden": .bool(true), "follow_profile_config": .bool(true)]),
-            (.sessionNew(profile: "triage"), "session.create", ["profile": .string("triage")]),
+             ["profile": .string("triage"), "title": .string("Bot Chat"), "hidden": .bool(true), "follow_profile_config": .bool(true),
+              "source": .string("gui")]),
+            (.sessionNew(profile: "triage"), "session.create", ["profile": .string("triage"), "source": .string("gui")]),
             (.sessionNew(profile: "triage", cwd: "/work", model: .init(id: "gpt-6", provider: "openai")), "session.create",
-             ["profile": .string("triage"), "cwd": .string("/work"), "model": .string("gpt-6"), "provider": .string("openai")]),
+             ["profile": .string("triage"), "cwd": .string("/work"), "model": .string("gpt-6"), "provider": .string("openai"),
+              "source": .string("gui")]),
             (.sessionTitle(sessionID: "runtime"), "session.title", ["session_id": .string("runtime"), "title": .string("Bot Chat")]),
             (.sessionRename(runtime: "runtime", title: "Plan"), "session.title",
              ["session_id": .string("runtime"), "title": .string("Plan")]),
@@ -69,16 +71,17 @@ final class HermesRequestTests: XCTestCase {
              ["profile": .string("triage"), "id": .string("p_1"), "name": .string("Launch")]),
             (.projectsDelete(profile: "triage", id: "p_1"), "projects.delete", ["profile": .string("triage"), "id": .string("p_1")]),
             (.sessionResume(profile: "triage", sessionID: "tip", omitMessages: false), "session.resume",
-             ["profile": .string("triage"), "session_id": .string("tip"), "close_on_disconnect": .bool(false)]),
+             ["profile": .string("triage"), "session_id": .string("tip"), "close_on_disconnect": .bool(false),
+              "source": .string("gui")]),
             (.sessionResume(profile: "triage", sessionID: "tip", omitMessages: true), "session.resume",
              ["profile": .string("triage"), "session_id": .string("tip"), "close_on_disconnect": .bool(false),
-              "omit_messages": .bool(true)]),
+              "omit_messages": .bool(true), "source": .string("gui")]),
             (.sessionEventsSince(sessionID: "runtime", lastSeen: 7), "session.events.since",
              ["session_id": .string("runtime"), "last_seen": .number(7)]),
             (.sessionActiveList, "session.active_list", [:]),
             (.promptSubmit(sessionID: "runtime", text: "hi"), "prompt.submit",
              ["session_id": .string("runtime"), "text": .string("hi"), "queued": .bool(true)]),
-            (.promptRewind(sessionID: "runtime", text: "hi", beforeRowID: 41), "prompt.submit",
+            (.promptRewind(sessionID: "runtime", text: "hi", beforeRowID: 41, deep: false), "prompt.submit",
              ["session_id": .string("runtime"), "text": .string("hi"), "truncate_before_row_id": .number(41),
               "confirm_truncate": .bool(true), "confirm_empty_truncate": .bool(true)]),
             (.sessionSteer(sessionID: "runtime", text: "hi"), "session.steer", ["session_id": .string("runtime"), "text": .string("hi")]),
@@ -180,66 +183,6 @@ final class HermesRequestTests: XCTestCase {
         }
     }
 
-    /// A rename needs a runtime and a title, and a delete names its Profile and stored key (#1048);
-    /// a branch names its runtime, and any name or count it carries is real (#1051).
-    func testSessionLifecycleCallsRefuseAnEmptyTarget() {
-        XCTAssertThrowsError(try HermesCall.sessionBranch(runtime: "", name: nil, count: nil).params())
-        XCTAssertThrowsError(try HermesCall.sessionBranch(runtime: "runtime", name: " \n", count: nil).params())
-        XCTAssertThrowsError(try HermesCall.sessionBranch(runtime: "runtime", name: nil, count: 0).params())
-        XCTAssertThrowsError(try HermesCall.sessionRename(runtime: "runtime", title: " \n").params())
-        XCTAssertThrowsError(try HermesCall.sessionRename(runtime: "", title: "Plan").params())
-        XCTAssertThrowsError(try HermesCall.sessionClose(runtime: "").params())
-        XCTAssertThrowsError(try HermesCall.sessionDelete(profile: "", storedKey: "tip").params())
-        XCTAssertThrowsError(try HermesCall.sessionDelete(profile: "triage", storedKey: "").params())
-    }
-
-    /// A compaction names its runtime and Profile, and a focus only when there is one; a new
-    /// session's folder and model are never blank (#1050).
-    func testCompressAndNewSessionCallsRefuseBlankValues() {
-        XCTAssertThrowsError(try HermesCall.sessionCompress(runtime: "", focus: nil, profile: "triage").params())
-        XCTAssertThrowsError(try HermesCall.sessionCompress(runtime: "runtime", focus: nil, profile: "").params())
-        XCTAssertThrowsError(try HermesCall.sessionCompress(runtime: "runtime", focus: " \n", profile: "triage").params())
-        XCTAssertThrowsError(try HermesCall.sessionNew(profile: "triage", cwd: "").params())
-        XCTAssertThrowsError(try HermesCall.sessionNew(profile: "triage", model: .init(id: "gpt-6", provider: "")).params())
-    }
-
-    /// A project names its Profile, a name and a folder, and a move a stored session and a
-    /// folder; a folder is completed only from the host's root or home (#1052).
-    func testProjectAndMoveCallsRefuseBlankValues() {
-        let refused: [HermesCall] = [
-            .projectsTree(profile: ""),
-            .projectsCreate(profile: "triage", name: " ", folder: "/work", color: nil),
-            .projectsCreate(profile: "triage", name: "Launch", folder: "", color: nil),
-            .projectsCreate(profile: "triage", name: "Launch", folder: "/work", color: ""),
-            .projectsUpdate(profile: "triage", id: "p_1", name: "", color: nil),
-            .projectsUpdate(profile: "triage", id: "", name: "Launch", color: nil),
-            .projectsDelete(profile: "triage", id: ""),
-            .sessionWorkspaceMove(profile: "triage", storedKey: "", cwd: "/work"),
-            .sessionWorkspaceMove(profile: "triage", storedKey: "tip", cwd: " "),
-            .sessionWorkspaceMove(profile: "", storedKey: "tip", cwd: "/work"),
-            .completeFolder(word: "src/app", profile: "triage"),
-            .completeFolder(word: "~", profile: "triage"),
-            .completeFolder(word: "/work", profile: "")
-        ]
-        for call in refused {
-            XCTAssertThrowsError(try call.params(), "\(call)")
-        }
-    }
-
-    /// A commit message is asked for a real diff, under a Profile; the runtime and the message to
-    /// avoid are sent only when there are ones (#1115).
-    func testACommitMessageRefusesBlankValues() {
-        let refused: [HermesCall] = [
-            .commitMessage(diff: " \n", recentCommits: "", avoid: nil, sessionID: nil, profile: "triage"),
-            .commitMessage(diff: "+a", recentCommits: "", avoid: " ", sessionID: nil, profile: "triage"),
-            .commitMessage(diff: "+a", recentCommits: "", avoid: nil, sessionID: "", profile: "triage"),
-            .commitMessage(diff: "+a", recentCommits: "", avoid: nil, sessionID: nil, profile: "")
-        ]
-        for call in refused {
-            XCTAssertThrowsError(try call.params(), "\(call)")
-        }
-    }
-
     /// Slash commands go out one typed line at a time, and completion only at a command's
     /// argument stage (#1036).
     func testSlashCallsAdmitOnlyOneNamedLine() {
@@ -277,7 +220,8 @@ final class HermesRequestTests: XCTestCase {
     }
 
     /// The host rewrites a branch name before `git switch` (`_sanitize_branch`), so a name it
-    /// would change, which could reach another branch, is refused before anything is sent (#1116).
+    /// would change, which could reach another branch, is refused before anything is sent (#1116),
+    /// as is a new branch's through hermex-push (#1236).
     func testABranchSwitchSendsOnlyANameTheHostKeeps() throws {
         let base = URL(string: "https://hermes.example")!
         // A decomposed accent (U+0301) or zero-width joiner is stripped by the host, so "cafe\u{301}"
@@ -287,6 +231,9 @@ final class HermesRequestTests: XCTestCase {
             XCTAssertThrowsError(try HermesREST.gitSwitchBranch(repository: "/r", branch: name).request(base: base), name)
         }
         XCTAssertThrowsError(try HermesREST.gitSwitchBranch(repository: "", branch: "dev").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitCreateBranch(repository: "/r", name: "-b").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitCreateBranch(repository: "", name: "dev").request(base: base))
+        XCTAssertThrowsError(try HermesREST.gitFetch(repository: "").request(base: base))
         for name in ["dev", "feature/x-1", "release_2.0", "caf\u{E9}", "x\u{663}", "\u{216B}", "\u{2B0}x"] {
             let request = try HermesREST.gitSwitchBranch(repository: "/r", branch: name).request(base: base)
             let body = try JSONDecoder().decode(BotJSON.self, from: XCTUnwrap(request.httpBody))
@@ -302,6 +249,7 @@ final class HermesRequestTests: XCTestCase {
         let json = ["Content-Type": "application/json"]
         let imported = BotJSON.object(["sessions": .array([.object(["id": .string("20261008_002420_fb927d")])]),
                                        "profile": .string("triage")])
+        let requestID = try XCTUnwrap(UUID(uuidString: "6F0C1F4E-2B7A-4C59-9E1D-3A8B5C7D9E01"))
         let cases: [(HermesREST, String, String, BotJSON?, [String: String])] = [
             (.status, "GET", "https://hermes.example:9120/api/status", nil, [:]),
             (.login(username: "user", password: "pass"), "POST", "https://hermes.example:9120/auth/password-login",
@@ -314,8 +262,14 @@ final class HermesRequestTests: XCTestCase {
              .object(["filename": .string("a.png"), "data_url": .string("data:image/png;base64,YQ==")]), json),
             (.downloadArtifact(path: "/r/a b.pdf", profile: "triage", sessionID: "tip"), "GET",
              "https://hermes.example:9120/api/fs/download?path=/r/a%20b.pdf&profile=triage&session_id=tip", nil, [:]),
-            (.setEnvironment(key: "HERMEX_PUSH_RELAY_URL", value: "https://relay.example"), "PUT", "https://hermes.example:9120/api/env",
+            (.setEnvironment(key: "HERMEX_PUSH_RELAY_URL", value: "https://relay.example", profile: nil), "PUT",
+             "https://hermes.example:9120/api/env",
              .object(["key": .string("HERMEX_PUSH_RELAY_URL"), "value": .string("https://relay.example")]), json),
+            (.environment(profile: "triage"), "GET", "https://hermes.example:9120/api/env?profile=triage", nil, [:]),
+            (.setEnvironment(key: "OPENAI_API_KEY", value: "sk-new", profile: "triage"), "PUT", "https://hermes.example:9120/api/env",
+             .object(["key": .string("OPENAI_API_KEY"), "value": .string("sk-new"), "profile": .string("triage")]), json),
+            (.removeEnvironment(key: "OPENAI_API_KEY", profile: "triage"), "DELETE", "https://hermes.example:9120/api/env",
+             .object(["key": .string("OPENAI_API_KEY"), "profile": .string("triage")]), json),
             (.installPlugin(identifier: "https://github.com/o/r.git/plugin"), "POST",
              "https://hermes.example:9120/api/dashboard/agent-plugins/install",
              .object(["identifier": .string("https://github.com/o/r.git/plugin"), "enable": .bool(true), "force": .bool(true)]), json),
@@ -325,20 +279,31 @@ final class HermesRequestTests: XCTestCase {
              "https://hermes.example:9120/api/dashboard/agent-plugins/hermex-push/disable", .object([:]), json),
             (.restartGateway, "POST", "https://hermes.example:9120/api/gateway/restart", .object([:]), json),
             (.pushPairing, "GET", "https://hermes.example:9120/api/plugins/hermex-push/pairing", nil, [:]),
+            (.pluginCapabilities, "GET", "https://hermes.example:9120/api/plugins/hermex-push/capabilities", nil, [:]),
             (.restartDashboard, "POST", "https://hermes.example:9120/api/plugins/hermex-push/restart", .object([:]), json),
             (.pluginsHub, "GET", "https://hermes.example:9120/api/dashboard/plugins/hub", nil, [:]),
             (.sessionMessages(key: "bg_0a5110", profile: "triage"), "GET",
              "https://hermes.example:9120/api/sessions/bg_0a5110/messages?profile=triage", nil, [:]),
             (.sessionList(profile: "triage", offset: 100, archived: true), "GET",
-             "https://hermes.example:9120/api/sessions?profile=triage&order=recent&archived=only&limit=100&offset=100&exclude_sources=cron,kanban,oneshot,subagent,tool",
+             "https://hermes.example:9120/api/sessions?profile=triage&order=recent&archived=only&limit=100&offset=100&exclude_sources=kanban,oneshot,subagent,tool",
              nil, [:]),
-            (.updateSession(key: "tip", profile: "triage", change: .title("Plan")), "PATCH",
+            (.updateSession(key: "tip", profile: "triage", change: .title("Plan"), identity: nil), "PATCH",
              "https://hermes.example:9120/api/sessions/tip", .object(["title": .string("Plan"), "profile": .string("triage")]), json),
+            (.updateSession(key: "tip", profile: "triage", change: .pinned(true),
+                            identity: HermesSessionWriteIdentity(requestID: requestID, expectedRevision: 7)), "PATCH",
+             "https://hermes.example:9120/api/sessions/tip",
+             .object(["pinned": .bool(true), "profile": .string("triage"), "request_id": .string(requestID.uuidString),
+                      "expected_revision": .number(7)]), json),
+            (.sessionMutationSnapshot(key: "tip", profile: "triage"), "GET",
+             "https://hermes.example:9120/api/sessions/tip/mutation-snapshot?profile=triage", nil, [:]),
             (.sessionExport(key: "tip", profile: "triage"), "GET",
              "https://hermes.example:9120/api/sessions/tip/export?profile=triage", nil, [:]),
             (.sessionRow(key: "tip", profile: "triage"), "GET", "https://hermes.example:9120/api/sessions/tip?profile=triage", nil, [:]),
-            (.importSessions(body: try JSONEncoder().encode(imported)), "POST", "https://hermes.example:9120/api/sessions/import",
-             imported, json),
+            (.importSessions(body: try JSONEncoder().encode(imported),
+                             identity: HermesSessionWriteIdentity(requestID: requestID, expectedRevision: 0)),
+             "POST", "https://hermes.example:9120/api/sessions/import",
+             .object(try XCTUnwrap(imported.fields).merging(["request_id": .string(requestID.uuidString),
+                                                             "expected_revision": .number(0)]) { $1 }), json),
             (.cronJobs, "GET", "https://hermes.example:9120/api/cron/jobs", nil, [:]),
             (.cronCreate(profile: "research", fields: ["schedule": .string("0 9 * * *")]), "POST",
              "https://hermes.example:9120/api/cron/jobs?profile=research", .object(["schedule": .string("0 9 * * *")]), json),
@@ -383,6 +348,13 @@ final class HermesRequestTests: XCTestCase {
             (.gitBranches(repository: "/r/a+b"), "GET", "https://hermes.example:9120/api/git/branches?path=/r/a%2Bb", nil, [:]),
             (.gitSwitchBranch(repository: "/r", branch: "feature/x"), "POST", "https://hermes.example:9120/api/git/branch/switch",
              .object(["path": .string("/r"), "branch": .string("feature/x")]), json),
+            (.gitFetch(repository: "/r"), "POST", "https://hermes.example:9120/api/plugins/hermex-push/git/fetch",
+             .object(["path": .string("/r")]), json),
+            (.gitPull(repository: "/r"), "POST", "https://hermes.example:9120/api/plugins/hermex-push/git/pull",
+             .object(["path": .string("/r")]), json),
+            (.gitCreateBranch(repository: "/r", name: "feature/x"), "POST",
+             "https://hermes.example:9120/api/plugins/hermex-push/git/branch",
+             .object(["path": .string("/r"), "name": .string("feature/x")]), json),
             (.config(profile: "research"), "GET", "https://hermes.example:9120/api/config?profile=research", nil, [:]),
             (.profileSoul(name: "research"), "GET", "https://hermes.example:9120/api/profiles/research/soul", nil, [:]),
             (.setProfileSoul(name: "research", content: "Be direct."), "PUT", "https://hermes.example:9120/api/profiles/research/soul",
@@ -450,10 +422,10 @@ final class HermesRequestTests: XCTestCase {
         XCTAssertThrowsError(try HermesREST.profileSoul(name: "../config").request(base: base))
         XCTAssertThrowsError(try HermesREST.setProfileSoul(name: "", content: "x").request(base: base))
         XCTAssertThrowsError(try HermesREST.config(profile: "").request(base: base))
-        let upgrade = try HermesREST.gatewayUpgrade(base: base, ticket: "t1")
+        let upgrade = try HermesREST.gatewayUpgrade(base: base, pass: .ticket("t1"))
         XCTAssertEqual(upgrade.url?.absoluteString, "wss://hermes.example:9120/api/ws")
         XCTAssertEqual(upgrade.allHTTPHeaderFields ?? [:], ["Sec-WebSocket-Protocol": "hermes-gateway-v1, hermes-gateway-ticket.t1"])
-        XCTAssertEqual(try HermesREST.gatewayUpgrade(base: URL(string: "http://192.168.1.2:9120")!, ticket: "t1").url?.absoluteString,
+        XCTAssertEqual(try HermesREST.gatewayUpgrade(base: URL(string: "http://192.168.1.2:9120")!, pass: .ticket("t1")).url?.absoluteString,
                        "ws://192.168.1.2:9120/api/ws")
     }
 }

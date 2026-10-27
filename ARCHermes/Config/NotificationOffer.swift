@@ -7,7 +7,7 @@ import UserNotifications
 /// surface asks first silences the other.
 enum NotificationOffer {
     enum Offer: Equatable {
-        /// Turns on Response Complete Alerts, asking iOS for permission if Hermex never has.
+        /// Turns on Response Complete Alerts, asking iOS for permission if ARC Hermes never has.
         case localAlerts
         /// Opens Settings → Notifications, where push setup runs behind its own confirmation.
         case push
