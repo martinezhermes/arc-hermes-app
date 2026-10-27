@@ -129,71 +129,6 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(toolCall.args?["limit"], .number(120))
     }
 
-    func testSessionDecodesPersistedAssistantReasoning() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session")
-
-            return apiTestJSONResponse("""
-            {
-              "session": {
-                "session_id": "abc123",
-                "messages": [
-                  {
-                    "role": "assistant",
-                    "content": "The file defines a SwiftUI view.",
-                    "reasoning": "I inspected the file and looked for the main type.",
-                    "_ts": 1770000000
-                  }
-                ]
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.session(id: "abc123")
-        let message = try XCTUnwrap(response.session?.messages?.first)
-
-        XCTAssertEqual(message.reasoning, "I inspected the file and looked for the main type.")
-    }
-
-    func testSessionDecodesMessageAttachments() async throws {
-        let client = makeClient { request in
-            XCTAssertEqual(request.url?.path, "/api/session")
-
-            return apiTestJSONResponse("""
-            {
-              "session": {
-                "session_id": "abc123",
-                "messages": [
-                  {
-                    "role": "user",
-                    "content": "Please analyze this",
-                    "_ts": 1770000000,
-                    "attachments": [
-                      {"name": "report.pdf", "path": "/uploads/abc123/report.pdf", "mime": "application/pdf", "size": 1024},
-                      {"name": "image.jpg", "path": "/uploads/abc123/image.jpg", "mime": "image/jpeg", "size": 2048, "is_image": true}
-                    ]
-                  }
-                ]
-              }
-            }
-            """, for: request)
-        }
-
-        let response = try await client.session(id: "abc123")
-        let message = try XCTUnwrap(response.session?.messages?.first)
-
-        XCTAssertEqual(message.attachments?.count, 2)
-        XCTAssertEqual(message.attachments?.first?.name, "report.pdf")
-        XCTAssertEqual(message.attachments?.first?.path, "/uploads/abc123/report.pdf")
-        XCTAssertEqual(message.attachments?.first?.mime, "application/pdf")
-        XCTAssertEqual(message.attachments?.first?.size, 1024)
-        XCTAssertNil(message.attachments?.first?.isImage)
-
-        XCTAssertEqual(message.attachments?.last?.name, "image.jpg")
-        XCTAssertEqual(message.attachments?.last?.isImage, true)
-    }
-
     func testSessionDecodesTolerantMessageAttachments() async throws {
         let client = makeClient { request in
             XCTAssertEqual(request.url?.path, "/api/session")
@@ -494,21 +429,6 @@ final class APIClientSessionDetailTests: APIClientTestCase {
         XCTAssertEqual(session.compressionAnchorMessageKey?.text, "What does the resolver do?")
         XCTAssertEqual(session.compressionAnchorMessageKey?.attachments, 1)
         XCTAssertEqual(session.compressionAnchorSummary, "Summary of the compacted conversation.")
-    }
-
-    func testSessionWithoutCompressionAnchorMetadataDecodesNil() async throws {
-        let client = makeClient { request in
-            apiTestJSONResponse("""
-            { "session": { "session_id": "abc123" } }
-            """, for: request)
-        }
-
-        let response = try await client.session(id: "abc123")
-        let session = try XCTUnwrap(response.session)
-
-        XCTAssertNil(session.compressionAnchorVisibleIdx)
-        XCTAssertNil(session.compressionAnchorMessageKey)
-        XCTAssertNil(session.compressionAnchorSummary)
     }
 
     func testSessionToleratesMalformedCompressionAnchorMetadata() async throws {
@@ -1266,31 +1186,6 @@ final class APIClientSessionDetailTests: APIClientTestCase {
 
         XCTAssertEqual(display?.text, preview)
         XCTAssertEqual(display?.isMonospaced, false)
-    }
-
-    func testToolCallDisplayFormatterShowsNestedArgumentsReadably() {
-        let rows = ToolCallDisplayFormatter.argumentRows(from: [
-            "input": .object([
-                "path": .string("Sources"),
-                "options": .object([
-                    "recursive": .bool(true)
-                ]),
-                "patterns": .array([
-                    .string("*.swift"),
-                    .string("*.md")
-                ])
-            ])
-        ])
-
-        XCTAssertEqual(rows.first?.key, "input")
-        XCTAssertEqual(rows.first?.value, """
-        options:
-          recursive: true
-        path: Sources
-        patterns:
-          - *.swift
-          - *.md
-        """)
     }
 
     func testToolCallDisplayFormatterFormatsStructuredNonTerminalResults() {

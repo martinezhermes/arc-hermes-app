@@ -274,7 +274,7 @@ struct ChatView: View {
     @AppStorage(StreamingSendBehavior.storageKey) private var streamingSendBehaviorRawValue = StreamingSendBehavior.steer.rawValue
     @AppStorage(ResponseCompletionNotifications.isEnabledKey) private var isResponseCompletionNotificationsEnabled = false
     @AppStorage(AgentRunLiveActivityPrivacy.showsResponseExcerptsKey) private var showsLiveActivityResponseExcerpts = false
-    @AppStorage(ChatTranscriptDisplaySettings.showsThinkingAndToolCardsKey) private var showsThinkingAndToolCards = true
+    @AppStorage(ChatTranscriptDisplaySettings.thinkingAndToolCardsKey) private var thinkingAndToolCards = ThinkingAndToolCards.collapsed
     @AppStorage(ChatTranscriptDisplaySettings.foldsSettledTurnsKey) private var foldsSettledTurns = true
     @AppStorage(ChatTranscriptDisplaySettings.rtlChatLayoutEnabledKey) private var rtlChatLayoutEnabled = ChatTranscriptDisplaySettings.rtlChatLayoutDefaultEnabled
     @AppStorage(SectionVisibilitySettings.chatFilesKey) private var showsFilesButton = true
@@ -305,11 +305,10 @@ struct ChatView: View {
     /// Puts a new Hermes chat in this one's place: a Profile picked before anything was
     /// sent (#1015). Nil pushes it on top instead.
     let onReplaceHermesSession: ((HermesSessionChat) -> Void)?
-    /// The bot's chat a deep link named was replaced by a newer one (#554): the caller takes the
-    /// user back and says so. Only a `.canonicalChat` opened with a `linkedRoot` calls it (#1145).
-    let onHermesChatReplaced: (() -> Void)?
     /// A Hermes session's dictation goes to its host for its Profile (#1071).
     private let hermesTranscriber: ComposerTranscriber?
+    /// Matches a Hermes chat's `Session Open` signpost to the list push that began it.
+    private let hermesSessionChatID: String?
     /// Returns to the Sessions list under this Hermes chat, in the entry's Profile (this chat's)
     /// and searching the query `/sessions` or `/resume` named (#1053). Nil pushes a list on top
     /// instead.
@@ -360,8 +359,8 @@ struct ChatView: View {
     @State private var transcriptMediaPreviewItem: TranscriptMediaPreviewItem?
     @State private var transcriptMediaImageItem: TranscriptMediaPreviewItem?
     @State private var attachmentImageItem: ChatAttachmentPreviewItem?
-    /// A Hermes session's sent file, previewed from its host (#1030).
-    @State private var hermesAttachmentItem: HermesAttachmentPreviewItem?
+    /// A Hermes sent file or MEDIA document in the shared native artifact preview.
+    @State private var hermesFilePreviewItem: HermesFilePreviewItem?
     /// A workspace file a chat link named; presented on the source viewer at its line.
     @State private var openedFileReference: FileReference?
     @State private var pendingProfileSelection: ProfileSummary?
@@ -456,7 +455,7 @@ struct ChatView: View {
         onReplaceHermesSession: ((HermesSessionChat) -> Void)? = nil,
         onOpenHermesSessions: ((HermesSessionListEntry) -> Void)? = nil,
         onHermesSessionIdentified: ((ConversationTarget?) -> Void)? = nil,
-        onHermesChatReplaced: (() -> Void)? = nil
+        onHermesDraftKeyChange: ((ChatDraftKey) -> Void)? = nil
     ) {
         self.session = session
         self.server = server
@@ -469,9 +468,9 @@ struct ChatView: View {
         self.restoresDraftSettings = restoresDraftSettings
         self.onConversationStarted = onConversationStarted
         isHermesSession = hermesSession != nil
+        hermesSessionChatID = hermesSession?.id.uuidString
         hermesParentKey = hermesSession?.parentKey
         self.onReplaceHermesSession = onReplaceHermesSession
-        self.onHermesChatReplaced = onHermesChatReplaced
         hermesTranscriber = hermesSession.map { HermesTranscription.transcriber(for: $0) }
         self.onOpenHermesSessions = onOpenHermesSessions
         self.onHermesSessionIdentified = onHermesSessionIdentified
@@ -490,6 +489,7 @@ struct ChatView: View {
         )
         model.hermesBotChatRoot = hermesSession?.botChatRoot
         model.hermesLineageRoot = hermesSession?.lineageRoot
+        model.onHermesDraftKeyChange = onHermesDraftKeyChange
         _viewModel = State(initialValue: model)
         _gitAvailabilityViewModel = State(initialValue: GitWorkspaceAvailabilityViewModel(
             session: session,
@@ -499,22 +499,23 @@ struct ChatView: View {
 
     /// A Hermes session on its Profile (#1010). It has no webui session, so nothing here
     /// reaches the webui API; connection errors show in the chat itself. A bot's Bot Chat
-    /// (#1145) shows the bot's pill in place of the title, keeps Bot Chat's rules
-    /// (`HermesChatPolicy`) and calls `onChatReplaced` when its linked root was replaced. Update
-    /// sign-in goes through the environment's `HermesUpdateSignInAction`.
+    /// (#1145) shows the bot's pill in place of the title and keeps Bot Chat's rules
+    /// (`HermesChatPolicy`). Update sign-in goes through the environment's
+    /// `HermesUpdateSignInAction`. New Chat with Voice's chat (#1180) starts dictation.
     init(hermesSession: HermesSessionChat, onReplace: ((HermesSessionChat) -> Void)? = nil,
          onOpenSessions: ((HermesSessionListEntry) -> Void)? = nil,
          onIdentified: ((ConversationTarget?) -> Void)? = nil,
-         onChatReplaced: (() -> Void)? = nil) {
+         onDraftKeyChange: ((ChatDraftKey) -> Void)? = nil) {
         self.init(
             session: SessionSummary(profile: hermesSession.target.profile),
             server: hermesSession.server,
             onAPIError: { _ in },
+            autoStartsVoiceInput: hermesSession.autoStartsVoiceInput,
             hermesSession: hermesSession,
             onReplaceHermesSession: onReplace,
             onOpenHermesSessions: onOpenSessions,
             onHermesSessionIdentified: onIdentified,
-            onHermesChatReplaced: onChatReplaced
+            onHermesDraftKeyChange: onDraftKeyChange
         )
     }
 
@@ -528,9 +529,10 @@ struct ChatView: View {
             isFocused: composerFocusBinding,
             // A Hermes prompt whose answer was lost holds Send until the chat reattaches (#508), and
             // a request card's answer holds it while out, so Steer and Queue send no competing
-            // Continue (#1141).
+            // Continue (#1141). So does a cached transcript shown while the chat connects.
             isSending: viewModel.isStartingChat || viewModel.isSendingVoiceNote || viewModel.isHermesSubmissionUncertain
-                || viewModel.isUndoingExchange || viewModel.hermesRequests?.answeringRequestID != nil,
+                || viewModel.isUndoingExchange || viewModel.hermesRequests?.answeringRequestID != nil
+                || viewModel.isCachedCopyProvisional,
             isCompressingSession: viewModel.isCompressingSession,
             isWaitingForStream: viewModel.activeStreamID != nil,
             isCancellingStream: viewModel.isCancellingStream,
@@ -731,7 +733,7 @@ struct ChatView: View {
     private var composerReadOnlyMessage: String? {
         Self.composerReadOnlyMessage(
             for: session,
-            isViewingCachedData: viewModel.isViewingCachedData
+            isViewingCachedData: viewModel.showsOfflineCache
         )
     }
 
@@ -748,12 +750,17 @@ struct ChatView: View {
         return nil
     }
 
-    /// An image is known to be an image before it is fetched, so it opens in the
-    /// full-bleed lightbox. Everything else keeps the preview sheet, which still has to
-    /// decide between audio, video, and an unsupported file once the bytes arrive.
+    /// Hermes documents share BotArtifactPreview. An image is known to be an image
+    /// before it is fetched, so it opens in the full-bleed lightbox. Everything else
+    /// keeps the preview sheet, which still has to decide between audio, video, and
+    /// an unsupported file once the bytes arrive.
     private func presentTranscriptMediaPreview(_ reference: TranscriptMediaReference) {
         presentPreviewRestoringComposerFocusIfNeeded {
             let item = TranscriptMediaPreviewItem(reference: reference)
+            if isHermesSession, reference.isHermesDocumentCandidate {
+                hermesFilePreviewItem = HermesFilePreviewItem(reference: reference)
+                return
+            }
             if reference.isRasterImageCandidate, !reference.isExtensionlessRemoteMediaCandidate {
                 transcriptMediaImageItem = item
             } else {
@@ -770,7 +777,10 @@ struct ChatView: View {
             return presentAttachmentPreview(ChatAttachmentPreviewItem(message: attachment, localData: localData))
         }
         presentPreviewRestoringComposerFocusIfNeeded {
-            hermesAttachmentItem = HermesAttachmentPreviewItem(path: path, name: attachment.name)
+            hermesFilePreviewItem = HermesFilePreviewItem(
+                reference: TranscriptMediaReference(rawReference: path), name: attachment.name,
+                isSentAttachment: true
+            )
         }
     }
 
@@ -800,6 +810,25 @@ struct ChatView: View {
             item: item,
             onAPIError: onAPIError
         )
+    }
+
+    /// The capped preview download behind `hermesFilePreviewItem`. A sent chip and a MEDIA
+    /// document's host path download from this chat's attach, as the card's export does, so a
+    /// result that lands after a reattach is dropped (#1030). A remote MEDIA document is a
+    /// public, cookie-less fetch with neither server's credentials. The whole file, past the
+    /// cap included, exports from the card's own download button.
+    private func hermesFilePreviewData(for item: HermesFilePreviewItem) async throws -> Data {
+        if item.isSentAttachment { return try await viewModel.hermesAttachmentData(path: item.reference.rawReference) }
+        switch item.reference.source {
+        case let .localPath(path):
+            return try await viewModel.hermesAttachmentData(path: path)
+        case let .remoteURL(url):
+            // A refusal there is not Hermes's sign-in, which `BotFailure.rejected` would say.
+            do {
+                return try await BotArtifactDownload.data(session: APIClient.sharedPublicMediaSession,
+                                                          request: URLRequest(url: url))
+            } catch is BotFailure { throw BotArtifactFailure.unavailable }
+        }
     }
 
     /// A chat link that names a workspace file opens the source viewer at its line; every
@@ -940,7 +969,7 @@ struct ChatView: View {
 
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    if viewModel.isViewingCachedData {
+                    if viewModel.showsOfflineCache {
                         ChatOfflineCacheBanner()
                     }
 
@@ -1162,12 +1191,12 @@ struct ChatView: View {
                     restoreComposerFocusAfterPreviewIfNeeded()
                 }
             }
-            .sheet(item: $hermesAttachmentItem) { item in
-                BotArtifactPreview(reference: TranscriptMediaReference(rawReference: item.path), title: item.name) {
-                    try await viewModel.hermesAttachmentData(path: item.path)
+            .sheet(item: $hermesFilePreviewItem) { item in
+                BotArtifactPreview(reference: item.reference, title: item.name) {
+                    try await hermesFilePreviewData(for: item)
                 }
             }
-            .onChange(of: hermesAttachmentItem == nil) { _, isDismissed in
+            .onChange(of: hermesFilePreviewItem == nil) { _, isDismissed in
                 if isDismissed {
                     restoreComposerFocusAfterPreviewIfNeeded()
                 }
@@ -1203,10 +1232,6 @@ struct ChatView: View {
             .fullScreenCover(isPresented: $showsBtwFullScreen) { btwFullScreen }
             .onChange(of: viewModel.hermesSideTasks?.btw == nil) { _, isClosed in
                 if isClosed { showsBtwFullScreen = false }
-            }
-            .onChange(of: viewModel.hermesChatWasReplaced) { _, isStale in
-                // The link named a chat this bot has replaced: the caller reports it (#554).
-                if isStale { onHermesChatReplaced?() }
             }
             .sheet(isPresented: $showsDelegatedWork) {
                 if let work = viewModel.hermesActivity?.delegatedWork {
@@ -1625,7 +1650,7 @@ struct ChatView: View {
     /// webui pushes to the configured upstream. A Hermes host pushes there too, or to origin as
     /// the branch's new upstream when it has none (#1115), so its copy names the branch and both.
     private var pushConfirmationMessage: String {
-        guard !gitAvailabilityViewModel.supportsSync else {
+        guard gitAvailabilityViewModel.git?.isHermes == true else {
             return String(localized: "Push the current branch to its configured upstream remote?")
         }
         let branch = gitAvailabilityViewModel.currentBranchName
@@ -1984,7 +2009,7 @@ struct ChatView: View {
             activeStreamRecoveryState: viewModel.activeStreamRecoveryState,
             clarificationPromptID: requestInsetID,
             hidesRunStatusAccessibility: activeRunStatusPresentation != nil,
-            showsThinkingAndToolCards: showsThinkingAndToolCards,
+            showsThinkingAndToolCards: thinkingAndToolCards.showsCards,
             workingRowStartedAt: workingRowStartedAt,
             requestWithdrawal: viewModel.hermesRequests?.withdrawal,
             showsScrollToBottomButton: showsScrollToBottomButton,
@@ -2095,6 +2120,7 @@ struct ChatView: View {
         .environment(\.composerChipCatalog, viewModel.composerChipCatalog)
         .transcriptLinks(perform: handleTranscriptLink)
         .environment(\.chatWorkspaceRoot, session.workspace)
+        .environment(\.previewsHermesDocuments, isHermesSession)
         .task(id: transcriptSkillReferenceCount) {
             await loadSkillSuggestionsForTranscriptChipsIfNeeded()
         }
@@ -2315,7 +2341,7 @@ struct ChatView: View {
     private func turnFolds(reasoningGroups: [ReasoningGroup]) -> TranscriptTurnFolds {
         guard foldsSettledTurns else { return .none }
 
-        let activityAnchorIDs: Set<String> = showsThinkingAndToolCards
+        let activityAnchorIDs: Set<String> = thinkingAndToolCards.showsCards
             ? Set(reasoningGroups.compactMap(\.anchorMessageID))
                 .union(viewModel.completedToolCallGroups.compactMap(\.anchorMessageID))
             : []
@@ -2428,7 +2454,7 @@ struct ChatView: View {
     /// Ends this session's `Session Open` interval on the next main-queue turn, so
     /// it includes the layout of the first transcript frame (or the empty state).
     private func endSessionOpenSignpost() {
-        let sessionID = session.sessionId
+        let sessionID = hermesSessionChatID ?? session.sessionId
         let messages = viewModel.messages.count
         DispatchQueue.main.async {
             SessionOpenSignpost.end(sessionID: sessionID, messages: messages)
@@ -2436,14 +2462,11 @@ struct ChatView: View {
     }
 
     /// A fresh Git state for the chat's repository: webui's session, or a Hermes chat's folder
-    /// while Files can read it (#1114), which has no fetch or pull. Without one, Git stays hidden.
+    /// while Files can read it (#1114), which syncs only through hermex-push (#1236). Without one,
+    /// Git stays hidden.
     private func loadInitialGitAvailability() async {
         let availabilityViewModel = if isHermesSession {
-            GitWorkspaceAvailabilityViewModel(
-                session: session,
-                server: server,
-                git: browsableHermesWorkspace == nil ? nil : viewModel.hermesWorkspaceGit
-            )
+            GitWorkspaceAvailabilityViewModel(git: browsableHermesWorkspace == nil ? nil : viewModel.hermesWorkspaceGit)
         } else {
             GitWorkspaceAvailabilityViewModel(session: session, server: server)
         }
@@ -2500,7 +2523,13 @@ struct ChatView: View {
     private func loadOlderMessages() async -> Bool {
         followLatch.isFollowing = false
 
+        let signpost = performanceSignposter.beginInterval("Load Earlier")
         let didLoad = await viewModel.loadOlderMessages(modelContext: modelContext)
+        let messages = viewModel.messages.count
+        // The next main-queue turn, so the interval includes the prepended rows' layout.
+        DispatchQueue.main.async {
+            performanceSignposter.endInterval("Load Earlier", signpost, "messages=\(messages, privacy: .public)")
+        }
         if let lastError = viewModel.lastError {
             onAPIError(lastError)
         }
@@ -2627,6 +2656,9 @@ struct ChatView: View {
             )
 
             if result != .sendAsMessage {
+                if !result.isSuccessfulSubmission {
+                    await openCompressionContinuationIfNeeded()
+                }
                 if result.isSuccessfulSubmission {
                     switch parsedCommand?.handler {
                     case .serverSide(.queue), .serverSide(.steer), .serverSide(.interrupt):
@@ -2664,6 +2696,9 @@ struct ChatView: View {
             )
         }
 
+        if !didStart {
+            await openCompressionContinuationIfNeeded()
+        }
         if didStart {
             ChatHaptics.messageSent(isEnabled: isHapticsEnabled)
             applySubmissionFocus()
@@ -2731,6 +2766,7 @@ struct ChatView: View {
             current: ComposerDraftContent(text: draftMessage, quotes: draftQuotes),
             didStart: didStart,
             draftWasEdited: draftRevision != submittedDraftRevision,
+            preserveRejectedSubmission: viewModel.isCompressionRotated,
             for: draftKey
         )
         draftMessage = resolvedContent.text
@@ -2745,6 +2781,28 @@ struct ChatView: View {
         }
 
         return didStart
+    }
+
+    private func openCompressionContinuationIfNeeded() async {
+        guard isOnScreen, !Task.isCancelled else { return }
+        draftStore.setContent(ComposerDraftContent(text: draftMessage, quotes: draftQuotes), for: draftKey)
+        syncDraftAttachments()
+        if let continuation = await viewModel.compressionContinuationForNavigation(
+            from: draftKey, isCurrent: { isOnScreen },
+            prepareDraftForHandoff: {
+                draftStore.setContent(ComposerDraftContent(text: draftMessage, quotes: draftQuotes), for: draftKey)
+                syncDraftAttachments()
+            }
+        ) {
+            // The destination owns the retained work now; don't show a second
+            // unsent copy when the user returns to the sealed parent.
+            draftMessage = ""
+            draftQuotes = []
+            draftAttachmentsPendingRetry = []
+            lastSyncedDraftAttachments = []
+            viewModel.clearPendingAttachments()
+            pushedSession = continuation
+        }
     }
 
     /// Asks once per install, right after a normal send or voice note started a run, whether
@@ -2831,7 +2889,8 @@ struct ChatView: View {
             if consumesDraft {
                 reconcileConsumedDraft(
                     ComposerDraftContent(text: submittedDraft, quotes: submittedQuotes),
-                    submittedDraftRevision: submittedDraftRevision
+                    submittedDraftRevision: submittedDraftRevision,
+                    preserveRejectedSubmission: viewModel.isCompressionRotated
                 )
             }
         case .needsSubArg:
@@ -3030,7 +3089,8 @@ struct ChatView: View {
     /// Restored records whose re-upload failed are unioned back in so a
     /// mid-restore or post-restore sync can't silently drop them. Gated during
     /// hydration/restore so an empty or partial composer never overwrites the
-    /// persisted set.
+    /// persisted set. Records this composer never saw (a share moved in, #1181)
+    /// stay in the draft.
     private func syncDraftAttachments() {
         guard didHydrateDraft, !isRestoringDraftAttachments else { return }
         // Only records backed by a durable copy are persisted. Without one the
@@ -3043,8 +3103,8 @@ struct ChatView: View {
             !pendingRecords.contains(where: { $0.id == retry.id })
         }
         let records = pendingRecords + retryRecords
+        draftStore.setAttachments(records, replacing: lastSyncedDraftAttachments, for: draftKey)
         lastSyncedDraftAttachments = records
-        draftStore.setAttachments(records, for: draftKey)
     }
 
     /// Snapshots the effective composer settings into the draft whenever they
@@ -3086,12 +3146,14 @@ struct ChatView: View {
 
     private func reconcileConsumedDraft(
         _ submittedContent: ComposerDraftContent,
-        submittedDraftRevision: Int
+        submittedDraftRevision: Int,
+        preserveRejectedSubmission: Bool = false
     ) {
         let resolvedContent = draftStore.resolveConsumedInput(
             submitted: submittedContent,
             current: ComposerDraftContent(text: draftMessage, quotes: draftQuotes),
             draftWasEdited: draftRevision != submittedDraftRevision,
+            preserveRejectedSubmission: preserveRejectedSubmission,
             for: draftKey
         )
         draftMessage = resolvedContent.text
@@ -3118,6 +3180,8 @@ struct ChatView: View {
         // Not the user's edit, but a send still in flight must not clear it.
         draftRevision &+= 1
         draftMessage = parked.text
+        // The composer now knows the parked files, so removing one sticks.
+        lastSyncedDraftAttachments = parked.attachments
         viewModel.appendPendingAttachments(queued.flatMap(\.attachments))
     }
 
@@ -3593,6 +3657,7 @@ struct ChatView: View {
         let outcome = viewModel.runEndOutcome
         let runEndTrigger = viewModel.runEndTrigger
         let completion = viewModel.successfulResponseCompletion
+        let hermesLink = viewModel.hermesSessionLink
 
         Task { @MainActor in
             if outcome == .completed, completion?.needsTranscriptRefresh == true {
@@ -3606,7 +3671,8 @@ struct ChatView: View {
             }
             await ResponseCompletionNotificationService.scheduleRunEndedIfAllowed(
                 outcome,
-                sessionID: session.sessionId,
+                sessionID: hermesLink?.key ?? session.sessionId,
+                hermesProfile: hermesLink?.profile,
                 title: viewModel.displayTitle,
                 server: server,
                 preferenceEnabled: isResponseCompletionNotificationsEnabled,
@@ -4233,10 +4299,11 @@ private struct HermesPersonalityConfirmationModifier: ViewModifier {
     }
 }
 
-/// A Hermes session's sent file to preview: the host path its chip keeps, never shown,
-/// and the chip's name for the title.
-private struct HermesAttachmentPreviewItem: Identifiable {
+/// One Hermes native preview presentation, for a sent chip or a MEDIA document. A sent chip's
+/// path downloads from the host even when it is a URL (`BotArtifactReference`).
+private struct HermesFilePreviewItem: Identifiable {
     let id = UUID()
-    let path: String
-    let name: String?
+    let reference: TranscriptMediaReference
+    var name: String? = nil
+    var isSentAttachment = false
 }

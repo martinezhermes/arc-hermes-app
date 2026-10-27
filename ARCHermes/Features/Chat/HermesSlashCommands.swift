@@ -12,7 +12,7 @@ struct HermesSlashCatalog: Equatable {
     /// The host's skills that no command shadows (`BotSlashCatalog.skills`).
     private(set) var skills: [SkillSlashSuggestion] = []
     /// The names and aliases, lowercased, whose argument the host completes: every command
-    /// the host runs, so neither Hermex's own nor a held one.
+    /// the host runs, so neither ARC Hermes's own nor a held one.
     private(set) var hostArgumentNames: Set<String> = []
 
     init() {}
@@ -103,7 +103,7 @@ enum HermesChatPolicy: Equatable {
 enum HermesSlashRoute: Equatable {
     /// Not in this chat (`HermesChatPolicy`): the copy says why, and nothing is sent.
     case refused(String)
-    /// One of Hermex's own commands (`SlashCommandCatalog.hermesCommands`), by its handler.
+    /// One of ARC Hermes's own commands (`SlashCommandCatalog.hermesCommands`), by its handler.
     case appOwned(SlashCommand)
     /// Held until #702 slice 2.3: it would rewrite history or move chats behind the phone's back.
     case held
@@ -206,14 +206,14 @@ struct HermesSlashCompletion: Equatable {
 /// only a command's argument stage asks the host (`complete.slash`), debounced, and only the
 /// newest reply is kept. Everything lives with the chat: nothing is cached or persisted.
 ///
-/// Hermex runs its own commands (`SlashCommandCatalog.hermesCommands`) and holds the ones
+/// ARC Hermes runs its own commands (`SlashCommandCatalog.hermesCommands`) and holds the ones
 /// that wait on #702; every other catalog command runs on the host through `slash.exec`, a
 /// skill through `command.dispatch`, each once.
 @MainActor @Observable final class HermesSlashCommands {
     private(set) var catalog = HermesSlashCatalog() {
         didSet { scope.hostCommands = catalog.hostArgumentNames }
     }
-    /// What the composer's panel offers: Hermex's own commands first, then the catalog's, both
+    /// What the composer's panel offers: ARC Hermes's own commands first, then the catalog's, both
     /// without what the chat's policy refuses.
     private(set) var scope: SlashCommandScope
     /// The catalog's commands the panel lists: those the chat's policy does not refuse.
@@ -250,7 +250,7 @@ struct HermesSlashCompletion: Equatable {
         catalog = HermesSlashCatalog(reply)
     }
 
-    /// Where `/name` goes. What the chat's policy refuses, Hermex's own commands and the held
+    /// Where `/name` goes. What the chat's policy refuses, ARC Hermes's own commands and the held
     /// ones resolve without a catalog; an alias resolves to its command first.
     func route(_ name: String) -> HermesSlashRoute {
         let typed = name.lowercased()

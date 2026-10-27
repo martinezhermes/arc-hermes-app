@@ -162,7 +162,7 @@ extension MessageAttachment {
     }
 
     /// A Hermes session's user text as its transcript shows it (#1012), and the chips it
-    /// names. Each `\n\n` block that is a reference a Hermex send appends becomes a chip:
+    /// names. Each `\n\n` block that is a reference a ARC Hermes send appends becomes a chip:
     /// Hermes's vision-tool instruction pair (`BotAttachmentUpload.imageReference`) or a
     /// lone `@file:` token, plain or quoted (`file.attach`'s `ref_text`). The footer the
     /// host saves after a prompt's `@file:` tokens (`--- Context Warnings ---` and
@@ -175,10 +175,11 @@ extension MessageAttachment {
         guard content.contains("@file:") || content.contains("[The user attached an image: ")
                 || content.contains(" Context ---") || content.contains("--- Context Warnings ---")
         else { return (content, []) }
-        // Hermes's text-mode image line pair, whose first line names the stored file, and an
-        // `@file:` token as `file.attach` quotes it: backticks, double or single quotes, or bare.
+        // Hermes's text-mode image line pair, whose first line names the stored file and second
+        // its POSIX or Windows path (`BotAttachmentUpload.isHostAbsolute`), and an `@file:`
+        // token as `file.attach` quotes it: backticks, double or single quotes, or bare.
         let imageReference =
-            /\[The user attached an image: ([^\n]*)\]\n\[Examine it with the vision_analyze tool using image_url: (\/[^\n]*)\]/
+            /\[The user attached an image: ([^\n]*)\]\n\[Examine it with the vision_analyze tool using image_url: ((?:\/|[A-Za-z]:[\\\/])[^\n]*)\]/
         let fileReference = /@file:(?:`([^`\n]+)`|"([^"\n]+)"|'([^'\n]+)'|(\S+))/
         var text = content
         let footer = text.firstRange(of: /(?:^|\n)--- (?:Context Warnings|Attached Context) ---[ \t]*(?:\n|$)/)

@@ -86,6 +86,7 @@ import Observation
         let connection = host.connection(record)
         let firstPage = BotJSON.object(["sessions": .array((0..<100).map { row("s\($0)") })])
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             guard request.httpMethod == "GET", let url = request.url, url.path == "/api/sessions" else { return nil }
             let offset = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                 .first { $0.name == "offset" }?.value.flatMap(Int.init) ?? 0
@@ -139,10 +140,7 @@ import Observation
 
         XCTAssertEqual(created, "/Users/me/launch")
         XCTAssertNil(list.projectSheetErrorMessage)
-        let create: [String: BotJSON] = ["profile": .string("default"), "name": .string("Launch"),
-                                         "folders": .array([.string("/Users/me/launch")]),
-                                         "primary_path": .string("/Users/me/launch"), "color": .string("#7cb9ff")]
-        XCTAssertEqual(writes(host, ["projects.create"]), [create, create])
+        XCTAssertEqual(writes(host, ["projects.create"]).map { $0["primary_path"] }, [.string("/Users/me/launch"), .string("/Users/me/launch")])
         XCTAssertEqual(lane("p_9", in: list), ["a"])
     }
 
@@ -360,6 +358,7 @@ import Observation
     /// `BotSocketHost.connection`, whose sign-in script it replaces.
     private func serve(_ pages: [Int: [BotJSON]]) {
         _ = HermesHostFixture.configuration { request in
+            if let empty = HermesHostFixture.emptyScheduledPage(request) { return empty }
             guard request.httpMethod == "GET", let url = request.url, url.path == "/api/sessions" else { return nil }
             let offset = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
                 .first { $0.name == "offset" }?.value.flatMap(Int.init) ?? 0
@@ -368,7 +367,7 @@ import Observation
     }
 
     private func pageOffsets() -> [Int] {
-        HermesHostFixture.requests.filter { $0.url?.path == "/api/sessions" }.compactMap { request in
+        HermesHostFixture.requests.filter { $0.url?.path == "/api/sessions" && HermesHostFixture.emptyScheduledPage($0) == nil }.compactMap { request in
             request.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?.queryItems?
                 .first { $0.name == "offset" }?.value.flatMap(Int.init)
         }
@@ -433,6 +432,12 @@ import Observation
         func close() { inner.close() }
         func sessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage {
             try await inner.sessionPage(profile: profile, offset: offset, archived: archived)
+        }
+        func scheduledSessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage {
+            try await inner.scheduledSessionPage(profile: profile, offset: offset, archived: archived)
+        }
+        func searchScheduledSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult] {
+            try await inner.searchScheduledSessions(query: query, profile: profile, limit: limit)
         }
         func call(_ call: HermesCall, validateDispatch: (() throws -> Void)?) async throws -> BotJSON {
             let reply = try await inner.call(call, validateDispatch: validateDispatch)

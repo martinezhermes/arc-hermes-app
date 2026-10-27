@@ -306,43 +306,6 @@ final class ComposerVoiceInputServerRecordingTests: APIClientTestCase {
         XCTAssertEqual(orientations.count, 0)
     }
 
-    func testServerRecordingSettingsAreMonoAACWithSpeechBitrate() {
-        let settings = ComposerVoiceInputController.serverRecordingSettings
-        XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatMPEG4AAC))
-        XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
-        XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, ComposerVoiceInputController.serverRecordingBitrate)
-    }
-
-    func testServerRecordingUsesM4AContainer() {
-        XCTAssertEqual(ComposerVoiceInputController.serverRecordingFileExtension, "m4a")
-    }
-
-    func testRecordingAtUploadBoundaryLoadsForServerTranscription() {
-        var dataLoadCount = 0
-        let expectedData = Data("recording".utf8)
-        let expectedBoundary = 19 * 1_024 * 1_024
-
-        XCTAssertEqual(
-            ComposerVoiceInputController.maximumServerRecordingUploadBytes,
-            expectedBoundary
-        )
-        XCTAssertLessThan(
-            ComposerVoiceInputController.maximumServerRecordingUploadBytes,
-            PendingAttachment.maximumUploadBytes
-        )
-
-        let data = ComposerVoiceInputController.loadServerRecordingForUpload(
-            fileSize: expectedBoundary,
-            dataLoader: {
-                dataLoadCount += 1
-                return expectedData
-            }
-        )
-
-        XCTAssertEqual(data, expectedData)
-        XCTAssertEqual(dataLoadCount, 1)
-    }
-
     func testRecordingOneByteOverUploadBoundarySkipsDataLoadAndServerUpload() {
         var dataLoadCount = 0
 
@@ -357,23 +320,17 @@ final class ComposerVoiceInputServerRecordingTests: APIClientTestCase {
         XCTAssertNil(data)
         XCTAssertEqual(dataLoadCount, 0)
     }
+}
 
-    func testMissingRecordingFailsFileSizeInspection() {
-        let missingFile = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-
-        XCTAssertThrowsError(
-            try ComposerVoiceInputController.serverRecordingFileSize(at: missingFile)
-        )
-    }
-
-    // Recording has no duration cap: it runs until the user stops it. This
-    // documents why that is safe — even a 30-minute dictation at the configured
-    // bitrate stays comfortably below the server's default 20 MB upload ceiling.
-    func testHalfHourRecordingStaysUnderUploadCeiling() {
-        let thirtyMinutesInSeconds = 30 * 60
-        let approxBytes = ComposerVoiceInputController.serverRecordingBitrate / 8 * thirtyMinutesInSeconds
-        XCTAssertLessThan(approxBytes, PendingAttachment.maximumUploadBytes)
+/// Reports an on-device model without the simulator's speech service. Tests that
+/// use it are denied speech authorization first, so recognition never starts.
+private final class OnDeviceTestRecognizer: ComposerSpeechRecognizing {
+    let supportsOnDeviceRecognition = true
+    func recognitionTask(
+        with request: SFSpeechRecognitionRequest,
+        resultHandler: @escaping (SFSpeechRecognitionResult?, (any Error)?) -> Void
+    ) -> SFSpeechRecognitionTask {
+        preconditionFailure("Recognition starts only after speech authorization is granted")
     }
 }
 

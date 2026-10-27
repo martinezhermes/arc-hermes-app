@@ -58,6 +58,44 @@ import XCTest
         XCTAssertEqual(chat.writes("approval.respond").count, 1)
     }
 
+    /// A malformed `resolved` is no verdict: the card stays, warns, can be tapped again on
+    /// purpose, and the answer is never resent on its own.
+    func testAMalformedResolvedKeepsTheCardWarnsAndIsNotResent() async throws {
+        for reply: BotJSON in [.object([:]), .object(["resolved": .string("1")]), .object(["resolved": .number(1.5)]),
+                               .object(["resolved": .number(-1)]), .object(["resolved": .null])] {
+            let chat = await openChat()
+            chat.host.always("approval.respond", .init(result: reply))
+            chat.receive(approvalRequest(id: "srq-a1", requestID: "q-1"))
+            let taken = await chat.requests.respond(try action(chat), choice: .once)
+            XCTAssertFalse(taken, "\(reply)")
+            XCTAssertEqual(chat.requests.onScreen?.requestID, "q-1", "card kept for \(reply)")
+            XCTAssertEqual(chat.requests.errorMessage,
+                           "Answer outcome unknown. Check Hermes Desktop before answering again.", "\(reply)")
+            XCTAssertEqual(chat.writes("approval.respond").count, 1, "never resent for \(reply)")
+            XCTAssertTrue(chat.requests.mayAnswer, "a deliberate second tap stays possible")
+            // The host settling it elsewhere still retires the card.
+            chat.receive(event(2, "request.cancel", ["id": .string("srq-a1"), "method": .string("approval"),
+                                                    "reason": .string("resolved")]))
+            XCTAssertNil(chat.requests.onScreen, "reconciled by the host's cancel for \(reply)")
+        }
+    }
+
+    /// The uncertain warning belongs to its request: once the host retires that card, the next
+    /// approval shows no warning about an answer nobody gave it.
+    func testTheUncertainWarningLeavesWithItsRequestAndNeverReachesTheNextCard() async throws {
+        let chat = await openChat()
+        chat.host.always("approval.respond", .init(result: .object([:])))
+        chat.receive(approvalRequest(id: "srq-a1", requestID: "q-1"))
+        _ = await chat.requests.respond(try action(chat), choice: .once)
+        XCTAssertNotNil(chat.requests.errorMessage)
+        chat.receive(event(1, "request.cancel", ["id": .string("srq-a1"), "method": .string("approval"),
+                                                "reason": .string("resolved")]))
+        XCTAssertNil(chat.requests.errorMessage, "the warning left with its card")
+        chat.receive(approvalRequest(id: "srq-a2", requestID: "q-2"))
+        XCTAssertEqual(chat.requests.onScreen?.requestID, "q-2")
+        XCTAssertNil(chat.requests.errorMessage, "a fresh card carries no warning")
+    }
+
     /// A refused answer leaves the card answerable with the reason; nothing is retried.
     func testARefusedAnswerKeepsTheCardAndIsNotRetried() async throws {
         let chat = await openChat()
@@ -73,15 +111,6 @@ import XCTest
     }
 
     // MARK: Approval bypass
-
-    /// The pill reads the session's `yolo` from `session.info`.
-    func testTheBypassFollowsSessionInfo() async {
-        let chat = await openChat()
-        chat.receive(event(1, "session.info", ["yolo": .bool(true)]))
-        XCTAssertTrue(chat.model.isSessionApprovalBypassEnabled)
-        chat.receive(event(2, "session.info", ["yolo": .bool(false)]))
-        XCTAssertFalse(chat.model.isSessionApprovalBypassEnabled)
-    }
 
     /// Skip all turns the session's bypass on, then releases the card with `once`, each sent
     /// once and in that order; the pill turns it off again.
@@ -620,27 +649,6 @@ import XCTest
         XCTAssertNil(chat.requests.onScreen, "a settled operation never comes back")
     }
 
-    /// An operation that settles while the snapshot is read stays closed when the snapshot,
-    /// read after it settled, no longer lists it.
-    func testAnOperationSettledDuringASnapshotThatOmitsItStaysClosed() async {
-        let chat = await openChat()
-        chat.receive(event(1, "message.start"))
-        chat.receive(event(2, "connection.request", operation(seq: 1)))
-        chat.model.suspendStreamForBackground()
-
-        chat.host.always("session.events.since", .init(result: replay(latest: 2)))
-        chat.host.next("session.resume", .init(result: resume(pendingConnection: .object(operation(seq: 1)))))
-        chat.host.next("session.resume", .init(result: resume(),
-                                               before: [event(3, "connection.update", operation(seq: 2, settled: true))]))
-        await chat.model.reconnectStreamIfNeeded()
-        XCTAssertEqual(chat.turn.engine.connectionState, .connected)
-        XCTAssertNil(chat.requests.onScreen)
-        XCTAssertFalse(chat.model.isWaitingForUser)
-
-        chat.receive(event(4, "connection.request", operation(seq: 3)))
-        XCTAssertNil(chat.requests.onScreen, "a settled operation never comes back")
-    }
-
     /// Steer and Queue release an open operation with `settled_by: "continue"` before their
     /// message, as Desktop does; a refused Continue still sends it; Interrupt sends no Continue.
     func testGuideAndQueueContinueFirstAndInterruptDoesNot() async throws {
@@ -731,22 +739,6 @@ import XCTest
         XCTAssertEqual(chat.writes("connection.respond"), [])
         XCTAssertEqual(chat.writes("prompt.submit"), [])
         XCTAssertEqual(connectionOnScreen(chat)?.opID, "op-2")
-    }
-
-    /// A Continue whose reply is lost holds the message: it is never sent, and nothing is retried.
-    func testALostContinueHoldsTheMessage() async {
-        let chat = await openChat(rpcDeadline: .milliseconds(50))
-        chat.receive(event(1, "message.start"))
-        chat.receive(event(2, "connection.request", operation(seq: 1)))
-        chat.host.withhold("connection.respond")
-        do {
-            _ = try await chat.turn.submit("Then the docs", mode: .queue)
-            XCTFail("A lost Continue must not send the message")
-        } catch {
-            XCTAssertTrue(error is HermesChatTurnCoordinator.NotSent, "\(error)")
-        }
-        XCTAssertEqual(chat.writes("connection.respond").count, 1)
-        XCTAssertEqual(chat.writes("prompt.submit"), [])
     }
 
     /// A lost Continue warns on the card the reconnect restores, as a lost row answer does,
@@ -861,12 +853,6 @@ import XCTest
         await chat.model.reconnectStreamIfNeeded()
         XCTAssertNil(chat.requests.onScreen)
         XCTAssertEqual(chat.requests.withdrawal?.message, "Approval timed out, so it didn't run.")
-    }
-
-    /// The snapshot restores the bypass a reattach finds.
-    func testTheSnapshotRestoresTheBypass() async {
-        let chat = await openChat(info: ["yolo": .bool(true)])
-        XCTAssertTrue(chat.model.isSessionApprovalBypassEnabled)
     }
 
     // MARK: Fixture

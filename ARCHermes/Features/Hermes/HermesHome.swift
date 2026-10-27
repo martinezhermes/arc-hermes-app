@@ -17,6 +17,7 @@ struct HermesHome {
 enum HermesHomeDestination: Hashable {
     case chat(HermesSessionChat)
     case bots
+    case scheduled
     case tasks(HermesTasksEntry)
     case skills(HermesSkillsEntry)
     case memory(HermesMemoryEntry)

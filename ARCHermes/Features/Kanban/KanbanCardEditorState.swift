@@ -136,7 +136,7 @@ final class KanbanCardEditorState: Identifiable {
     var canEditTenant: Bool { !isEditing || backend == .webui }
 
     /// A Hermes host picks a Worktree or Directory Card's path itself, from the Board's project
-    /// directory, so it takes none from Hermex (#1044).
+    /// directory, so it takes none from ARC Hermes (#1044).
     var offersWorkspacePath: Bool { backend == .webui }
 
     var needsReadyUnassignedConfirmation: Bool {

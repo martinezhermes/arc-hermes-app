@@ -26,13 +26,13 @@ struct TipJarCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
                 companion
-                Text("Keep Hermex going")
+                Text("Keep ARC Hermes going")
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, minHeight: faceSize, alignment: .leading)
                 closeButton
             }
-            Text("Hermex is free and open source, with no ads and no tracking. Supporters make that possible.")
+            Text("ARC Hermes is free and open source, with no ads and no tracking. Supporters make that possible.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

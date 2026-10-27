@@ -1,56 +1,36 @@
 import SwiftUI
 
-/// The single notification home under Settings → Interaction. Push choices belong
-/// to this server and device; the caller supplies the existing global alert controls.
-@MainActor struct HermexPushSectionView<SharedSettings: View>: View {
+/// Settings → Notifications (#1252): push for this server and device first, then the
+/// sections the caller supplies for alerts that apply on this iPhone to every server.
+@MainActor struct HermexPushSettingsPage<SharedSections: View>: View {
     let server: URL
     @Environment(\.scenePhase) private var scenePhase
     @State private var provisioner: HermexPushProvisioner
-    @State private var isExpanded = false
     @State private var isConfirmingEnable = false
     @State private var isConfirmingDisable = false
     @State private var isConfirmingUpdate = false
     @State private var isConfirmingRestart = false
     @State private var preferenceTask: Task<Void, Never>?
-    private let sharedSettings: SharedSettings
+    private let sharedSections: SharedSections
 
-    /// `startsExpanded` opens the section for the chat's one-time notification offer (#863).
-    init(server: URL, startsExpanded: Bool = false, @ViewBuilder sharedSettings: () -> SharedSettings) {
+    init(server: URL, @ViewBuilder sharedSections: () -> SharedSections) {
         self.server = server
-        self.sharedSettings = sharedSettings()
-        _isExpanded = State(initialValue: startsExpanded)
+        self.sharedSections = sharedSections()
         _provisioner = State(initialValue: HermexPushProvisioner(
             server: server, connection: try? BotConnectionStore().load(server: server)))
     }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Push · Current server")
-                    .font(AppFont.caption()).foregroundStyle(.secondary)
+        List {
+            Section {
                 pushSettings
-                Divider()
-                Text("On this iPhone · All servers")
-                    .font(AppFont.caption()).foregroundStyle(.secondary)
-                sharedSettings
+            } header: {
+                Text("Push · Current server")
             }
-            .padding(.top, 12)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "bell").foregroundStyle(Color.secondary)
-                    .frame(width: 24).accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Notifications").font(AppFont.subheadline(weight: .medium))
-                    Text(provisioner.pairing == nil
-                         ? String(localized: "Push off · Current server")
-                         : String(localized: "Push on · Current server"))
-                        .font(AppFont.caption()).foregroundStyle(Color.secondary)
-                    if let card = provisioner.pluginCard { pluginLine(card) }
-                }
-            }
-            .foregroundStyle(Color.primary)
-            .frame(minHeight: 44)
+
+            sharedSections
         }
+        .settingsPage(String(localized: "Notifications"))
         .transaction { $0.animation = nil }
         .task {
             await provisioner.reload()
@@ -76,7 +56,9 @@ import SwiftUI
         .confirmationDialog("Turn off notifications for this server?", isPresented: $isConfirmingDisable, titleVisibility: .visible) {
             Button("Turn off notifications", role: .destructive) { Task { await provisioner.disable() } }
         } message: {
-            Text("This iPhone is removed from the relay, the plugin is disabled on your Hermes host, and the keys stored on this iPhone are deleted.")
+            Text(provisioner.sharesHostPairing
+                 ? String(localized: "Another entry for this Hermes host still gets its notifications, so the plugin and the relay stay as they are. Only the keys stored on this iPhone for this server are deleted.")
+                 : String(localized: "This iPhone is removed from the relay, the plugin is disabled on your Hermes host, and the keys stored on this iPhone are deleted."))
         }
         .confirmationDialog("Update the hermex-push plugin?", isPresented: $isConfirmingUpdate, titleVisibility: .visible) {
             // Like setup, the run outlives the screen: the host has already been asked to change.
@@ -99,7 +81,7 @@ import SwiftUI
         if let card = provisioner.pluginCard { pluginCallout(card) }
         if let pairing = provisioner.pairing {
             if pairing.preferencesNeedSync == true {
-                Text("Preferences aren’t confirmed. Try again to sync this iPhone with the relay.")
+                Text("Not synced with the relay yet.")
                     .font(AppFont.caption()).foregroundStyle(.secondary)
                 Button("Try again.") {
                     preferenceTask = Task { await provisioner.updatePreferences(pairing.effectivePreferences) }
@@ -108,13 +90,10 @@ import SwiftUI
                 .frame(minHeight: 44)
             } else {
                 preferenceToggle(String(localized: "Reply Notifications"), keyPath: \.replies)
-                Divider()
                 preferenceToggle(String(localized: "Subagent Notifications"), keyPath: \.muteSubagents, inverted: true)
-                Divider()
                 preferenceToggle(String(localized: "Show Previews"), keyPath: \.previews)
-                Divider()
                 preferenceToggle(String(localized: "Quiet the Open Chat"), keyPath: \.presenceSuppression)
-                Text("For this iPhone and the selected server. Quiet the Open Chat hides banners for the chat on screen, except approvals, questions and errors. Previews include message text; your iPhone’s notification settings still apply.")
+                Text("Previews include message text.")
                     .font(AppFont.caption()).foregroundStyle(.secondary)
             }
             if provisioner.phase == .savingPreferences {
@@ -128,7 +107,7 @@ import SwiftUI
                 .disabled(provisioner.isWorking)
                 .frame(minHeight: 44)
             if provisioner.notificationsOff {
-                notificationsOffRow(title: nil, message: String(localized: "Notifications are off for ARC Hermes, so this server’s notifications can’t show on this iPhone."))
+                notificationsOffRow(title: nil, message: String(localized: "Notifications are off for ARC Hermes in iOS Settings."))
             }
         } else if provisioner.connection != nil {
             Button(provisioner.isWorking ? String(localized: "Setting up…") : String(localized: "Turn on notifications…")) {
@@ -138,29 +117,19 @@ import SwiftUI
             .frame(minHeight: 44)
             if provisioner.notificationsOff {
                 notificationsOffRow(title: String(localized: "Notifications are off for ARC Hermes"),
-                                    message: String(localized: "Allow notifications for ARC Hermes in iOS Settings, then turn this on again."))
+                                    message: String(localized: "Allow them in iOS Settings, then try again."))
             }
             if provisioner.showsSteps {
                 ForEach(HermexPushProvisioner.Step.allCases) { step in stepRow(step) }
             }
-            Text("ARC Hermes sets this Hermes host up for push and pairs this iPhone with its relay. Your host encrypts every notification’s text: the relay only ever sees ciphertext.")
+            Text("The relay only ever sees encrypted text.")
                 .font(AppFont.caption()).foregroundStyle(.secondary)
         }
         // Also available after pairing, so an expired sign-in can be repaired
         // without searching through the server's detail screen.
-        NavigationLink {
+        NavigationLink(provisioner.connection == nil ? String(localized: "Connect Hermes…") : String(localized: "Hermes connection")) {
             BotConnectionView(server: server)
-        } label: {
-            HStack {
-                Text(provisioner.connection == nil ? String(localized: "Connect Hermes…") : String(localized: "Hermes connection"))
-                Spacer()
-                Image(systemName: "chevron.forward")
-                    .foregroundStyle(Color.secondary).accessibilityHidden(true)
-            }
-            .font(AppFont.subheadline()).frame(minHeight: 44)
-            .foregroundStyle(Color.primary)
         }
-        .buttonStyle(.plain)
         .disabled(provisioner.isWorking)
         if let failure = provisioner.failure {
             switch failure.remedy {
@@ -195,14 +164,14 @@ import SwiftUI
         }
         .disabled(!provisioner.canSendTest)
         .frame(minHeight: 44)
-        Text("Sends one test through the relay to every iPhone paired with this Hermes host. It checks the relay, Apple and this iPhone, not your host’s connection to the relay.")
+        Text("Reaches every paired iPhone; doesn’t test your host.")
             .font(AppFont.caption()).foregroundStyle(.secondary)
         if !pairing.effectivePreferences.replies {
             Text("Turn on Reply Notifications to send a test.")
                 .font(AppFont.caption()).foregroundStyle(.secondary)
         } else if provisioner.testDelivered {
             Label {
-                Text("Sent. Apple accepted the test; it should arrive in a few seconds.")
+                Text("Sent. It should arrive in a few seconds.")
             } icon: {
                 Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
             }
@@ -229,7 +198,7 @@ import SwiftUI
     }
 
     /// Denied iOS permission, kept apart from the red step failure because no host step
-    /// ran. The whole row opens Hermex's notification page in iOS Settings.
+    /// ran. The whole row opens ARC Hermes's notification page in iOS Settings.
     @ViewBuilder private func notificationsOffRow(title: String?, message: String) -> some View {
         if let settingsURL = URL(string: UIApplication.openNotificationSettingsURLString) {
             Link(destination: settingsURL) {
@@ -259,18 +228,18 @@ import SwiftUI
         case .status(.available(let loaded)):
             callout("arrow.up.circle.fill", tint: .blue, title: Text("Plugin update available"),
                     message: loaded.map { Text("Your Hermes host has hermex-push \($0.description) loaded. The newest is \(newest).") }
-                        ?? Text("Your Hermes host has an older hermex-push loaded. The newest is \(newest)."),
+                        ?? Text("Your Hermes host has an older hermex-push. The newest is \(newest)."),
                     action: String(localized: "Update plugin…")) { isConfirmingUpdate = true }
         case .updating(let step):
             callout("circle.dashed", tint: .secondary, title: Text("Updating the plugin…"), message: Text(step.progress))
         case .status(.restartNeeded(let loaded)) where HermexPushPlugin.canRestart(loaded):
             // The loaded plugin has the restart route, so restarting is the card's one action.
             callout("arrow.clockwise.circle.fill", tint: .orange, title: Text("Restart Hermes to finish"),
-                    message: Text("The new plugin is installed, but Hermes loads plugins only when it starts."),
+                    message: Text("Hermes loads the new plugin when it restarts."),
                     action: String(localized: "Restart Hermes…")) { isConfirmingRestart = true }
-        case .status(.restartNeeded):
+        case .status(.restartNeeded), .status(.setupNeedsRestart):
             callout("arrow.clockwise.circle.fill", tint: .orange, title: Text("Restart Hermes to finish"),
-                    message: Text("The new plugin is installed, but Hermes loads plugins only when it starts. Restart `hermes dashboard` on your host, then check again. ARC Hermes can’t restart it from this iPhone."),
+                    message: Text("Restart `hermes dashboard` on your host, then check again."),
                     action: provisioner.phase == .checkingPlugin ? String(localized: "Checking…") : String(localized: "Check again")) {
                 Task { await provisioner.checkPluginAgain() }
             }
@@ -279,7 +248,7 @@ import SwiftUI
                     message: Text("Waiting for Hermes to come back"))
         case .status(.restartTimedOut):
             callout("exclamationmark.triangle.fill", tint: .red, title: Text("Hermes didn’t come back"),
-                    message: Text("Hermes hasn’t answered since it restarted. If it stopped, start `hermes dashboard` on your host, then check again."),
+                    message: Text("If it stopped, start `hermes dashboard` on your host."),
                     action: provisioner.phase == .checkingPlugin ? String(localized: "Checking…") : String(localized: "Check again")) {
                 Task { await provisioner.checkPluginAgain() }
             }
@@ -329,40 +298,6 @@ import SwiftUI
         } else {
             card.accessibilityElement(children: .combine)
         }
-    }
-
-    /// The collapsed label's second line: the card's state in a few words, so every card that
-    /// asks for an action shows without opening the section. "Up to date" needs no line.
-    @ViewBuilder private func pluginLine(_ card: HermexPushProvisioner.PluginCard) -> some View {
-        switch card {
-        case .failed(let failure) where failure.remedy == .retryRestart:
-            captionLine("arrow.clockwise.circle.fill", tint: .orange, text: String(localized: "Restart Hermes to finish"),
-                        textTint: .secondary)
-        case .status(.available), .failed:
-            captionLine("arrow.up.circle.fill", tint: .blue, text: String(localized: "Plugin update available"), textTint: .blue)
-        case .updating:
-            captionLine("circle.dashed", tint: .secondary, text: String(localized: "Updating plugin…"), textTint: .secondary)
-        case .restarting:
-            captionLine("circle.dashed", tint: .secondary, text: String(localized: "Restarting Hermes…"), textTint: .secondary)
-        case .status(.restartNeeded):
-            captionLine("arrow.clockwise.circle.fill", tint: .orange, text: String(localized: "Restart Hermes to finish"),
-                        textTint: .secondary)
-        case .status(.restartTimedOut):
-            captionLine("exclamationmark.triangle.fill", tint: .red, text: String(localized: "Hermes didn’t come back"),
-                        textTint: .secondary)
-        case .status(.checkFailed(let failure)):
-            captionLine("exclamationmark.triangle.fill", tint: .red, text: failure.title, textTint: .secondary)
-        case .status(.upToDate):
-            EmptyView()
-        }
-    }
-
-    private func captionLine(_ symbol: String, tint: Color, text: String, textTint: Color) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Image(systemName: symbol).foregroundStyle(tint).accessibilityHidden(true)
-            Text(text).foregroundStyle(textTint)
-        }
-        .font(AppFont.caption())
     }
 
     private func failureRow(_ failure: HermexPushProvisioner.Failure) -> some View {

@@ -45,9 +45,16 @@ enum BotFailure: Error, Equatable, LocalizedError {
     /// (an access proxy's login page), or `/api/status` answered a 401 whose body is not a
     /// JSON object. Permanent.
     case blocked
-    /// The host requires sign-in but offers no `basic` provider, only a browser (OIDC)
-    /// one Hermex can't use yet. Permanent.
+    /// The host requires sign-in but offers neither a `basic` provider nor browser sign-in
+    /// (`auth_flows ∋ native_pkce`), or a form that can't sign in through the browser met
+    /// one that offers only that, such as Move to Hermes's destination. Permanent.
     case browserSignIn
+    /// The host no longer accepts a browser sign-in's refresh token (#708): 401
+    /// `session_expired` from `/auth/native/refresh`. The user has to sign in again. Permanent.
+    case signInExpired
+    /// A browser sign-in that closed without a code, or whose code the host no longer
+    /// accepts (it lasts 120 seconds and works once). Trying again starts a new one.
+    case browserSignInFailed
     /// The gateway upgrade was refused with this HTTP status after a good sign-in, usually
     /// by a proxy that drops the ticket header or has no WebSocket support. Permanent;
     /// 408, 429 and 5xx arrive as `.rejected` instead (`init(upgradeStatus:)`).
@@ -55,6 +62,14 @@ enum BotFailure: Error, Equatable, LocalizedError {
     /// `/api/status` reported this release, older than `HermesCompatibility.minimumVersion`,
     /// so sign-in stopped before the password. Permanent.
     case outdated(String)
+    /// The saved sign-in no longer matches the host's (#1314): a connection saved without
+    /// credentials met a sign-in, by password or browser, or one saved with them met a dashboard
+    /// with none. The user has to sign in again, so the saved record says what the host asks. Permanent.
+    case signInChanged
+    /// The address reaches a Hermes gateway's own listener (`hermes gateway run`, 0.22.1+), whose
+    /// sessions follow a protocol Hermex doesn't speak yet (#1341): its `gateway.ready` sets
+    /// `session_authority`, or its page withholds the session token from an open sign-in. Permanent.
+    case gatewayListener
     var errorDescription: String? {
         switch self {
         case .stale: return String(localized: "This action is no longer current. Refresh the conversation.")
@@ -64,7 +79,8 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .wrongIdentity: return String(localized: "The conversation identity changed. Check this bot in Desktop.")
         case .differentHost: return String(localized: "The Hermes host at this address reports a different identity than the one you connected to. Check the address in the Hermes connection.")
         case .rejected(401): return String(localized: "Hermes didn't accept the username or password.")
-        // Hermes's REST routes never answer 403, but the gateway upgrade does (see `.upgradeRefused`).
+        // Hermes answers 403 only to a session edit it refuses (`updateSession` throws most of those as
+        // `HermesSessionFenceRefusal.refused`) and to the gateway upgrade (see `.upgradeRefused`).
         // Hermes never answers 520-530 itself. 502-504 usually come from a proxy; Hermes's own 503
         // (its auth provider is unreachable) shares the approved proxy copy.
         case .rejected(403): return String(localized: "Something in front of Hermes, such as Cloudflare Access, blocked the request.")
@@ -76,6 +92,10 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .invalidAddress: return String(localized: "Enter a Hermes HTTP or HTTPS address without a path, credentials or query.")
         case .blocked: return String(localized: "Something in front of Hermes, such as Cloudflare Access, wants its own sign-in first. Add its service token under Connection Headers in the Hermes connection, or use an address that skips it, such as the dashboard's local network address.")
         case .browserSignIn: return String(localized: "This Hermes host only offers sign-in with a browser, which ARC Hermes doesn't support yet. To connect now, add a dashboard username and password on the host.")
+        case .signInExpired: return String(localized: "Your Hermes sign-in expired. Sign in again.")
+        case .signInChanged: return String(localized: "This server’s sign-in changed. Sign in again to continue.")
+        case .gatewayListener: return String(localized: "This address is a Hermes gateway’s own listener, which Hermex doesn’t support yet. Connect to hermes dashboard instead.")
+        case .browserSignInFailed: return String(localized: "The browser sign-in didn't finish. Try again.")
         case .upgradeRefused: return String(localized: "Hermes accepted the sign-in, but the live connection was refused. If a proxy or tunnel sits in front of Hermes, turn on WebSocket support and let the Sec-WebSocket-Protocol header through.")
         case .outdated(let version):
             return String(localized: "This Hermes host runs \(version). ARC Hermes needs Hermes \(HermesCompatibility.minimumVersion) or later. Update Hermes on the host, then try again.")
@@ -92,14 +112,16 @@ enum BotConnectionAdvice {
     /// Whether a screen that lost its connection to `error` should reconnect on its backoff
     /// (the inbox, the Sessions list). False for a refusal the user has to act on: sign-in,
     /// an unsupported host or address, an address that now reaches a different host or is not
-    /// a dashboard, an access proxy's own sign-in, a host with browser sign-in only, a refused
-    /// gateway upgrade, a Hermes release older than the minimum, and any other permanent HTTP
-    /// client error (a 404 is not a Hermes host). Server errors, rate limits and JSON-RPC
-    /// faults other than "method missing" are the retry loop's problem.
+    /// a dashboard, an access proxy's own sign-in, a host with browser sign-in only, an expired
+    /// browser sign-in, a host that now requires a sign-in, a refused gateway upgrade, a Hermes
+    /// release older than the minimum, a gateway's own listener, and any other permanent HTTP
+    /// client error (a 404 is not a Hermes host). Server errors, rate limits and JSON-RPC faults
+    /// other than "method missing" are the retry loop's problem.
     static func isRetryable(_ error: Error) -> Bool {
         switch error as? BotFailure {
         case .unsupported, .wrongIdentity, .differentHost, .invalidAddress, .notDashboard,
-             .blocked, .browserSignIn, .upgradeRefused, .outdated: return false
+             .blocked, .browserSignIn, .signInExpired, .signInChanged, .upgradeRefused, .outdated,
+             .gatewayListener: return false
         case .rejected(-32601), .rejected(4090), .rejected(4130): return false
         case .rejected(408), .rejected(429): return true
         case .rejected(let code): return !(400..<500).contains(code)
@@ -167,6 +189,9 @@ enum BotConnectionAdvice {
     /// One file the host serves by `path` under `context`'s Profile and session. `limit` caps a
     /// preview's bytes; nil reads the whole file, as a MEDIA file's export does (#1112).
     func artifactData(path: String, context: BotArtifactContext, limit: Int?) async throws -> Data
+    /// Makes sure the agents of `profile`'s sessions are told what ARC Hermes shows
+    /// (`HermesConnection.keepPlatformNote`). Never throws: a chat opens without the note.
+    func keepPlatformNote(profile: String) async
     /// Removes a Profile on the host over the authenticated HTTP session. Only
     /// a 200 with `ok` counts as deleted; anything else leaves the bot in place.
     func deleteProfile(_ name: String) async throws
@@ -183,9 +208,17 @@ enum BotConnectionAdvice {
     /// One page of `profile`'s sessions for the Sessions list, or with `archived` for the
     /// Archived screen (`HermesREST.sessionList`, #1046, #1048).
     func sessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage
+    /// One page of `profile`'s scheduled (cron) sessions, read and paged apart from the ordinary list.
+    func scheduledSessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage
+    /// `profile`'s scheduled (cron) sessions matching `query`.
+    func searchScheduledSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult]
+    /// One page of every session `profile` lists, for Move to Hermes's scan
+    /// (`HermesREST.sessionScan`, #1213).
+    func sessionScanPage(profile: String, offset: Int) async throws -> HermesScanPage
     /// Writes one change to a session (`HermesREST.updateSession`, #1046, #1048) and returns the
     /// title the host keeps. A change the host refuses with its reason, such as a title already
-    /// in use, throws `HermesSessionRefusal`.
+    /// in use, throws `HermesSessionRefusal`; one its write fence refuses (#1300), such as a
+    /// session that changed since the write read it, throws `HermesSessionFenceRefusal`.
     @discardableResult
     func updateSession(_ change: HermesSessionChange, key: String, profile: String) async throws -> String?
     /// The session's row and messages as the host exports them (`HermesREST.sessionExport`, #1048).
@@ -195,7 +228,8 @@ enum BotConnectionAdvice {
     func sessionRow(key: String, profile: String) async throws -> BotJSON?
     /// Sends one session import, its JSON `body` already encoded (`HermesREST.importSessions`,
     /// #1051), and returns the host's result. A payload the host refuses throws its reason as
-    /// `HermesSessionRefusal`.
+    /// `HermesSessionRefusal`, with every session it named in `entries` (#1213); one its write
+    /// fence refuses throws `HermesSessionFenceRefusal` (#1300).
     func importSessions(body: Data) async throws -> BotJSON
     /// `profile`'s sessions matching `query`, in the host's order, at most `limit`
     /// (`HermesREST.sessionSearch`, #1053).
@@ -220,6 +254,8 @@ extension BotTransport {
     func artifactData(path: String, context: BotArtifactContext, limit: Int?) async throws -> Data {
         throw BotArtifactFailure.unavailable
     }
+
+    func keepPlatformNote(profile: String) async {}
 
     /// A preview's download: at most 25 MB.
     func artifactData(path: String, context: BotArtifactContext) async throws -> Data {
@@ -248,6 +284,18 @@ extension BotTransport {
     }
 
     func sessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage {
+        throw BotFailure.unsupported
+    }
+
+    func scheduledSessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage {
+        throw BotFailure.unsupported
+    }
+
+    func searchScheduledSessions(query: String, profile: String, limit: Int) async throws -> [HermesSessionSearchResult] {
+        throw BotFailure.unsupported
+    }
+
+    func sessionScanPage(profile: String, offset: Int) async throws -> HermesScanPage {
         throw BotFailure.unsupported
     }
 
@@ -283,6 +331,32 @@ extension BotTransport {
     }
 }
 
+/// How a dashboard's `/api/status` says a phone signs in.
+enum HermesSignInMethod: Equatable {
+    /// A username and password.
+    case password
+    /// The host's browser page (`HermesBrowserSignIn.isRequired(by:)`, #708).
+    case browser
+    /// No sign-in (`auth_required` false, #1314): a dashboard bound to loopback without
+    /// `dashboard.public_url`, reached through a proxy. The connection reads the session token
+    /// the dashboard's page carries, and anyone who reaches the address can do the same.
+    case open
+
+    /// Shown wherever such a dashboard is connected or saved, in place of its sign-in.
+    static var openWarning: String {
+        String(localized: "This dashboard has no password. Anyone who can reach this address can use your agent. To require one, set dashboard.public_url on the host and turn on its password.")
+    }
+
+    /// Nil for a status without an `auth_required` flag, which is no dashboard ARC Hermes knows.
+    init?(_ status: BotJSON) {
+        switch status["auth_required"].flag {
+        case false?: self = .open
+        case true?: self = HermesBrowserSignIn.isRequired(by: status) ? .browser : .password
+        case nil: return nil
+        }
+    }
+}
+
 /// The public `GET /api/status` fields the connection screen shows. Every field is
 /// optional because hosts add, omit and rename them between releases.
 struct BotHostStatus: Equatable {
@@ -298,6 +372,11 @@ struct BotHostStatus: Equatable {
     var heartbeatStale: Double?
     var platformsConnected: Int?
     var platformsConfigured: Int?
+    /// Every Profile's name, which the host reports even behind its sign-in (#1180); nil when
+    /// it reports none.
+    var profiles: [String]?
+    /// How the host says a phone signs in; a password for a status without `auth_required`.
+    var signInMethod: HermesSignInMethod
 
     init(_ json: BotJSON) {
         version = json["version"].text
@@ -307,6 +386,12 @@ struct BotHostStatus: Equatable {
         heartbeatStale = json["gateway_heartbeat_stale_s"].number
         platformsConnected = json["components"]["platforms"]["connected"].integer
         platformsConfigured = json["components"]["platforms"]["configured"].integer
+        profiles = json["profiles"].list.map { items in
+            var seen = Set<String>()
+            return items.compactMap { $0.text?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && seen.insert($0).inserted }
+        }
+        signInMethod = HermesSignInMethod(json) ?? .password
     }
 }
 

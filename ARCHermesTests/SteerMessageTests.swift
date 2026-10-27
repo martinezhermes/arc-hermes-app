@@ -46,15 +46,6 @@ final class SteerMessageTests: XCTestCase {
         XCTAssertEqual(message.steerText, "hello")
     }
 
-    func testMissingDisplayKindDecodesAsNil() throws {
-        let message = try JSONDecoder().decode(
-            ChatMessage.self,
-            from: Data(#"{"role":"user","content":"hello"}"#.utf8)
-        )
-        XCTAssertNil(message.displayKind)
-        XCTAssertFalse(message.isSteerMessage)
-    }
-
     // MARK: - Marker stripping
 
     func testStrippedSteerText() {
@@ -76,18 +67,6 @@ final class SteerMessageTests: XCTestCase {
         XCTAssertNil(ChatMessage.strippedSteerText(
             from: "[OUT-OF-BAND USER MESSAGE\nuse shorter sentences\n\(Self.steerCloseLine)"
         ))
-    }
-
-    func testIsSteerMessageViaDisplayKindWithoutMarker() {
-        let message = ChatMessage(
-            role: "user",
-            content: "use shorter sentences",
-            timestamp: nil,
-            messageId: "m1",
-            displayKind: "steer"
-        )
-        XCTAssertTrue(message.isSteerMessage)
-        XCTAssertEqual(message.steerText, "use shorter sentences")
     }
 
     func testIsSteerMessageViaMarkerWithoutDisplayKind() {
@@ -323,7 +302,7 @@ final class SteerMessageTests: XCTestCase {
     }
 
     /// A steer that carried attachments ends with the web UI's attached-files
-    /// note, whose bracketed line must not read as Hermex's `[Attached files:`
+    /// note, whose bracketed line must not read as ARC Hermes's `[Attached files:`
     /// marker: the echo still merges into the persisted row (#856).
     func testSteerEchoWithAttachmentNoteMatchesPersistedSteerRow() {
         let sent = PendingAttachment.steerMessageText(

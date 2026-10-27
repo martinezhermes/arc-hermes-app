@@ -376,3 +376,11 @@ Capture bugs, polish notes, and follow-up ideas in [GitHub Issues](https://githu
 - Launch screen acceptable.
 - Privacy permission prompts readable.
 - TestFlight install path documented.
+
+## Optional App Store Connect CLI helper
+
+`scripts/app-store` runs `asc` in read-only mode by default. Configure
+`ARCHERMES_ASC_APP_ID` and `ARCHERMES_ASC_PROFILE` explicitly for the intended ARC
+Hermes app and local authentication profile; the wrapper never selects upstream's
+app or account. `--write` is only for an explicitly authorized maintainer operation.
+The existing archive/export and release gates above remain authoritative.
