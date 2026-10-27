@@ -66,6 +66,10 @@ enum BotFailure: Error, Equatable, LocalizedError {
     /// credentials met a sign-in, by password or browser, or one saved with them met a dashboard
     /// with none. The user has to sign in again, so the saved record says what the host asks. Permanent.
     case signInChanged
+    /// The address reaches a Hermes gateway's own listener (`hermes gateway run`, 0.22.1+), whose
+    /// sessions follow a protocol Hermex doesn't speak yet (#1341): its `gateway.ready` sets
+    /// `session_authority`, or its page withholds the session token from an open sign-in. Permanent.
+    case gatewayListener
     var errorDescription: String? {
         switch self {
         case .stale: return String(localized: "This action is no longer current. Refresh the conversation.")
@@ -75,7 +79,8 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .wrongIdentity: return String(localized: "The conversation identity changed. Check this bot in Desktop.")
         case .differentHost: return String(localized: "The Hermes host at this address reports a different identity than the one you connected to. Check the address in the Hermes connection.")
         case .rejected(401): return String(localized: "Hermes didn't accept the username or password.")
-        // Hermes's REST routes never answer 403, but the gateway upgrade does (see `.upgradeRefused`).
+        // Hermes answers 403 only to a session edit it refuses (`updateSession` throws most of those as
+        // `HermesSessionFenceRefusal.refused`) and to the gateway upgrade (see `.upgradeRefused`).
         // Hermes never answers 520-530 itself. 502-504 usually come from a proxy; Hermes's own 503
         // (its auth provider is unreachable) shares the approved proxy copy.
         case .rejected(403): return String(localized: "Something in front of Hermes, such as Cloudflare Access, blocked the request.")
@@ -89,6 +94,7 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .browserSignIn: return String(localized: "This Hermes host only offers sign-in with a browser, which ARC Hermes doesn't support yet. To connect now, add a dashboard username and password on the host.")
         case .signInExpired: return String(localized: "Your Hermes sign-in expired. Sign in again.")
         case .signInChanged: return String(localized: "This server’s sign-in changed. Sign in again to continue.")
+        case .gatewayListener: return String(localized: "This address is a Hermes gateway’s own listener, which Hermex doesn’t support yet. Connect to hermes dashboard instead.")
         case .browserSignInFailed: return String(localized: "The browser sign-in didn't finish. Try again.")
         case .upgradeRefused: return String(localized: "Hermes accepted the sign-in, but the live connection was refused. If a proxy or tunnel sits in front of Hermes, turn on WebSocket support and let the Sec-WebSocket-Protocol header through.")
         case .outdated(let version):
@@ -108,13 +114,14 @@ enum BotConnectionAdvice {
     /// an unsupported host or address, an address that now reaches a different host or is not
     /// a dashboard, an access proxy's own sign-in, a host with browser sign-in only, an expired
     /// browser sign-in, a host that now requires a sign-in, a refused gateway upgrade, a Hermes
-    /// release older than the minimum, and any other permanent HTTP client error (a 404 is not a
-    /// Hermes host). Server errors, rate limits and JSON-RPC faults other than "method missing"
-    /// are the retry loop's problem.
+    /// release older than the minimum, a gateway's own listener, and any other permanent HTTP
+    /// client error (a 404 is not a Hermes host). Server errors, rate limits and JSON-RPC faults
+    /// other than "method missing" are the retry loop's problem.
     static func isRetryable(_ error: Error) -> Bool {
         switch error as? BotFailure {
         case .unsupported, .wrongIdentity, .differentHost, .invalidAddress, .notDashboard,
-             .blocked, .browserSignIn, .signInExpired, .signInChanged, .upgradeRefused, .outdated: return false
+             .blocked, .browserSignIn, .signInExpired, .signInChanged, .upgradeRefused, .outdated,
+             .gatewayListener: return false
         case .rejected(-32601), .rejected(4090), .rejected(4130): return false
         case .rejected(408), .rejected(429): return true
         case .rejected(let code): return !(400..<500).contains(code)

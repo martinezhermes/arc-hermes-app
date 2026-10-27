@@ -133,8 +133,11 @@ browser sign-in (`BotConnection.hasNoCredentials`). Its sign-in reads the dashbo
 (`/api/profiles/active`): at the 0.21.5 pin `/api/auth/me` refuses this mode, since only
 the password gate sets a session. The token is held in memory only and sent as
 `X-Hermes-Session-Token`, never `Authorization: Bearer`, which a proxy's basic auth may
-hold, and a cross-origin redirect drops it. `POST /api/auth/ws-ticket` is refused here,
-so both socket upgrades present the token as `?token=` with no subprotocol
+hold, and a cross-origin redirect drops it. A gateway's own listener (`hermes gateway
+run`, 0.22.1+) serves the same page without the token; its
+`__HERMES_AUTH_REQUIRED__=false` bootstrap tells it apart from a page that isn't a
+dashboard's (`.gatewayListener`). `POST /api/auth/ws-ticket` is refused here, so both
+socket upgrades present the token as `?token=` with no subprotocol
 (`HermesREST.UpgradePass`), which the host checks without one
 (`web_server_chat.py` `_ws_auth_reason`), each after a gated read. A host restart replaces
 the token: the 401 that follows reads the page again and resends once, as for any
@@ -169,8 +172,11 @@ A failed sign-in names what to check (`BotConnectionAdvice`): the unreachable ho
 a Host-header 400 (`dashboard.public_url`), a webui address, a proxy or Cloudflare
 status, an access proxy's own sign-in (`.blocked`: a redirect to another host or a
 non-JSON 401 on `/api/status`), a host with no sign-in ARC Hermes can use (`.browserSignIn`),
-and a refused gateway upgrade (`.upgradeRefused`). The inbox and chat use the same
-copy for the messages they show, and none of these three retries on its own.
+a refused gateway upgrade (`.upgradeRefused`), and a gateway's own listener, whose
+`gateway.ready` sets `session_authority` (`.gatewayListener`; its protocol is #1341). The
+inbox and chat use the same copy for the messages they show, and none of these retries on
+its own. Adding a server signs in over HTTP only, so a listener with a password is saved
+and refused at its first gateway connect.
 A rejected password (`.rejected(401)`) offers "Update sign-in" in place of
 Reconnect in the inbox, a chat and a room: it opens the connection form with the
 password focused, from the inbox, because a chat's or room's client is bound to
@@ -328,15 +334,26 @@ OAuth, webui fallback, server provisioning or competing-backend path.
 The host tells each agent what screen it writes to through a per-surface note in its system
 prompt, picked by the session's `source`. A session with none runs as `tui`, whose note says
 `MEDIA:` tags print as text and files must be delivered as paths. So every `session.create` and
-`session.resume` ARC Hermes sends carries `source: "hermex"` (`HermesCall.source`), and a branch
+`session.resume` ARC Hermes sends carries `source: "gui"` (`HermesCall.source`), and a branch
 inherits its parent's. The host has no built-in note for that name, so ARC Hermes keeps its own in
-each Profile's config as `platform_hints.hermex.append` (`HermesREST.platformNote`), which the
-host appends for that source (#1278). `HermesConnection.keepPlatformNote` reads the config once
+each Profile's config as `platform_hints.gui.append` (`HermesREST.platformNote`), which the
+host appends for that source (#1278). The name must also be one a gateway beside the dashboard
+treats as local: it refuses an edit to a session it hasn't loaded otherwise, so sessions made by
+2.0 builds that sent `hermex` answer 404 `not_found` to pin, archive, unread and rename on that
+topology (#1335). Duplicate makes an editable copy of one. `gui` is the only local name with no
+built-in note, and it has costs. Desktop chats run in-process as `desktop` and never read the
+note, but a Desktop chat the gateway runs in a managed worker (safe mode, or the custom-provider
+opt-in) runs as `gui` and gets ARC Hermes's note (hermes-agent v0.22.5 `agent/managed_worker.py`).
+The gateway's session picker and `--source desktop` filters list ARC Hermes's sessions, and one a
+TUI or Desktop resume hands to the gateway runs with Desktop's toolsets and approvals
+(`gateway/session_policy.py` `SURFACES`). On the canonical protocol `gui` means Desktop; revisit
+the name if ARC Hermes moves to it. `HermesConnection.keepPlatformNote` reads the config once
 per Profile per sign-in, before the first attach and before a new bot's chat is made, and writes
 the note only when it is missing or different. `PUT /api/config` deep-merges, so nothing else in
 the file changes. The note is read when the host builds an agent, so a runtime the host built
 earlier keeps the old note until the host reaps it. ARC Hermes owns `append`: a user's own text for
-ARC Hermes sessions goes in `platform_hints.hermex.replace`, which the host puts before it.
+ARC Hermes sessions goes in `platform_hints.gui.replace`, which the host puts before it. Text a user
+put in `platform_hints.hermex.replace` for a 2.0 build no longer applies; move it to `gui`.
 
 ## Handshake
 

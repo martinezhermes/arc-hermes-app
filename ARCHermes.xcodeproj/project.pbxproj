@@ -5,6 +5,56 @@
 	objectVersion = 56;
 	archiveVersion = 1;
 	objects = {
+		E1318000000000000000A009 = {
+			fileRef = E1318000000000000000A010;
+			isa = PBXBuildFile;
+		};
+		E1318000000000000000A010 = {
+			path = "APIKeyEditor.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		E1318000000000000000A007 = {
+			fileRef = E1318000000000000000A008;
+			isa = PBXBuildFile;
+		};
+		E1318000000000000000A008 = {
+			path = "APIKeysView.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		E1318000000000000000A005 = {
+			fileRef = E1318000000000000000A006;
+			isa = PBXBuildFile;
+		};
+		E1318000000000000000A006 = {
+			path = "APIKeysModel.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		E1318000000000000000A003 = {
+			fileRef = E1318000000000000000A004;
+			isa = PBXBuildFile;
+		};
+		E1318000000000000000A004 = {
+			path = "HermesEnvironmentClientTests.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		E1318000000000000000A001 = {
+			fileRef = E1318000000000000000A002;
+			isa = PBXBuildFile;
+		};
+		E1318000000000000000A002 = {
+			path = "Hermes/HermesEnvironmentClient.swift";
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
 		A1213000000000000000A006 = {
 			path = MoveToHermesTransferTests.swift;
 			isa = PBXFileReference;
@@ -460,6 +510,7 @@
 			"path" = "ARCHermesTests";
 			"isa" = "PBXGroup";
 			"children" = (
+				E1318000000000000000A004,
 				"B48200000000000000000007",
 				"B48200000000000000000035",
 				"B48200000000000000000023",
@@ -723,6 +774,7 @@
 			"path" = "Networking";
 			"isa" = "PBXGroup";
 			"children" = (
+				E1318000000000000000A002,
 				"5619C4EB852849D396C45F95",
 				"BF2EA5336E9B431489F91A63",
 				"02620AA1CBC865AE71DB7C5C",
@@ -4586,6 +4638,7 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = "2147483647";
 			"files" = (
+				E1318000000000000000A003,
 				"A4790000000000000000E006",
 				"B48200000000000000000008",
 				"B48200000000000000000036",
@@ -5542,6 +5595,10 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = "2147483647";
 			"files" = (
+				E1318000000000000000A001,
+				E1318000000000000000A005,
+				E1318000000000000000A007,
+				E1318000000000000000A009,
 				"A4790000000000000000E001",
 				"A4790000000000000000E002",
 				"559000000000000000000001",
@@ -7623,6 +7680,9 @@
 			"path" = "Settings";
 			"isa" = "PBXGroup";
 			"children" = (
+				E1318000000000000000A006,
+				E1318000000000000000A008,
+				E1318000000000000000A010,
 				"1A2B3C4D5E6F7000000000F6",
 				"125200000000000000000001",
 				"125200000000000000000003",

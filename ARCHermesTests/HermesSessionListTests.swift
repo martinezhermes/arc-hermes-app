@@ -250,6 +250,26 @@ import SwiftData
         XCTAssertTrue(list.isHermesConnected)
     }
 
+    /// Coming back to the foreground reopens only a list whose rows, or View all's, are on
+    /// screen: a chat over View all on a phone stays closed until it returns (#1317).
+    func testForegroundReopensOnlyAListWhoseRowsAreShowing() {
+        var covers = HermesSessionListCovers()
+        XCTAssertTrue(covers.reopensOnForeground(sidebarIsPresented: false), "the session list itself")
+        covers.showingScheduled = true
+        XCTAssertTrue(covers.reopensOnForeground(sidebarIsPresented: false), "View all on a phone")
+
+        covers.chat = HermesSessionChat(server: server, connection: connection, target: .session(profile: "default", key: "a"))
+        XCTAssertFalse(covers.reopensOnForeground(sidebarIsPresented: false), "a chat over View all")
+        XCTAssertTrue(covers.reopensOnForeground(sidebarIsPresented: true), "a split's sidebar beside the chat")
+
+        for destination in [HermesHomeDestination.archived("default"), .bots, .kanban] {
+            covers = HermesSessionListCovers()
+            covers.navigation.select(destination)
+            XCTAssertFalse(covers.reopensOnForeground(sidebarIsPresented: false), "another screen over the list")
+            XCTAssertTrue(covers.reopensOnForeground(sidebarIsPresented: true), "visible sidebar beside a detail")
+        }
+    }
+
     // MARK: Rows
 
     /// The attachment-title rule (#1046 comment of 2026-10-05): a title or `preview` drops the

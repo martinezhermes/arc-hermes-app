@@ -149,7 +149,7 @@ import OSLog
         attachedRuntimes.insert(runtime)
     }
 
-    /// Keeps `HermesREST.platformNote` as `profile`'s `platform_hints.hermex.append` (#1278), the
+    /// Keeps `HermesREST.platformNote` as `profile`'s `platform_hints.gui.append` (#1278), the
     /// note the host gives an agent built for a session that runs as `HermesCall.source`. Reads
     /// the config once per Profile on this connection and writes only a missing or changed note;
     /// a call while that check runs waits for it, so no chat's agent is built before the note is
@@ -214,7 +214,9 @@ import OSLog
                     let page = try await Self.send(prepared(try HermesREST.dashboardPage.request(base: connection.address)),
                                                    on: session, accepting: 200..<201, redirectGuard: redirectGuard)
                     try checkCurrent()
-                    guard let token = HermesREST.pageToken(in: page) else { throw BotFailure.unsupported }
+                    guard let token = HermesREST.pageToken(in: page) else {
+                        throw HermesREST.withholdsPageToken(page) ? BotFailure.gatewayListener : BotFailure.unsupported
+                    }
                     credential = .pageToken(token)
                     // Any gated read proves the token. At the 0.21.5 pin `/api/auth/me` answers 401
                     // in this mode, since only the password gate sets a session.

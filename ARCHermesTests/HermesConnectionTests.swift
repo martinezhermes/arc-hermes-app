@@ -710,14 +710,15 @@ import XCTest
         XCTAssertEqual(HermesHeaders(saved: saved).values, [cloudflare, access])
     }
 
-    /// A Profile's config gets ARC Hermes's note under `platform_hints.hermex` (#1278): written
+    /// A Profile's config gets ARC Hermes's note under `platform_hints.gui` (#1278, #1335): written
     /// when it is missing or differs, through a PUT the host merges, and left alone when current.
-    /// Each Profile is read once per connection.
+    /// A note under 2.0 builds' `hermex` doesn't count. Each Profile is read once per connection.
     func testThePlatformNoteIsWrittenOnlyWhenMissingOrChanged() async throws {
         let rows: [(hints: BotJSON, writes: Int)] = [
             (.null, 1),
-            (.object(["hermex": .object(["append": .string("An older note.")])]), 1),
-            (.object(["hermex": .object(["append": .string(HermesREST.platformNote)])]), 0)
+            (.object(["gui": .object(["append": .string("An older note.")])]), 1),
+            (.object(["hermex": .object(["append": .string(HermesREST.platformNote)])]), 1),
+            (.object(["gui": .object(["append": .string(HermesREST.platformNote)])]), 0)
         ]
         for row in rows {
             HermesHostFixture.reset()
@@ -737,7 +738,7 @@ import XCTest
             }
             if let write = config.first(where: { $0.httpMethod == "PUT" }) {
                 XCTAssertEqual(HermesCronFixture.body(write), .object(["config": .object(["platform_hints": .object([
-                    "hermex": .object(["append": .string(HermesREST.platformNote)])
+                    "gui": .object(["append": .string(HermesREST.platformNote)])
                 ])])]))
             }
         }
@@ -858,6 +859,24 @@ import XCTest
         XCTAssertNil(pairing.value(forHTTPHeaderField: "Authorization"))
         XCTAssertEqual(HermesHostFixture.count("/"), 1)
         XCTAssertEqual(HermesHostFixture.count("/auth/password-login"), 0)
+    }
+
+    /// A gateway's own listener (#1340) serves an open dashboard's page without its token. Its
+    /// bootstrap tells it apart from a page that isn't a dashboard's.
+    func testAnOpenGatewayListenerIsNamedAtSignIn() async {
+        for (page, failure) in [(#"<script>window.__HERMES_AUTH_REQUIRED__=false;</script>"#, BotFailure.gatewayListener),
+                                ("<html>Not Hermes</html>", .unsupported)] {
+            let configuration = HermesHostFixture.configuration { request in
+                switch request.url?.path {
+                case "/api/status": return .json(200, .object(["auth_required": .bool(false), "version": .string("0.22.5")]))
+                case "/": return .body(200, Data(page.utf8))
+                default: return nil
+                }
+            }
+            let http = HermesConnection(connection: openRecord, configuration: configuration)
+            do { try await http.signIn(); XCTFail("Expected \(failure)") }
+            catch { XCTAssertEqual(error as? BotFailure, failure) }
+        }
     }
 
     /// A host restart replaces the token, so the 401 that follows reads the page again and the

@@ -722,6 +722,38 @@ import SwiftUI
         XCTAssertEqual(HermesHostFixture.requests.last { $0.url?.path == "/api/profiles/active" }?.httpMethod, "GET")
     }
 
+    // MARK: Replaced Bot Chat (#1339)
+
+    /// The host moved the Bot Chat aside and made a new one under its title while the chat was
+    /// away (hermes-agent 0.22.3). A send's attach follows the new chat, rebuilds from its rows
+    /// with one notice after them in place of the old ones, and does not send into it; the next
+    /// send does.
+    func testABotChatTheHostReplacedIsFollowedAndASendAcrossTheSwapIsHeld() async {
+        let chat = await openChat(target: .canonicalChat(profile: "default"), history: [userRow("Old question")])
+        XCTAssertEqual(chat.model.messages.map(\.content), ["Old question"])
+
+        chat.model.suspendStreamForBackground()
+        chat.host.always("session.list", .init(result: .object(["sessions": .array([
+            .object(["id": .string("new-root"), "resolved_id": .string("new-tip")])
+        ])])))
+        chat.host.always("session.resume", .init(result: resume(running: false, runtime: "runtime-2", key: "new-tip")))
+        chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+        serveHistory([assistantRow("Fresh start", id: 1)], key: "new-tip")
+
+        let held = await chat.model.sendMessage("Continue")
+        XCTAssertFalse(held)
+        XCTAssertNotNil(chat.model.sendErrorMessage)
+        XCTAssertEqual(chat.writes("prompt.submit").count, 0, "nothing goes to a chat the user has not seen")
+        XCTAssertEqual(chat.turn.engine.connectionState, .connected)
+        XCTAssertEqual(chat.turn.engine.root, "new-root")
+        XCTAssertEqual(chat.model.messages.map(\.role), ["assistant", "local_notice"])
+        XCTAssertEqual(chat.model.messages.first?.content, "Fresh start")
+
+        let sent = await chat.model.sendMessage("Continue")
+        XCTAssertTrue(sent)
+        XCTAssertEqual(chat.writes("prompt.submit").map { $0["session_id"] }, [.string("runtime-2")])
+    }
+
     // MARK: Plan and outcome (#1139)
 
     /// The host's plan reads tolerantly: blank and malformed items drop, an item with no id
@@ -793,6 +825,22 @@ import SwiftUI
         XCTAssertNil(chat.turn.activity.pinnedPlan)
         XCTAssertEqual(chat.turn.activity.settledPlan?.plan.current?.content, "Step 2")
         XCTAssertEqual(chat.turn.activity.settledPlan?.followsLastPrompt, true)
+    }
+
+    /// A turn this chat never saw start that ends is the newest turn (#1158): an earlier plan
+    /// with no saved row no longer settles under the last prompt, which may now be that turn's.
+    func testAnUnseenTurnEndsAnEarlierPlansClaimOnTheLastPrompt() async {
+        let chat = await openChat()
+        chat.host.always("prompt.submit", .init(result: .object(["status": .string("streaming")])))
+        _ = await chat.model.sendMessage("Plan it")
+        chat.receive(event(1, "message.start"))
+        chat.receive(event(2, "todo.updated", todos(revision: 1, ["completed"])))
+        chat.receive(event(3, "message.complete", ["status": .string("complete"), "text": .string("Done.")]))
+        chat.receive(event(4, "session.info", ["running": .bool(false)]))
+        XCTAssertEqual(chat.turn.activity.settledPlan?.followsLastPrompt, true)
+
+        chat.receive(event(5, "message.complete", ["status": .string("error"), "error": .string("HTTP 500")]))
+        XCTAssertNil(chat.turn.activity.settledPlan, "no saved row, and the last prompt may be the unseen turn's")
     }
 
     /// An older revision never replaces a newer one, and an empty list at revision 1 or later is
@@ -985,6 +1033,35 @@ import SwiftUI
 
         await waitUntil("the retained prompt read") { activity.retryTarget != nil }
         XCTAssertEqual(activity.retryTarget, .init(rowID: 9, text: "Second", showsPrompt: false), "the named turn's prompt, at its own row")
+    }
+
+    /// Another client's turn the host failed before it began completes with no `message.start`
+    /// (#1158). The earlier failure's Retry goes at once, since its cut would take that turn too,
+    /// and the failure read offers the newer turn's prompt at its own row instead.
+    func testAnUnseenFailedTurnReplacesTheEarlierRetry() async {
+        let chat = await openChat()
+        let activity = chat.turn.activity
+        serveHistory([userRow("First", id: 7)])
+        var first = Self.failedInflight
+        first["user"] = .string("First")
+        chat.host.next("session.resume", .init(result: resume(running: false, inflight: first)))
+        chat.receive(event(1, "message.start"))
+        chat.receive(event(2, "message.complete", Self.rateLimitedCompletion))
+        chat.receive(event(3, "session.info", ["running": .bool(false)]))
+        await waitUntil("the first failure read") { activity.retryTarget != nil }
+        XCTAssertEqual(activity.retryTarget?.rowID, 7)
+
+        serveHistory([userRow("First", id: 7), userRow("Second", id: 9, at: 1_790_000_100)])
+        var second = Self.failedInflight
+        second["user"] = .string("Second"); second["started_at"] = .number(1_790_000_100)
+        chat.host.next("session.resume", .init(result: resume(running: false, inflight: second)))
+        var unseen = Self.rateLimitedCompletion
+        unseen["persisted_turn"] = nil
+        chat.receive(event(4, "message.complete", unseen))
+        XCTAssertNil(activity.retryTarget, "the earlier prompt's cut would take the newer turn")
+
+        await waitUntil("the second failure read") { activity.retryTarget != nil }
+        XCTAssertEqual(activity.retryTarget, .init(rowID: 9, text: "Second", showsPrompt: false))
     }
 
     /// The failure read takes the snapshot, then the newest rows. A turn another client submitted

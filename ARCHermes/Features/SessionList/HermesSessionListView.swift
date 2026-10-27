@@ -298,7 +298,7 @@ struct HermesSessionListView: View {
             switch scenePhase {
             case .background: viewModel.closeHermes()
             // Control Center and banners (`.inactive`) keep the socket; only a closed list reopens.
-            case .active where (home != nil ? navigation.isSidebarPresented : navigation.destination == nil) && !viewModel.isHermesConnected:
+            case .active where covers.reopensOnForeground(sidebarIsPresented: home != nil && navigation.isSidebarPresented) && !viewModel.isHermesConnected:
                 Task { await viewModel.openHermes(modelContext: modelContext) }
             default: break
             }
@@ -371,10 +371,7 @@ struct HermesSessionListView: View {
                 }
                 searchText = opened.query
                 if !opened.query.isEmpty && home != nil { isSearchExpanded = true }
-            }, onIdentified: { navigation.identify($0, chatID: chat.id) }, onChatReplaced: {
-                guard navigation.destination?.chat?.id == chat.id else { return }
-                navigation.showSessions()
-            }, onDraftKeyChange: { covers.identifyChat(chat.id, draftKey: $0) })
+            }, onIdentified: { navigation.identify($0, chatID: chat.id) }, onDraftKeyChange: { covers.identifyChat(chat.id, draftKey: $0) })
             .id(chat.id)
         case .scheduled:
             scheduledSessions
@@ -402,6 +399,7 @@ struct HermesSessionListView: View {
         ScheduledSessionsView(viewModel: viewModel, showsCronSessions: true,
                               showsMessageCount: showsMessageCount, showsWorkspace: showsWorkspace,
                               selectedSessionID: nil, actions: actions, actionToast: actionToast)
+            .task { await viewModel.openHermes(modelContext: modelContext) }
             .onDisappear { covers.scheduledDisappeared(viewModel) }
     }
 
@@ -983,6 +981,11 @@ struct HermesSessionListCovers {
     /// The Move to Project a project created from a row's Move menu still needs, asked once the
     /// sheet is gone.
     var movingAfterCreation: HermesProjectMove?
+    /// Reopens live rows when the sidebar or View all is visible; a covering detail stays closed.
+    func reopensOnForeground(sidebarIsPresented: Bool) -> Bool {
+        sidebarIsPresented || navigation.destination == nil || showingScheduled
+    }
+
     /// The pushed list and scheduled view share one live reader; a covering chat pauses it.
     @MainActor func listDisappeared(_ list: SessionListViewModel) {
         if chat != nil { list.pauseHermes() }
