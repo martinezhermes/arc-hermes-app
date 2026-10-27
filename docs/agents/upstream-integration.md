@@ -47,7 +47,7 @@ protocol identity. Review app text and localization keys deliberately rather
 than replacing every occurrence of Hermes or Hermex.
 
 Preserve the ARC bundle identifiers, app groups, Keychain service, shared Apple
-team defaults, iOS 27 policy, Swift language mode, icons and themes. Reconcile
+team defaults, iOS/iPadOS 18 minimum, Swift language mode, icons and themes. Reconcile
 the Xcode project and incoming workflow/test paths with those values.
 
 Resolve behavior conflicts individually. Reuse the proven ARC adaptive
