@@ -166,16 +166,20 @@ final class ReviewDiffRowBuilderTests: XCTestCase {
         await load.value
     }
 
-    /// Records flush sleeps. The first waits for the test's gate; later ones sleep for real
-    /// and end when the load cancels them.
+    /// Records flush waits. Gates keep each timer pending until released or cancelled.
     private final class FlushSleeps: @unchecked Sendable {
         private let lock = NSLock()
         private var delays: [Duration] = []
         let firstGate: AsyncStream<Void>
+        let laterGate: AsyncStream<Void>
+        let firstScheduled: XCTestExpectation
         let secondScheduled: XCTestExpectation
 
-        init(firstGate: AsyncStream<Void>, secondScheduled: XCTestExpectation) {
+        init(firstGate: AsyncStream<Void>, laterGate: AsyncStream<Void>,
+             firstScheduled: XCTestExpectation, secondScheduled: XCTestExpectation) {
             self.firstGate = firstGate
+            self.laterGate = laterGate
+            self.firstScheduled = firstScheduled
             self.secondScheduled = secondScheduled
         }
 
@@ -184,11 +188,12 @@ final class ReviewDiffRowBuilderTests: XCTestCase {
         func sleep(for delay: Duration) async throws {
             let index = lock.withLock { delays.append(delay); return delays.count }
             if index == 1 {
+                firstScheduled.fulfill()
                 for await _ in firstGate { break }
                 return
             }
             if index == 2 { secondScheduled.fulfill() }
-            try await Task.sleep(for: delay)
+            for await _ in laterGate { break }
         }
     }
 
@@ -197,8 +202,12 @@ final class ReviewDiffRowBuilderTests: XCTestCase {
         let files = try ["a", "b", "c", "d", "e"].map { try file("\($0).swift") }
         let results = try Dictionary(uniqueKeysWithValues: files.map { ($0.id, try loadedDiff(for: $0)) })
         let (firstFlushGate, openFirstFlush) = AsyncStream<Void>.makeStream()
+        let (laterFlushGate, finishLaterFlushes) = AsyncStream<Void>.makeStream()
+        let (thirdFileGate, openThirdFile) = AsyncStream<Void>.makeStream()
         let (lastFileGate, openLastFile) = AsyncStream<Void>.makeStream()
-        let sleeps = FlushSleeps(firstGate: firstFlushGate, secondScheduled: expectation(description: "d gets its own flush"))
+        let sleeps = FlushSleeps(firstGate: firstFlushGate, laterGate: laterFlushGate,
+                                 firstScheduled: expectation(description: "b's flush is waiting"),
+                                 secondScheduled: expectation(description: "d gets its own flush"))
         var published: [[ReviewDiffRow]] = []
 
         // One fetch at a time: a paints, b waits on flush 1, c fills the batch and paints,
@@ -210,6 +219,7 @@ final class ReviewDiffRowBuilderTests: XCTestCase {
                 maxConcurrent: 1,
                 coalescing: ReviewDiffLoader.Coalescing(interval: .seconds(3600), batch: 2, sleep: { try await sleeps.sleep(for: $0) }),
                 fetch: { file in
+                    if file.id == "c.swift" { for await _ in thirdFileGate { break } }
                     if file.id == "e.swift" { for await _ in lastFileGate { break } }
                     return results[file.id]
                 },
@@ -219,10 +229,22 @@ final class ReviewDiffRowBuilderTests: XCTestCase {
             )
         }
 
+        defer {
+            load.cancel()
+            openFirstFlush.finish()
+            finishLaterFlushes.finish()
+            openThirdFile.finish()
+            openLastFile.finish()
+        }
+        // A later timer task can start first. Register b's wait before c fills the batch.
+        await fulfillment(of: [sleeps.firstScheduled], timeout: 5)
+        openThirdFile.yield()
+        openThirdFile.finish()
         await fulfillment(of: [sleeps.secondScheduled], timeout: 5)
         let delays = sleeps.recorded
         XCTAssertEqual(delays.count, 2)
-        XCTAssertGreaterThan(delays[1], .seconds(3599), "The interval restarts at the batch publish.")
+        let restartedDelay = try XCTUnwrap(delays.dropFirst().first)
+        XCTAssertGreaterThan(restartedDelay, .seconds(3599), "The interval restarts at the batch publish.")
 
         // The stale flush 1 publishes nothing, whichever order it and e land in.
         openFirstFlush.yield()
