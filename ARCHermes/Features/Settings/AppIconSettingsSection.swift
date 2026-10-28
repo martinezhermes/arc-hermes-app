@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 
+#if os(visionOS)
+struct AppIconSettingsSection: View {
+    var body: some View { EmptyView() }
+}
+#else
 struct AppIconSettingsSection: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedAppIcon = AppIconChoice.system
@@ -207,3 +212,5 @@ private struct AppIconPreviewImage: View {
             .accessibilityHidden(true)
     }
 }
+
+#endif

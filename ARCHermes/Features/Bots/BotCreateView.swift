@@ -78,7 +78,7 @@ import SwiftUI
                 .padding(.bottom, 24)
             }
             .background(Color(uiColor: .systemBackground))
-            .scrollDismissesKeyboard(.interactively)
+            .adaptiveScrollDismissesKeyboard(.interactively)
             .disabled(creator.phase == .creating)
             .safeAreaInset(edge: .bottom) {
                 Button {

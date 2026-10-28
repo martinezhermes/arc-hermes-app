@@ -37,19 +37,26 @@ extension View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color(.separator), lineWidth: 1)
                 )
-        } else if #available(iOS 26.0, *) {
-            // Fixed corner radius (not .capsule): a capsule's radius grows with the
-            // button's height, so on tall multi-line options the curved ends bow
-            // inward and clip the text. A fixed radius keeps the outline clear of
-            // the label at any line count and matches the fallbacks below.
-            glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
         } else {
-            background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(.primary.opacity(0.10), lineWidth: 1)
-                )
+            #if os(visionOS)
+            pendingRequestChoiceMaterial()
+            #else
+            if #available(iOS 26.0, *) {
+                // A fixed radius keeps multi-line options clear of the curved ends.
+                glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+            } else {
+                pendingRequestChoiceMaterial()
+            }
+            #endif
         }
+    }
+
+    private func pendingRequestChoiceMaterial() -> some View {
+        background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(.primary.opacity(0.10), lineWidth: 1)
+            )
     }
 }
 

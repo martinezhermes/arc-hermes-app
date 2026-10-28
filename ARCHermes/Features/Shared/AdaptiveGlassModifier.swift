@@ -38,16 +38,38 @@ private struct AdaptiveReadableScrollContentModifier: ViewModifier {
     }
 }
 
+enum AdaptiveKeyboardDismissMode {
+    case never
+    case interactively
+}
+
 extension View {
+    /// Scrolling dismisses the touch keyboard on iOS; visionOS owns its spatial keyboard.
+    @ViewBuilder
+    func adaptiveScrollDismissesKeyboard(_ mode: AdaptiveKeyboardDismissMode) -> some View {
+        #if os(visionOS)
+        self
+        #else
+        switch mode {
+        case .never: scrollDismissesKeyboard(.never)
+        case .interactively: scrollDismissesKeyboard(.interactively)
+        }
+        #endif
+    }
+
     /// Preserves the native edge treatment on newer systems without changing view
     /// identity when accessibility preferences change. Older systems draw their normal edge.
     @ViewBuilder
     func nativeSoftScrollEdges(_ edges: Edge.Set) -> some View {
+        #if os(visionOS)
+        self
+        #else
         if #available(iOS 26, *) {
             scrollEdgeEffectStyle(.soft, for: edges)
         } else {
             self
         }
+        #endif
     }
 
     /// Pins session chrome using the native bar on newer systems and an inset on iOS 18.
@@ -105,11 +127,16 @@ enum GlassPreference {
     static let defaultIsEnabled = true
 
     static var isLiquidGlassSupported: Bool {
+        #if os(visionOS)
+        // The native window provides spatial glass; these are inset content surfaces.
+        return false
+        #else
         if #available(iOS 26, *) {
             return true
         }
 
         return false
+        #endif
     }
 
     static func isEnabled(in defaults: UserDefaults = .standard) -> Bool {
@@ -179,11 +206,15 @@ private struct AdaptiveGlassModifier<S: Shape>: ViewModifier {
     func body(content: Content) -> some View {
         switch resolvedSurface {
         case .liquidGlass:
+            #if os(visionOS)
+            materialContent(content)
+            #else
             if #available(iOS 26, *) {
                 liquidGlassContent(content)
             } else {
                 materialContent(content)
             }
+            #endif
         case .material:
             materialContent(content)
         case .opaque:
@@ -207,6 +238,7 @@ private struct AdaptiveGlassModifier<S: Shape>: ViewModifier {
         colorSchemeContrast == .increased ? 0.22 : 0.14
     }
 
+    #if !os(visionOS)
     @available(iOS 26, *)
     private var resolvedGlass: Glass {
         switch style {
@@ -232,6 +264,8 @@ private struct AdaptiveGlassModifier<S: Shape>: ViewModifier {
                 opacity: contrastStrokeOpacity
             )
     }
+
+    #endif
 
     private func materialContent(_ content: Content) -> some View {
         content
@@ -261,6 +295,9 @@ private struct AdaptiveSoftScrollEdgeModifier: ViewModifier {
 
     @ViewBuilder
     func body(content: Content) -> some View {
+        #if os(visionOS)
+        content
+        #else
         if #available(iOS 26, *),
            AdaptiveScrollEdgeTreatment.resolve(
                softScrollEdgesAvailable: true,
@@ -270,6 +307,7 @@ private struct AdaptiveSoftScrollEdgeModifier: ViewModifier {
         } else {
             content
         }
+        #endif
     }
 }
 
@@ -286,6 +324,9 @@ struct AdaptiveGlassContainer<Content: View>: View {
     }
 
     var body: some View {
+        #if os(visionOS)
+        content()
+        #else
         if #available(iOS 26, *), isGlassEnabled, !reduceTransparency {
             GlassEffectContainer(spacing: spacing) {
                 content()
@@ -293,6 +334,7 @@ struct AdaptiveGlassContainer<Content: View>: View {
         } else {
             content()
         }
+        #endif
     }
 }
 

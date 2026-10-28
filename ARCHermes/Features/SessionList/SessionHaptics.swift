@@ -36,6 +36,7 @@ enum SessionHaptics {
     }
 
     private static func perform(_ feedback: SessionHapticFeedback) {
+        #if !os(visionOS)
         switch feedback {
         case .lightImpact:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -44,5 +45,6 @@ enum SessionHaptics {
         case .warning:
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
+        #endif
     }
 }

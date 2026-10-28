@@ -602,9 +602,11 @@ private struct BotsInboxChrome<NewChat: View>: ViewModifier {
                         .disabled(isOffline)
                 }
                 ToolbarItem(placement: .topBarTrailing) { newChat }
+                #if !os(visionOS)
                 if #available(iOS 26, *) {
                     ToolbarSpacer(.fixed, placement: .topBarTrailing)
                 }
+                #endif
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Bot connection", systemImage: "gearshape", action: openSetup)
                 }

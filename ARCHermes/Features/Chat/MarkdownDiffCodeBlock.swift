@@ -208,7 +208,7 @@ struct DiffCodeBlockScrollBody: View {
             DiffCodeBlockText(lines: lines, minRowWidth: viewportWidth)
                 .fixedSize(horizontal: true, vertical: true)
         }
-        .scrollDismissesKeyboard(.never)
+        .adaptiveScrollDismissesKeyboard(.never)
         .sidebarRevealGestureExcluded()
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { viewportWidth = $0 }
     }

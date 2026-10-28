@@ -101,7 +101,7 @@ import SwiftUI
                     }
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            .adaptiveScrollDismissesKeyboard(.interactively)
             .contentShape(Rectangle())
             .simultaneousGesture(TapGesture().onEnded { dismissKeyboard() })
             .defaultScrollAnchor(showsThreadOverview ? .top : .bottom, for: .initialOffset)

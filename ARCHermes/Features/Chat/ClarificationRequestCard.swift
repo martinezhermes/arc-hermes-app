@@ -282,7 +282,7 @@ struct ClarificationRequestCard: View {
         return ScrollView {
             content
         }
-        .scrollDismissesKeyboard(.interactively)
+        .adaptiveScrollDismissesKeyboard(.interactively)
         .frame(height: resolvedBodyHeight ?? minimumBodyHeight)
     }
 
@@ -570,7 +570,7 @@ struct HermesRequestInset: View {
                     contentHeight = height
                 }
             }
-            .scrollDismissesKeyboard(.interactively)
+            .adaptiveScrollDismissesKeyboard(.interactively)
             .scrollBounceBehavior(.basedOnSize)
             .frame(height: max(0, min(contentHeight ?? availableScrollHeight, availableScrollHeight)))
         }

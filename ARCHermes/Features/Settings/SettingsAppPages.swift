@@ -24,9 +24,11 @@ struct SettingsAppearancePage: View {
                 }
             }
 
+            #if !os(visionOS)
             Section {
                 AppIconSettingsSection()
             }
+            #endif
         }
         .settingsPage(String(localized: "Appearance"))
     }
@@ -174,6 +176,7 @@ struct SettingsGeneralPage: View {
 
     var body: some View {
         List {
+            #if !os(visionOS)
             Section {
                 Toggle(isOn: $isHapticsEnabled) {
                     SettingsLabel(title: String(localized: "Haptic Feedback"), systemImage: "iphone.radiowaves.left.and.right")
@@ -190,6 +193,7 @@ struct SettingsGeneralPage: View {
                 }
             }
 
+            #endif
             AppLockSection()
         }
         .settingsPage(String(localized: "General"))

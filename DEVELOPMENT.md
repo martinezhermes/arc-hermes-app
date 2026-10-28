@@ -188,6 +188,13 @@ Use an iOS 27 simulator for the primary validation suite; compatibility changes
 also need runtime checks on iOS/iPadOS 18 and 26 when available.
 The deployment target controls the oldest supported OS, independently of the
 Xcode/SDK version used to build.
+
+The native `ARCHermesVisionOS` target requires visionOS 27.0+. Its shared scheme
+builds one resizable operator window without embedding the iOS extensions.
+Run `scripts/validate-visionos` for a normally signed native Simulator build and
+package, and `scripts/validate` for the full iOS regression suite. See
+[`docs/agents/visionos.md`](docs/agents/visionos.md) for platform boundaries,
+source membership, and the remaining workflow and physical-device gates.
 Swift language mode remains 5 with targeted concurrency checking;
 `InferSendableFromCaptures` enables checked sendability inference for immutable
 key-path literals, including SwiftData predicates.

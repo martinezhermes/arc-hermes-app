@@ -1,0 +1,47 @@
+#!/bin/bash
+# Compile and package the native visionOS Simulator app with normal Debug signing.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+validation_dir="${ARCHERMES_VISIONOS_VALIDATION_DIR:-$(mktemp -d "${TMPDIR:-/tmp}/archermes-visionos-validation.XXXXXX")}"
+mkdir -p "$validation_dir"
+build_args=(
+  -project ARCHermes.xcodeproj -scheme ARCHermesVisionOS -configuration Debug
+  -sdk xrsimulator -destination 'generic/platform=visionOS Simulator'
+  -derivedDataPath "${ARCHERMES_VISIONOS_DERIVED_DATA:-$validation_dir/DerivedData}"
+)
+printf 'Checkout: %s\nCommit: %s\nEvidence: %s\n' "$PWD" "$(git rev-parse HEAD)" "$validation_dir"
+xcodebuild -version
+git diff --check
+xcodebuild "${build_args[@]}" -showBuildSettings -json > "$validation_dir/build-settings.json"
+python3 - "$validation_dir/build-settings.json" <<'PY'
+import json
+import sys
+
+settings = next(item['buildSettings'] for item in json.load(open(sys.argv[1]))
+                if item['target'] == 'ARCHermesVisionOS')
+expected = {'XROS_DEPLOYMENT_TARGET': '27.0', 'TARGETED_DEVICE_FAMILY': '7',
+            'SWIFT_VERSION': '5.0', 'CODE_SIGNING_ALLOWED': 'YES'}
+for key, value in expected.items():
+    if settings.get(key) != value:
+        raise SystemExit(f'{key}: expected {value}, got {settings.get(key)}')
+if 'XRSimulator' not in settings['SDKROOT']:
+    raise SystemExit('Expected the native visionOS Simulator SDK')
+PY
+catalogs=(ARCHermes/Resources/Localizable.xcstrings ARCHermes/Resources/AppShortcuts.xcstrings)
+shasum -a 256 "${catalogs[@]}" > "$validation_dir/catalogs.before"
+xcodebuild "${build_args[@]}" build 2>&1 | tee "$validation_dir/xcodebuild.log"
+shasum -a 256 "${catalogs[@]}" > "$validation_dir/catalogs.after"
+diff -u "$validation_dir/catalogs.before" "$validation_dir/catalogs.after"
+app_path="$(python3 - "$validation_dir/build-settings.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+settings = next(item['buildSettings'] for item in json.load(open(sys.argv[1]))
+                if item['target'] == 'ARCHermesVisionOS')
+print(Path(settings['TARGET_BUILD_DIR']) / settings['FULL_PRODUCT_NAME'])
+PY
+)"
+codesign --verify --deep --strict "$app_path"
+ditto -c -k --keepParent "$app_path" "$validation_dir/ARCHermesVisionOS-Simulator.zip"
+printf 'Signed Simulator build: %s\nInstall with: xcrun simctl install <visionOS-simulator-udid> %q\n' \
+  "$validation_dir/ARCHermesVisionOS-Simulator.zip" "$app_path"

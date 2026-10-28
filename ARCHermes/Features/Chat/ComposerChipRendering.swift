@@ -127,6 +127,7 @@ struct ComposerChipMetrics: Equatable {
             String(describing: metrics.height) as NSString,
             String(traits.userInterfaceStyle.rawValue) as NSString,
             String(traits.accessibilityContrast.rawValue) as NSString,
+            String(describing: traits.displayScale) as NSString,
             (isRightToLeft ? "rtl" : "ltr") as NSString,
             (maximumWidth.map(String.init(describing:)) ?? "unbounded") as NSString,
             (usesAccentIcon ? "accent" : "secondary") as NSString
@@ -176,7 +177,9 @@ struct ComposerChipMetrics: Equatable {
             let view = BotAvatarView(profile: reference.profile, avatar: reference.avatar, size: metrics.iconSize, motion: .still)
                 .environment(\.colorScheme, traits.userInterfaceStyle == .dark ? .dark : .light)
             let renderer = ImageRenderer(content: view)
-            renderer.scale = traits.displayScale > 0 ? traits.displayScale : UIScreen.main.scale
+            if traits.displayScale > 0 {
+                renderer.scale = traits.displayScale
+            }
             return renderer.uiImage
         }
     }
@@ -215,6 +218,9 @@ struct ComposerChipMetrics: Equatable {
         let textWidth = max(0, width - metrics.horizontalPadding * 2 - iconWidth)
 
         let format = UIGraphicsImageRendererFormat.preferred()
+        if traits.displayScale > 0 {
+            format.scale = traits.displayScale
+        }
         format.opaque = false
         let renderer = UIGraphicsImageRenderer(
             size: CGSize(width: width, height: metrics.height),
@@ -268,7 +274,7 @@ struct ComposerChipMetrics: Equatable {
 /// Everything about the current environment that changes a chip's picture.
 ///
 /// Built inside a view's `body` so SwiftUI re-evaluates — and the chips
-/// re-measure — when appearance, contrast, direction, or text size moves.
+/// re-measure — when appearance, contrast, direction, text size, or display scale moves.
 struct ComposerChipTextStyle {
     let metrics: ComposerChipMetrics
     let traits: UITraitCollection
@@ -278,7 +284,8 @@ struct ComposerChipTextStyle {
         colorScheme: ColorScheme,
         contrast: ColorSchemeContrast,
         layoutDirection: LayoutDirection,
-        dynamicTypeSize: DynamicTypeSize
+        dynamicTypeSize: DynamicTypeSize,
+        displayScale: CGFloat
     ) {
         // Reading the size is what ties this value to Dynamic Type; the font
         // itself comes from the same body style the editor uses.
@@ -287,6 +294,7 @@ struct ComposerChipTextStyle {
         traits = UITraitCollection { traits in
             traits.userInterfaceStyle = colorScheme == .dark ? .dark : .light
             traits.accessibilityContrast = contrast == .increased ? .high : .normal
+            traits.displayScale = displayScale
         }
         isRightToLeft = layoutDirection == .rightToLeft
     }

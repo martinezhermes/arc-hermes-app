@@ -1,7 +1,9 @@
 import Highlightr
 import MarkdownUI
 import OSLog
+#if !os(visionOS)
 import Splash
+#endif
 import SwiftUI
 import UIKit
 
@@ -299,7 +301,7 @@ private struct ChatCodeBlock: View {
                 ScrollView(.horizontal) {
                     styledCodeText(fixedHorizontal: true)
                 }
-                .scrollDismissesKeyboard(.never)
+                .adaptiveScrollDismissesKeyboard(.never)
                 .sidebarRevealGestureExcluded()
             }
         }
@@ -1043,10 +1045,19 @@ actor MarkdownCodeHighlighter {
         let highlighted: NSAttributedString
         switch decision {
         case .highlight(_, .splashSwift):
+            #if os(visionOS)
+            guard let result = highlightr(for: request.colorScheme)?.highlight(
+                request.code, as: "swift", fastRender: true
+            ) else {
+                return .plain(reason: .highlighterUnavailable, normalizedLanguage: "swift")
+            }
+            highlighted = result
+            #else
             highlighted = SplashSwiftCodeHighlighter.highlightedAttributedString(
                 for: request.code,
                 colorScheme: request.colorScheme
             )
+            #endif
         case .highlight(let normalizedLanguage, .highlightr):
             guard let result = highlightr(for: request.colorScheme)?.highlight(
                 request.code,
@@ -1089,6 +1100,7 @@ actor MarkdownCodeHighlighter {
     }
 }
 
+#if !os(visionOS)
 private enum SplashSwiftCodeHighlighter {
     static func highlightedAttributedString(for code: String, colorScheme: ColorScheme) -> NSAttributedString {
         let font = Splash.Font(size: 13)
@@ -1101,6 +1113,8 @@ private enum SplashSwiftCodeHighlighter {
         return highlighter.highlight(code)
     }
 }
+
+#endif
 
 private struct PlainMarkdownFallbackView: View {
     let content: String
@@ -1215,7 +1229,7 @@ private struct ChatMarkdownTable: View {
                 )
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-        .scrollDismissesKeyboard(.never)
+        .adaptiveScrollDismissesKeyboard(.never)
         .sidebarRevealGestureExcluded()
 
         if let edgeFadeColor {
