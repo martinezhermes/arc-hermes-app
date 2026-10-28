@@ -140,7 +140,7 @@ import SwiftUI
             }
             .padding(.top, 12)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .adaptiveScrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .top, spacing: 0) { searchBar }
         .background(Color(uiColor: .systemBackground))
         .presentationDetents([.large])

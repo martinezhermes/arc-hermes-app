@@ -146,7 +146,7 @@ import SwiftUI
             .padding(.bottom, 36)
         }
         .background(Color(uiColor: .systemBackground))
-        .scrollDismissesKeyboard(.interactively)
+        .adaptiveScrollDismissesKeyboard(.interactively)
         .disabled(editor.isSaving)
         .overlay { if editor.isSaving { ProgressView().padding(18).background(.regularMaterial, in: Circle()) } }
     }

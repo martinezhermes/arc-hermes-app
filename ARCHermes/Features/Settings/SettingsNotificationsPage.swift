@@ -23,6 +23,7 @@ struct SettingsNotificationsPage: View {
                     )
                 }
 
+                #if !os(visionOS)
                 Toggle(isOn: $showsLiveActivityResponseExcerpts) {
                     SettingsLabel(
                         title: String(localized: "Live Activity Excerpts"),
@@ -30,8 +31,13 @@ struct SettingsNotificationsPage: View {
                         note: String(localized: "Reply text on the Lock Screen and Dynamic Island.")
                     )
                 }
+                #endif
             } header: {
+                #if os(visionOS)
+                Text("Notifications")
+                #else
                 Text("On this iPhone · All servers")
+                #endif
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if let notificationStatusText {

@@ -222,7 +222,7 @@ struct ChatTranscriptView: View {
                             await onLoadMessages()
                         }
                     }
-                    .scrollDismissesKeyboard(.interactively)
+                    .adaptiveScrollDismissesKeyboard(.interactively)
                     .safeAreaInset(edge: .bottom, spacing: 0) {
                         Color.clear
                             .frame(height: transcriptBottomInsetHeight)

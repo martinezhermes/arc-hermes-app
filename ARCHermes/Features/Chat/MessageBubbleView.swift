@@ -11,6 +11,7 @@ struct MessageBubbleView: View {
     @Environment(\.chatDisclosureToggled) private var chatDisclosureToggled
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     /// The skills this chat can draw as chips, published by `ChatView`.
@@ -423,7 +424,8 @@ struct MessageBubbleView: View {
             colorScheme: colorScheme,
             contrast: colorSchemeContrast,
             layoutDirection: layoutDirection,
-            dynamicTypeSize: dynamicTypeSize
+            dynamicTypeSize: dynamicTypeSize,
+            displayScale: displayScale
         )
     }
 

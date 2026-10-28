@@ -1,4 +1,3 @@
-import ActivityKit
 import Foundation
 import Observation
 import SwiftData
@@ -112,14 +111,9 @@ struct MoveToHermesQuestion: Identifiable, Equatable {
     /// What the model reaches outside itself; tests replace every part.
     struct Environment {
         var runner = MoveToHermesRunner.Environment()
-        /// Sessions of `server` whose Live Activity on this iPhone is still running.
+        /// Sessions of `server` whose on-device Live Activity is still running, when supported.
         var liveActivitySessions: @MainActor (URL) -> Set<String> = { server in
-            Set(Activity<AgentRunActivityAttributes>.activities.compactMap { activity in
-                let state = activity.content.state
-                guard activity.attributes.server == server, activity.attributes.bot == nil,
-                      activity.activityState == .active, !state.isFinal, !state.isStale else { return nil }
-                return state.sessionID
-            })
+            AgentLiveActivityManager.runningSessionIDs(on: server)
         }
         var notices: @MainActor () -> MoveToHermesNotices = { .shared }
     }
