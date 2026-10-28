@@ -7,6 +7,52 @@ Security sections per release.
 
 ## [Unreleased]
 
+This draft covers changes since the ARC Hermes 1.10.4 baseline, including the
+previously merged upstream integration and iOS 18 support. Application upstream
+is integrated through [5125b51](https://github.com/uzairansaruzi/hermex/commit/5125b5127fedfa15f63cc35814e63958d70a84b4).
+
+### Added
+
+- Support for iOS and iPadOS 18 and later across the app and extensions, with older-system layout and audio fallbacks while retaining newer systems' native glass and controls.
+- Move to Hermes: transfer legacy webui chats and drafts into a direct Hermes connection, resume interrupted transfers, keep existing entry points working, and optionally remove the old server after completion.
+- Sign in to Hermes dashboards that use browser-based authentication or have no password.
+- Share text and files into a new Hermes session, and start Hermes chats through New Chat, New Chat with Voice, and Profile-specific Shortcuts.
+- Live Activities for direct Hermes sessions, with current progress and taps that return to the correct server and conversation.
+- Scheduled-session history in Hermes Sessions and native previews for documents sent through Hermes media links.
+- An API Keys page to add, replace, and remove keys in a Hermes Profile, with masked previews and no retained copy of entered values in the app.
+- Git Fetch, Pull, and New Branch, plus provider quota information in Usage, when a compatible `hermex-push` companion plugin advertises the required routes.
+
+### Changed
+
+- Hermes is the default server setup; existing webui connections remain available as legacy servers.
+- Settings opens on a compact index with separate server, appearance, composer, chat, notification, and About pages. Thinking and Tools share a concise picker.
+- Native Sessions and transcripts show cached history while the host connects. ARC's mounted chat, adaptive sidebar, keyboard ownership, branding, and icons remain in place.
+
+### Fixed
+
+- Listen keeps its playback bar, pause/resume, seeking, speed, and Now Playing controls when speech falls back to the phone's voice, including replies above the server speech limit. The loading bar stays visible while the phone renders the audio.
+- Changing Listen speed refreshes Now Playing after iOS settles the rate change. Stopping or switching replies cancels pending preparation and delayed refreshes, and late audio activation cannot restart a stopped reply.
+- Dropped event streams report their disconnects, completed responses ignore a later stream close, and a compressed webui session can open its continuation when the original rejects a send.
+- Dictation keeps its undo group intact when the composer redraws. The New Branch alert also stays open while typing.
+- Settled replies keep their headers and footers clear of the text, currency amounts no longer pair into inline math, and attachments from Windows hosts resolve their paths correctly.
+- Hermes can display images and files the agent sends, and new-session files can be saved before the first prompt. Files opens with its tree collapsed.
+- Session edits and imports send the identity newer Hermes hosts require. Deep rewinds ask for confirmation when required, and session-edit refusals from a separate gateway explain the recovery path.
+- Bot Chat follows a conversation the host replaced, while the earlier conversation remains accessible in Sessions. Opening a bot on Desktop preserves its own face.
+- View all reconnects on foreground only while its rows are visible. A failed turn from another client does not offer an unusable Retry action.
+- Sharing the same content again works after the previous import is consumed. A failed Hermes share can be discarded so later shares are not blocked.
+- Setup opens an already-saved Hermes server rather than refusing it. Unsupported gateway-listener addresses receive a clear explanation, and denied notification permission offers a link to iOS Settings.
+- Script-only task runs open their output from the run row, and truncated run output is identified.
+
+### Security
+
+- Sign-in redirects cannot resend a password-bearing request to another origin; custom headers are also kept off cross-origin redirects.
+
+### Testing
+
+- Exercise server speech and phone-voice fallback, long replies, stop during preparation, rapid reply switching, pause/resume, seeking, speed changes, background playback, and Lock Screen controls. Actual iOS/iPadOS 18 and physical Lock Screen checks remain release validation work.
+- Check Share, Shortcuts, and Live Activity taps with two configured servers and multiple Profiles. Use disposable sessions/workspaces for transfer and Git mutation checks.
+- Companion-plugin features require a compatible host plugin. ARC-specific remote push delivery still needs its separate relay/APNs integration; imported push routing does not establish that service.
+
 ## [1.10.4] - Unreleased
 
 ### Fixed
