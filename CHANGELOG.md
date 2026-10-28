@@ -31,6 +31,7 @@ is integrated through [5125b51](https://github.com/uzairansaruzi/hermex/commit/5
 ### Fixed
 
 - Listen keeps its playback bar, pause/resume, seeking, speed, and Now Playing controls when speech falls back to the phone's voice, including replies above the server speech limit. The loading bar stays visible while the phone renders the audio.
+- Phone speech waits for the complete utterance before starting playback, so an empty buffer between synthesis chunks cannot truncate a long reply.
 - Changing Listen speed refreshes Now Playing after iOS settles the rate change. Stopping or switching replies cancels pending preparation and delayed refreshes, and late audio activation cannot restart a stopped reply.
 - Dropped event streams report their disconnects, completed responses ignore a later stream close, and a compressed webui session can open its continuation when the original rejects a send.
 - Dictation keeps its undo group intact when the composer redraws. The New Branch alert also stays open while typing.

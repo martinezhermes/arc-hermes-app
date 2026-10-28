@@ -9046,11 +9046,11 @@ enum OnDeviceSpeech {
     }
 }
 
-/// One `AVSpeechSynthesizer.write` run. The synthesizer delivers buffers on its own queue
-/// and ends with an empty one; the lock keeps that and cancellation resuming the
-/// continuation exactly once.
-private final class OnDeviceSpeechRender: @unchecked Sendable {
-    private let text: String
+/// One `AVSpeechSynthesizer.write` run. Empty buffers can separate chunks; the
+/// utterance delegate completes the render. The lock keeps buffer delivery,
+/// completion and cancellation resuming the continuation exactly once.
+private final class OnDeviceSpeechRender: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
+    private let utterance: AVSpeechUtterance
     private let synthesizer = AVSpeechSynthesizer()
     private let url = FileManager.default.temporaryDirectory
         .appendingPathComponent("listen-\(UUID().uuidString).caf")
@@ -9060,7 +9060,9 @@ private final class OnDeviceSpeechRender: @unchecked Sendable {
     private var file: AVAudioFile?
 
     init(text: String) {
-        self.text = text
+        self.utterance = AVSpeechUtterance(string: text)
+        super.init()
+        synthesizer.delegate = self
     }
 
     func start(resuming continuation: CheckedContinuation<Data, Error>) {
@@ -9069,7 +9071,7 @@ private final class OnDeviceSpeechRender: @unchecked Sendable {
             return isCancelled
         }
         guard !cancelled else { return continuation.resume(throwing: CancellationError()) }
-        synthesizer.write(AVSpeechUtterance(string: text)) { [weak self] buffer in
+        synthesizer.write(utterance) { [weak self] buffer in
             self?.receive(buffer)
         }
     }
@@ -9085,24 +9087,29 @@ private final class OnDeviceSpeechRender: @unchecked Sendable {
     }
 
     private func receive(_ buffer: AVAudioBuffer) {
-        guard let buffer = buffer as? AVAudioPCMBuffer else { return }
+        guard let buffer = buffer as? AVAudioPCMBuffer, buffer.frameLength > 0 else { return }
         let ending: (CheckedContinuation<Data, Error>, Result<Void, Error>)? = lock.withLock {
             guard continuation != nil else { return nil }
-            let outcome: Result<Void, Error>
-            if buffer.frameLength == 0 {
-                // The last buffer. No file means the voice spoke nothing.
-                outcome = file == nil ? .failure(CocoaError(.fileNoSuchFile)) : .success(())
-            } else {
-                do {
-                    try write(buffer)
-                    return nil
-                } catch {
-                    outcome = .failure(error)
-                }
+            do {
+                try write(buffer)
+                return nil
+            } catch {
+                return takeContinuation().map { ($0, .failure(error)) }
             }
+        }
+        if let (continuation, outcome) = ending { finish(continuation, with: outcome) }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        let ending: (CheckedContinuation<Data, Error>, Result<Void, Error>)? = lock.withLock {
+            let outcome: Result<Void, Error> = file == nil ? .failure(CocoaError(.fileNoSuchFile)) : .success(())
             return takeContinuation().map { ($0, outcome) }
         }
         if let (continuation, outcome) = ending { finish(continuation, with: outcome) }
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        cancel()
     }
 
     private func write(_ buffer: AVAudioPCMBuffer) throws {
@@ -9126,7 +9133,10 @@ private final class OnDeviceSpeechRender: @unchecked Sendable {
 
     /// Closes the file, hands back its bytes memory-mapped, and removes it either way.
     private func finish(_ continuation: CheckedContinuation<Data, Error>, with outcome: Result<Void, Error>) {
-        lock.withLock { file = nil }
+        lock.withLock {
+            file?.close()
+            file = nil
+        }
         defer { try? FileManager.default.removeItem(at: url) }
         continuation.resume(with: outcome.flatMap { Result { try Data(contentsOf: url, options: .alwaysMapped) } })
     }

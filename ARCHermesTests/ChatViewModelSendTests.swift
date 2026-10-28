@@ -88,6 +88,19 @@ final class ChatViewModelSendTests: XCTestCase {
     }
 
     @MainActor
+    func testOnDeviceSpeechRendersTheWholeReplyAcrossChunks() async throws {
+        let paragraph = "This reply explains how to keep playback under control. Pause to review a detail, seek to hear it again, or change the speed while the phone reads the complete response."
+        let shortAudio = try await OnDeviceSpeech.render(paragraph)
+        let shortPlayer = try ListenAudioPlayer(data: shortAudio)
+        let longReply = Array(repeating: paragraph, count: 8).joined(separator: "\n\n")
+        let longAudio = try await OnDeviceSpeech.render(longReply)
+        let longPlayer = try ListenAudioPlayer(data: longAudio)
+
+        XCTAssertGreaterThan(longPlayer.duration, shortPlayer.duration * 4,
+                             "An intermediate empty buffer must not truncate the reply after its first chunk.")
+    }
+
+    @MainActor
     func testListenActivatesAudioSessionOnlyOnceOnDeviceSpeechIsReady() async throws {
         let recorder = ListenCallRecorder()
         let speechSynthesizer = SpyOnDeviceSpeech(recorder: recorder)
