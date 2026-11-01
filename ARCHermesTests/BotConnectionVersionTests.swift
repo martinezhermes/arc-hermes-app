@@ -140,6 +140,7 @@ final class BotConnectionVersionTests: XCTestCase {
             "192.168.1.5:9119": "http://192.168.1.5:9119",
             // Links copied from a browser, a config file or a curl command.
             "https://hermes.example.com/sessions": "https://hermes.example.com",
+            "https://hermes.example.com/dashboard/": "https://hermes.example.com",
             "https://hermes.example.com/login?next=%2F": "https://hermes.example.com",
             "https://hermes.example.com/auth/login?provider=nous&next=%2F": "https://hermes.example.com",
             "https://hermes.example.com/api/status": "https://hermes.example.com",
@@ -159,24 +160,27 @@ final class BotConnectionVersionTests: XCTestCase {
                 XCTAssertEqual($0 as? BotAddressError, .invalid, invalid)
             }
         }
-        let refusedPaths = ["host/path": "/path", "https://hermes.example.com/hermes": "/hermes",
-                            "https://hermes.example.com/hermes/sessions/": "/hermes/sessions"]
-        for (input, path) in refusedPaths {
-            XCTAssertThrowsError(try BotConnection.address(input), input) {
-                XCTAssertEqual($0 as? BotAddressError, .path(path), input)
-            }
-        }
+        XCTAssertEqual(try BotConnection.address("https://hermes.example.com/hermes/").path, "/hermes")
+    }
+
+    func testDeploymentPrefixSurvivesAddressNormalization() throws {
+        let base = "https://hermes.example/gateways/cloud/admin"
+        XCTAssertEqual(try BotConnection.address(base + "/?ignored=1#top").absoluteString, base)
+        XCTAssertEqual(try BotConnection.address("hermes.example/gateways/cloud/admin").absoluteString, base)
+        XCTAssertEqual(try BotConnection.address("wss://hermes.example/gateways/cloud/admin").absoluteString, base)
+        XCTAssertNotEqual(try BotConnection.address(base),
+                          try BotConnection.address("https://hermes.example/gateways/secondary/admin"))
+        XCTAssertEqual(try BotConnection.address("https://hermes.example/Case%20Sensitive/%2B/").absoluteString,
+                       "https://hermes.example/Case%20Sensitive/%2B")
     }
 
     func testAddressFailureIsVisibleBeforeAClientExists() async {
         let model = BotConnectionSetup(server: server, store: BotConnectionStore(keychain: InMemoryKeychainStore()),
             makeWire: { _ in XCTFail("Invalid input must not create a client"); return ConnectionSetupWire() }, discard: { _ in })
-        model.address = "host/not-supported"
+        model.address = "https://user:password@host"
         let succeeded = await model.connect()
         XCTAssertFalse(succeeded)
-        XCTAssertEqual(model.errorMessage, BotAddressError.path("/not-supported").localizedDescription)
-        XCTAssertTrue(model.errorMessage?.contains("“\u{2068}/not-supported\u{2069}”") == true,
-                      "The error names the refused path, isolated so its slash stays in front in right-to-left text")
+        XCTAssertEqual(model.errorMessage, BotAddressError.invalid.localizedDescription)
         XCTAssertFalse(model.isConnecting)
     }
 

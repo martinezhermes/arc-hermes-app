@@ -950,6 +950,41 @@ final class AuthManagerStateTests: XCTestCase {
         XCTAssertEqual(manager.servers.count, 2)
     }
 
+    func testNativeOnboardingAndSavedSignInsKeepSameHostDeploymentPrefixesDistinct() async throws {
+        defer { HermesHostFixture.reset() }
+        let keychain = InMemoryKeychainStore()
+        let manager = makeFormManager(keychain: keychain)
+        await manager.configure(serverURLString: webuiServer.absoluteString, password: "")
+        let cloud = try BotConnection.address("https://hermes.example/gateways/cloud/admin")
+        let secondary = try BotConnection.address("https://hermes.example/gateways/secondary/admin")
+        let first = BotConnection(id: UUID(), name: "Cloud", address: cloud, username: "owner", password: "cloud-fixture")
+        let other = BotConnection(id: UUID(), name: "Secondary", address: secondary, username: "owner", password: "secondary-fixture")
+        let store = BotConnectionStore(keychain: keychain)
+        try store.save(first, server: webuiServer)
+        XCTAssertEqual(manager.savedHermesSignIns(at: cloud).map(\.connection), [first])
+        XCTAssertTrue(manager.savedHermesSignIns(at: secondary).isEmpty)
+        for entry in [OnboardingViewModel.Entry.onboarding, .addServer] {
+            let form = makeForm(entry: entry) { request in
+                request.url?.path == cloud.path + "/api/status"
+                    ? .json(200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
+                    : .json(404, .object([:]))
+            }
+            form.serverURLString = cloud.absoluteString + "/"
+            await form.testConnection(authManager: manager)
+            XCTAssertEqual(form.detectedKind, .hermes)
+            XCTAssertTrue(form.showsHermesCredentials)
+            XCTAssertEqual(form.savedSignIns.map(\.connection), [first])
+        }
+        XCTAssertTrue(manager.addHermesServer(first))
+        XCTAssertTrue(manager.addHermesServer(other))
+        XCTAssertEqual(try store.load(server: cloud), first)
+        XCTAssertEqual(try store.load(server: secondary), other)
+        XCTAssertEqual(manager.servers.filter { $0.kind == .hermes }.count, 2)
+        await manager.removeServer(try XCTUnwrap(manager.servers.first { $0.id == cloud.absoluteString }))
+        XCTAssertEqual(try store.load(server: secondary), other)
+        XCTAssertEqual(try store.load(server: webuiServer), first)
+    }
+
     func testASavedSignInIsOfferedOnlyAtExactlyTheSameAddress() async throws {
         defer { HermesHostFixture.reset() }
         // Every host reports the side connection's install id, as any host can.

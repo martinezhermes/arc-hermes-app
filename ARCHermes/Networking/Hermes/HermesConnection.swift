@@ -552,7 +552,8 @@ import OSLog
     /// host means a redirect led to something in front of Hermes, such as an access proxy's
     /// sign-in page, and throws `.blocked`, like the status probe. Only the host is compared:
     /// a same-host redirect from http to https is not a proxy. A 3xx reply is a redirect the
-    /// guard refused, because it would have carried a body off the origin, and is `.blocked` too.
+    /// guard refused, because it would have carried a body off the origin or crossed a
+    /// same-host deployment prefix, and is `.blocked` too.
     private nonisolated static func exchange(_ request: URLRequest, on session: URLSession,
                                              redirectGuard: CrossOriginHeaderStripper) async throws -> (Data, HTTPURLResponse) {
         let (data, response) = try await session.data(for: request, delegate: redirectGuard)
@@ -801,11 +802,11 @@ struct HermesHeaders: Sendable {
         self = (try? HermesHeaders(saved.headers ?? [], signsInWithBrowser: saved.oauth != nil)) ?? .none
     }
 
-    /// `request` with these headers added when it is for `origin`. A header the request
+    /// `request` with these headers added when it is for `origin`'s deployment. A header the request
     /// already carries, such as the JSON content type or the gateway subprotocols, keeps
     /// its built-in value.
     func applied(to request: URLRequest, origin: URL) -> URLRequest {
-        guard !values.isEmpty, let url = request.url, Self.isSameOrigin(url, as: origin) else { return request }
+        guard !values.isEmpty, let url = request.url, Self.isSameDeployment(url, as: origin) else { return request }
         var request = request
         for header in values where request.value(forHTTPHeaderField: header.sanitizedName) == nil {
             request.setValue(header.sanitizedValue, forHTTPHeaderField: header.sanitizedName)
@@ -815,9 +816,16 @@ struct HermesHeaders: Sendable {
 
     /// The task delegate that drops these headers, and an open dashboard's session token, from
     /// a redirect that leaves `origin`, such as an access proxy's bounce to its sign-in page.
+    /// A same-host redirect outside a deployment prefix is refused entirely.
     func redirectGuard(for origin: URL) -> CrossOriginHeaderStripper {
         let admitted = values + [CustomHeader(name: Self.sessionTokenName)]
-        return CrossOriginHeaderStripper(baseURL: origin, customHeaderProvider: { admitted })
+        return CrossOriginHeaderStripper(baseURL: origin, restrictToBasePath: true, customHeaderProvider: { admitted })
+    }
+
+    /// Same origin and inside this dashboard's deployment prefix, at a path boundary.
+    static func isSameDeployment(_ url: URL, as address: URL) -> Bool {
+        isSameOrigin(url, as: address) && (address.path.isEmpty || address.path == "/"
+            || url.path == address.path || url.path.hasPrefix(address.path + "/"))
     }
 
     /// Same scheme, host and port as `address`, reading the gateway's `ws`/`wss` as `http`/`https`.

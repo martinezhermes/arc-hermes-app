@@ -40,7 +40,8 @@ enum BotArtifactReference {
             // path; never carry its token, Profile override, or session override forward.
             if ["https", "http"].contains(scheme.lowercased()),
                url.scheme == address.scheme, url.host == address.host, url.port == address.port,
-               ["/api/fs/download", "/api/files/download", "/api/media", "/api/fs/read-data-url"].contains(url.path),
+               ["api/fs/download", "api/files/download", "api/media", "api/fs/read-data-url"]
+                .contains(where: { address.appendingPathComponent($0).path == url.path }),
                let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
                let path = parts.queryItems?.first(where: { $0.name == "path" })?.value,
                !path.isEmpty, !path.contains("\0") { return path }

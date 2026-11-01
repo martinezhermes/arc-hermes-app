@@ -36,7 +36,13 @@ A configured server is a webui server or a Hermes server (`ServerAccount.kind`, 
 A Hermes server's id is its dashboard address as `BotConnection.address(_:)` parses it,
 and its sign-in record is the same `BotConnection` JSON under `bot_connection::<its
 URL>`, so every Bot store, draft, cache, section order and bot link keys by it as they
-do by a webui server. `AuthManager.addHermesServer` saves a sign-in the form already
+do by a webui server. For a reverse-proxy deployment, enter the exact dashboard base,
+including its mount prefix, such as `https://host.example/gateways/cloud/admin`.
+That prefix stays in requests, saved server identities, media downloads and app links;
+two deployments on one hostname keep separate sign-ins and local state. Native requests
+refuse same-host redirects outside that prefix. Existing root-host dashboard page links
+still normalize to the root, and existing saved connections are not migrated.
+`AuthManager.addHermesServer` saves a sign-in the form already
 verified and activates the server, and refuses an address already in the registry.
 Hermes is the default kind (#712), so nothing about a Hermes server needs Bot Mode:
 adding one, moving a webui server to one, and opening one and its bot links all work
