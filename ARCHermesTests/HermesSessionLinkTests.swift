@@ -24,6 +24,19 @@ import XCTest
         try XCTUnwrap(URL(string: "\(ARCHermesDeepLink.scheme)://\(host)?\(query)"))
     }
 
+    func testSessionAndBotLinksKeepSameHostDeploymentsDistinct() throws {
+        let cloud = try BotConnection.address("https://hermes.example/gateways/cloud/admin")
+        let secondary = try BotConnection.address("https://hermes.example/gateways/secondary/admin")
+        let sent = HermesSessionDestination(server: cloud, profile: "default", key: "voice-check")
+        let parsed = try XCTUnwrap(HermesSessionDestination(url: try XCTUnwrap(ARCHermesDeepLink.sessionURL(for: sent))))
+        XCTAssertEqual(parsed, sent)
+        XCTAssertEqual(HermesSessionLinkRouter.resolve(parsed, state: .loggedIn(server: secondary),
+                                                      servers: [account(cloud, kind: .hermes), account(secondary, kind: .hermes)]),
+                       .switchServer(account(cloud, kind: .hermes), sent))
+        let bot = BotDestination(server: cloud, connectionID: UUID(), profile: "default")
+        XCTAssertEqual(ARCHermesDeepLink.botDestination(from: try XCTUnwrap(ARCHermesDeepLink.botURL(for: bot))), bot)
+    }
+
     func testLinkRoundTripsItsServerProfileAndKey() throws {
         for profile in ["inbox-triage", "Chef de Cuisine", "日報", "", nil] as [String?] {
             let sent = HermesSessionDestination(server: hermes, profile: profile, key: "20261010_120000_a1b2c3")

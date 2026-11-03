@@ -408,9 +408,11 @@ private struct EmptyBody: Encodable {}
 final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let baseURL: URL
     private let customHeaderProvider: @Sendable () -> [CustomHeader]
+    private let restrictToBasePath: Bool
 
-    init(baseURL: URL, customHeaderProvider: @escaping @Sendable () -> [CustomHeader]) {
+    init(baseURL: URL, restrictToBasePath: Bool = false, customHeaderProvider: @escaping @Sendable () -> [CustomHeader]) {
         self.baseURL = baseURL
+        self.restrictToBasePath = restrictToBasePath
         self.customHeaderProvider = customHeaderProvider
     }
 
@@ -421,6 +423,14 @@ final class CrossOriginHeaderStripper: NSObject, URLSessionTaskDelegate, @unchec
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
+        // A native deployment can share a hostname with another gateway. Its cookies,
+        // bearer and proxy headers must not follow a redirect into that other gateway.
+        if restrictToBasePath, !baseURL.path.isEmpty, baseURL.path != "/",
+           let destination = request.url, APIClient.isSameOrigin(destination, as: baseURL),
+           destination.path != baseURL.path, !destination.path.hasPrefix(baseURL.path + "/") {
+            completionHandler(nil)
+            return
+        }
         // Same-origin (or an indeterminate destination): follow the redirect with
         // headers untouched. We only strip when we can prove the hop is off-origin.
         guard let destination = request.url,

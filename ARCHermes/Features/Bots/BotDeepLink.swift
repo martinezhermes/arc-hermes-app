@@ -53,7 +53,7 @@ extension ARCHermesDeepLink {
         guard let rawServer = value(serverQueryItem),
               // The registry stores normalized URLs, so normalize here too: a link
               // written with a trailing slash still matches its configured server.
-              let server = try? AuthManager.normalizedServerURL(from: rawServer),
+              let server = try? BotConnection.address(rawServer),
               let connectionID = value(connectionQueryItem).flatMap(UUID.init(uuidString:)),
               let profile = value(profileQueryItem)
         else {

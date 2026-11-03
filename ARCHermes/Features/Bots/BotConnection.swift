@@ -58,15 +58,15 @@ struct BotConnection: Codable, Equatable, Identifiable {
 
     /// First path segments a browser, config file or curl command adds to the dashboard's
     /// root: the pages the root redirects to, sign-in, and the API and gateway socket.
-    private static let dashboardPaths: Set<String> = ["login", "auth", "api", "chat", "sessions"]
+    private static let dashboardPaths: Set<String> = ["login", "auth", "api", "chat", "sessions", "dashboard"]
 
-    /// Parses the connection form's text into the dashboard root every request is built
-    /// from, so a saved address never has a path, query or fragment. A pasted link is
-    /// reduced to its root: `ws`/`wss` become `http`/`https`, the query and fragment are
-    /// dropped, and a path starting with a `dashboardPaths` segment is cleared. Any other
-    /// path throws `BotAddressError.path`; credentials, other schemes and bad hosts or
-    /// ports throw `.invalid`. A missing scheme becomes HTTPS, or HTTP for private and
-    /// local hosts. The form's preview and dev auto-login parse through here too.
+    /// Parses the dashboard base every request is built from, retaining a reverse-proxy
+    /// deployment prefix. Enter that exact base for a prefixed deployment; root-host links
+    /// starting with a `dashboardPaths` page still reduce to the root. `ws`/`wss` become
+    /// `http`/`https`, and trailing slashes, query and fragment are dropped. Credentials,
+    /// other schemes and bad hosts or ports throw `.invalid`. A missing scheme becomes
+    /// HTTPS, or HTTP for private and local hosts. The form's preview and dev auto-login
+    /// parse through here too.
     static func address(_ text: String) throws -> URL {
         var value = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty, !value.contains(where: \.isWhitespace) else { throw BotAddressError.invalid }
@@ -84,7 +84,7 @@ struct BotConnection: Codable, Equatable, Identifiable {
         }
         parts.query = nil
         parts.fragment = nil
-        var path = parts.path
+        var path = parts.percentEncodedPath
         while path.hasSuffix("/") { path.removeLast() }
         guard ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
               let host = parts.host, !host.isEmpty,
@@ -94,13 +94,13 @@ struct BotConnection: Codable, Equatable, Identifiable {
         guard !plainHost.allSatisfy({ $0.isNumber || $0 == "." }) || IPv4Address(plainHost) != nil else {
             throw BotAddressError.invalid
         }
-        if let first = path.split(separator: "/").first, !dashboardPaths.contains(first.lowercased()) {
-            throw BotAddressError.path(path)
+        if let first = parts.path.split(separator: "/").first, dashboardPaths.contains(first.lowercased()) {
+            path = ""
         }
         if !hasScheme && defaultsToHTTP(plainHost.lowercased()) { parts.scheme = "http" }
         parts.scheme = parts.scheme?.lowercased()
         parts.host = host.lowercased()
-        parts.path = ""
+        parts.percentEncodedPath = path
         guard let url = parts.url else { throw BotAddressError.invalid }
         return url
     }
@@ -145,22 +145,11 @@ struct HermesOAuth: Codable, Equatable {
 /// `BotConnection.address(_:)`, so typing mistakes stay apart from `BotFailure`
 /// connection failures and never reach the inbox's retry rules.
 enum BotAddressError: LocalizedError, Equatable {
-    /// A path that isn't a dashboard page, as typed without trailing slashes. Usually a
-    /// reverse-proxy prefix, which ARC Hermes can't use yet.
-    case path(String)
     /// No usable HTTP or HTTPS host, or the address carries a username or password.
     case invalid
 
     var errorDescription: String? {
-        switch self {
-        case .path(let path):
-            // A first-strong isolate lays the path out left to right on its own, so its
-            // leading "/" stays in front of it inside right-to-left translations.
-            let shown = "\u{2068}\(path)\u{2069}"
-            return String(localized: "Remove “\(shown)” from the address. ARC Hermes needs the dashboard's main address, like https://example.com:9119, and can't use a dashboard served under a path yet.")
-        case .invalid:
-            return String(localized: "Enter the dashboard's HTTP or HTTPS address, like https://example.com:9119, without a username or password.")
-        }
+        String(localized: "Enter the dashboard's HTTP or HTTPS address, like https://example.com:9119, without a username or password.")
     }
 }
 

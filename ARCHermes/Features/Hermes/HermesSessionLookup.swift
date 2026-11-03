@@ -10,7 +10,7 @@ extension HermesSessionDestination {
               url.host?.lowercased() == ARCHermesDeepLink.sessionHost else { return nil }
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         guard let rawServer = items.first(where: { $0.name == "server" })?.value,
-              let server = try? AuthManager.normalizedServerURL(from: rawServer),
+              let server = try? BotConnection.address(rawServer),
               let key = ARCHermesDeepLink.normalizedSessionID(items.first(where: { $0.name == "id" })?.value)
         else { return nil }
         let profile = items.first { $0.name == ARCHermesDeepLink.profileQueryItem }

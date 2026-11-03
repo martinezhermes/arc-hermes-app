@@ -470,6 +470,64 @@ import XCTest
         XCTAssertNil(socket.value(forHTTPHeaderField: "X-Webui-Token"))
     }
 
+    func testNativeSignInSocketAndMediaRequestsKeepTheirDeploymentPrefix() async throws {
+        let prefix = "/gateways/cloud/admin"
+        let address = try BotConnection.address("https://hermes.example" + prefix)
+        let saved = BotConnection(id: record.id, name: record.name, address: address,
+                                  username: record.username, password: record.password, headers: [access])
+        let media = Data([1, 2, 3])
+        let configuration = HermesHostFixture.configuration { request in
+            switch request.url?.path {
+            case prefix + "/api/status":
+                return .json(200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
+            case prefix + "/auth/password-login": return .json(200, .object(["ok": .bool(true)]))
+            case prefix + "/api/auth/me": return .json(200, .object(["provider": .string("basic")]))
+            case prefix + "/api/auth/ws-ticket": return .json(200, .object(["ticket": .string("ticket")]))
+            case prefix + "/api/fs/download": return .body(200, media)
+            default: return .json(404, .object([:]))
+            }
+        }
+        var upgrade: URLRequest?
+        let http = HermesConnection(connection: saved, configuration: configuration,
+                                    gateway: .init { upgrade = $0; return BotScriptedSocket() })
+        let wire = BotClient(http: http)
+        defer { wire.close() }
+        try await wire.connect()
+        let scope = BotArtifactContext(connectionID: saved.id, profile: "default", sessionID: "voice-check", generation: 1)
+        let downloaded = try await wire.artifactData(path: "/server/note.mp3", context: scope)
+        XCTAssertEqual(downloaded, media)
+        XCTAssertEqual(HermesHostFixture.requests.map { $0.url?.path },
+                       ["/api/status", "/auth/password-login", "/api/auth/me", "/api/auth/ws-ticket", "/api/fs/download"]
+                        .map { prefix + $0 })
+        XCTAssertEqual(upgrade?.url?.absoluteString, "wss://hermes.example" + prefix + "/api/ws")
+        for request in HermesHostFixture.requests + [try XCTUnwrap(upgrade)] {
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Access"), access.value)
+        }
+        let browser = try HermesBrowserSignIn.authorizeURL(base: address, challenge: "challenge", redirect: "http://localhost/callback", state: "state")
+        XCTAssertEqual(browser.path, prefix + "/auth/native/authorize")
+        XCTAssertEqual(try HermesREST.speak(text: "fixture", profile: "default").request(base: address).url?.path,
+                       prefix + "/api/audio/speak")
+    }
+
+    func testConnectionHeadersAndRedirectsCannotCrossASameHostDeploymentPrefix() throws {
+        let base = try BotConnection.address("https://hermes.example/gateways/cloud/admin")
+        let headers = try HermesHeaders([access])
+        let inside = base.appendingPathComponent("api/status")
+        XCTAssertEqual(headers.applied(to: URLRequest(url: inside), origin: base).value(forHTTPHeaderField: "X-Access"), access.value)
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let task = session.dataTask(with: inside)
+        let response = try XCTUnwrap(HTTPURLResponse(url: inside, statusCode: 307, httpVersion: "HTTP/1.1", headerFields: nil))
+        for path in ["/api/status", "/gateways/secondary/admin/api/status", "/gateways/cloud/admin-other/api/status"] {
+            let request = URLRequest(url: try XCTUnwrap(URL(string: "https://hermes.example" + path)))
+            XCTAssertNil(headers.applied(to: request, origin: base).value(forHTTPHeaderField: "X-Access"), path)
+            var followed: URLRequest? = request
+            headers.redirectGuard(for: base).urlSession(session, task: task, willPerformHTTPRedirection: response,
+                                                      newRequest: request) { followed = $0 }
+            XCTAssertNil(followed, path)
+        }
+    }
+
     /// The fixture carries the headers onto the redirected request, as a server's redirect
     /// would, so only the connection's redirect guard can remove them. A reply from another
     /// host then ends the sign-in as `.blocked` before the password goes out.
