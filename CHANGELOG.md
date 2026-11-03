@@ -7,7 +7,7 @@ Security sections per release.
 
 ## [Unreleased]
 
-This draft covers changes since the ARC Hermes 1.10.4 baseline, including the
+This draft targets ARC Hermes 1.10.5 and covers changes since the 1.10.4 baseline, including the
 previously merged upstream integration and iOS 18 support. Application upstream
 is integrated through [5125b51](https://github.com/uzairansaruzi/hermex/commit/5125b5127fedfa15f63cc35814e63958d70a84b4).
 
@@ -30,6 +30,7 @@ is integrated through [5125b51](https://github.com/uzairansaruzi/hermex/commit/5
 
 ### Fixed
 
+- Completing a Sessions-pane swipe provides one selection haptic when app haptics are enabled. Keyboard focus and dismissal remain quiet, and cancelled or vertical gestures add no pane feedback.
 - Listen keeps its playback bar, pause/resume, seeking, speed, and Now Playing controls when speech falls back to the phone's voice, including replies above the server speech limit. The loading bar stays visible while the phone renders the audio.
 - Phone speech waits for the complete utterance before starting playback, so an empty buffer between synthesis chunks cannot truncate a long reply.
 - Changing Listen speed refreshes Now Playing after iOS settles the rate change. Stopping or switching replies cancels pending preparation and delayed refreshes, and late audio activation cannot restart a stopped reply.
@@ -50,6 +51,7 @@ is integrated through [5125b51](https://github.com/uzairansaruzi/hermex/commit/5
 
 ### Testing
 
+- With app haptics enabled on an iPhone, swipe Sessions open and closed with the composer focused and unfocused. Each completed slide should provide one selection haptic; focusing or dismissing the keyboard alone and cancelling a slide should stay quiet. Disable app haptics and repeat to confirm pane feedback is off.
 - Exercise server speech and phone-voice fallback, long replies, stop during preparation, rapid reply switching, pause/resume, seeking, speed changes, background playback, and Lock Screen controls. Actual iOS/iPadOS 18 and physical Lock Screen checks remain release validation work.
 - Check Share, Shortcuts, and Live Activity taps with two configured servers and multiple Profiles. Use disposable sessions/workspaces for transfer and Git mutation checks.
 - Companion-plugin features require a compatible host plugin. ARC-specific remote push delivery still needs its separate relay/APNs integration; imported push routing does not establish that service.

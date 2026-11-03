@@ -30,6 +30,12 @@ enum SessionHaptics {
         emit(.selection, isEnabled: isEnabled, performer: performer)
     }
 
+    static func sidebarSlideCompleted(from previous: Bool, to presented: Bool,
+                                      isEnabled: Bool, performer: Performer? = nil) {
+        guard previous != presented else { return }
+        emit(.selection, isEnabled: isEnabled, performer: performer)
+    }
+
     private static func emit(_ feedback: SessionHapticFeedback, isEnabled: Bool, performer: Performer?) {
         guard isEnabled else { return }
         (performer ?? Self.perform)(feedback)

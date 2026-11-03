@@ -264,6 +264,7 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
     @Environment(\.scenePhase) private var scenePhase
     @Binding var isPresented: Bool
     @Binding var isCompact: Bool
+    @AppStorage(AppHaptics.isEnabledKey) private var isHapticsEnabled = true
     @State private var preferredWidth: CGFloat?
     @State private var revealExclusions = SidebarRevealExclusions()
     @State private var focusScope = DrawerFocusScope()
@@ -456,7 +457,11 @@ struct ChatNavigationShell<Sidebar: View, Detail: View>: View {
                 var drag = revealDrag ?? ChatSidebarDrag(width: width, presented: isPresented,
                     direction: sign, initialTranslation: value.translation)
                 drag.update(value.translation)
-                isPresented = drag.settlesOpen(projected: value.predictedEndTranslation)
+                let nextPresentation = drag.settlesOpen(projected: value.predictedEndTranslation)
+                // Feedback belongs to the completed swipe, not keyboard/focus changes.
+                SessionHaptics.sidebarSlideCompleted(from: isPresented, to: nextPresentation,
+                    isEnabled: isHapticsEnabled)
+                isPresented = nextPresentation
             }
     }
 }
