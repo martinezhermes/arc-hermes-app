@@ -41,3 +41,24 @@ jobs:
             ${{ runner.temp }}/archermes-validation/xcodebuild.log
           if-no-files-found: warn
           retention-days: 7
+  visionos-build:
+    name: VisionOS build
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'xcode-27' || vars.ARC_APP_MACOS_RUNNER || 'xcode-27' }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Build the native visionOS 27 Simulator app
+        env:
+          ARCHERMES_VISIONOS_VALIDATION_DIR: ${{ runner.temp }}/archermes-visionos-validation
+        run: scripts/validate-visionos
+      - name: Preserve native build and evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: visionos-simulator-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/archermes-visionos-validation/ARCHermesVisionOS-Simulator.zip
+            ${{ runner.temp }}/archermes-visionos-validation/build-settings.json
+            ${{ runner.temp }}/archermes-visionos-validation/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7

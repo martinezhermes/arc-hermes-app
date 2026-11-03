@@ -414,11 +414,15 @@ private struct SkillsTitle: ViewModifier {
 
     func body(content: Content) -> some View {
         if let profile {
+            #if os(visionOS)
+            content.navigationTitle(Text("Skills · \(profile)"))
+            #else
             if #available(iOS 26, *) {
                 content.navigationTitle("Skills").navigationSubtitle(profile)
             } else {
                 content.navigationTitle(Text("Skills · \(profile)"))
             }
+            #endif
         } else {
             content.navigationTitle("Skills")
         }

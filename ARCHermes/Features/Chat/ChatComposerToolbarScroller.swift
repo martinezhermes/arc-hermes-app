@@ -25,7 +25,7 @@ struct ComposerToolbarScroller<Content: View>: View {
         // feels draggable for no reason.
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         // Taps on toolbar controls must never dismiss the keyboard first.
-        .scrollDismissesKeyboard(.never)
+        .adaptiveScrollDismissesKeyboard(.never)
         // The toolbar sits on glass, so its edges fade through a mask.
         .horizontalOverflowFades(.mask)
         .sidebarRevealGestureExcluded()

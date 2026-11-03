@@ -161,6 +161,7 @@ enum ChatHaptics {
     }
 
     private static func perform(_ feedback: ChatHapticFeedback) {
+        #if !os(visionOS)
         switch feedback {
         case .lightImpact:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
@@ -173,5 +174,6 @@ enum ChatHaptics {
         case .warning:
             UINotificationFeedbackGenerator().notificationOccurred(.warning)
         }
+        #endif
     }
 }

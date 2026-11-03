@@ -509,6 +509,31 @@ final class ComposerChipGestureTests: XCTestCase {
 
 @MainActor
 final class ComposerChipPresentationTests: XCTestCase {
+    func testChipRendersAtItsWindowScaleAndReusesOnlyMatchingCachedImages() {
+        func render(scale: CGFloat) -> UIImage {
+            let style = ComposerChipTextStyle(
+                colorScheme: .light, contrast: .standard, layoutDirection: .leftToRight,
+                dynamicTypeSize: .large, displayScale: scale
+            )
+            return ComposerChipRenderer.image(
+                label: "window-scale-test",
+                icon: .symbol("doc"),
+                metrics: style.metrics,
+                traits: style.traits,
+                isRightToLeft: false
+            )
+        }
+
+        let standard = render(scale: 1)
+        let retina = render(scale: 2)
+        XCTAssertEqual(standard.scale, 1)
+        XCTAssertEqual(retina.scale, 2)
+        XCTAssertEqual(standard.size, retina.size)
+        XCTAssertEqual(retina.cgImage?.width, (standard.cgImage?.width ?? 0) * 2)
+        XCTAssertFalse(standard === retina)
+        XCTAssertTrue(retina === render(scale: 2))
+    }
+
     func testHostedRedundantUpdateKeepsFocusedManualScrollOffset() async throws {
         let state = ComposerPresentationHarnessState()
         let host = UIHostingController(

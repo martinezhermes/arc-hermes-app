@@ -134,7 +134,7 @@ private struct BotApprovalRequestBody: View {
                     .font(.system(.footnote, design: .monospaced))
                     .textSelection(.enabled)
             }
-            .scrollDismissesKeyboard(.never)
+            .adaptiveScrollDismissesKeyboard(.never)
             .sidebarRevealGestureExcluded()
             .pendingRequestBlockSurface()
         }

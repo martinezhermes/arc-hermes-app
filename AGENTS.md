@@ -83,6 +83,14 @@ project remains authoritative: Swift 5 language mode, targeted concurrency,
 iOS/iPadOS 18+, and the team inherited from `Config/Shared.xcconfig`. Do not migrate
 language mode or add architectural layers merely to match a generic example.
 
+The native visionOS target and scheme are `ARCHermesVisionOS`, with a visionOS
+27.0 minimum and one resizable operator window. Read `docs/agents/visionos.md`
+before changing its platform boundaries; use `visionos-developer`,
+`spatial-app-architecture`, `spatial-swiftui-developer`, and `app-resizability`
+for native-window work. Run `scripts/validate-visionos` alongside the iOS suite.
+New shared sources/resources need membership in both app targets; the iOS
+extensions are not embedded in the visionOS app.
+
 The maintainer's main checkout is the Xcode/device workspace. Leave its branch
 and files alone while implementing in a temporary, issue-bound worktree from
 current `origin/master`. Use `ACH9/issue-<n>-<slug>` and ACH9001 commit authorship;

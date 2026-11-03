@@ -181,11 +181,19 @@ private struct MemoryProfileSubtitle: ViewModifier {
     let profile: String?
 
     func body(content: Content) -> some View {
+        #if os(visionOS)
+        if let profile {
+            content.navigationTitle(Text("Memory") + Text(verbatim: " · \(profile)"))
+        } else {
+            content
+        }
+        #else
         if #available(iOS 26, *), let profile {
             content.navigationSubtitle(profile)
         } else {
             content
         }
+        #endif
     }
 }
 

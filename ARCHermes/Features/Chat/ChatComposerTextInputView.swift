@@ -153,6 +153,7 @@ private struct ComposerCollapsedDraft: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    @Environment(\.displayScale) private var displayScale
     @Environment(\.layoutDirection) private var layoutDirection
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -189,7 +190,8 @@ private struct ComposerCollapsedDraft: View {
             colorScheme: colorScheme,
             contrast: colorSchemeContrast,
             layoutDirection: layoutDirection,
-            dynamicTypeSize: dynamicTypeSize
+            dynamicTypeSize: dynamicTypeSize,
+            displayScale: displayScale
         )
     }
 }

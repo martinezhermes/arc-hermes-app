@@ -1940,7 +1940,9 @@ struct ChatView: View {
     @ToolbarContentBuilder
     private var delegatedWorkToolbarItem: some ToolbarContent {
         if !viewModel.isViewingCachedData, let work = viewModel.hermesActivity?.delegatedWork, work.activeCount > 0 {
+            #if !os(visionOS)
             if #available(iOS 26, *) { ToolbarSpacer(.fixed, placement: .topBarTrailing) }
+            #endif
             ToolbarItem(placement: .topBarTrailing) {
                 HermesDelegatedWorkButton(count: work.activeCount) {
                     showsDelegatedWork = true

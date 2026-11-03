@@ -193,11 +193,15 @@ private struct UsageTitle: ViewModifier {
 
     func body(content: Content) -> some View {
         if let profile {
+            #if os(visionOS)
+            content.navigationTitle(Text(verbatim: "\(String(localized: "Usage")) · \(profile)"))
+            #else
             if #available(iOS 26, *) {
                 content.navigationTitle("Usage").navigationSubtitle(profile)
             } else {
                 content.navigationTitle(Text(verbatim: "\(String(localized: "Usage")) · \(profile)"))
             }
+            #endif
         } else {
             content.navigationTitle("Usage")
         }

@@ -71,7 +71,11 @@ enum AppIconChoice: String, CaseIterable, Identifiable {
     #if canImport(UIKit)
     @MainActor
     static var current: AppIconChoice {
+        #if os(visionOS)
+        .system
+        #else
         resolved(from: UIApplication.shared.alternateIconName)
+        #endif
     }
     #endif
 }

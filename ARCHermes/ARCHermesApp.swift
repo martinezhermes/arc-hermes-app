@@ -91,28 +91,42 @@ struct ARCHermesApp: App {
     }
 
     var body: some Scene {
+        #if os(visionOS)
+        WindowGroup(id: "operator") {
+            appContent
+                .frame(minWidth: 700, minHeight: 560)
+        }
+        .defaultSize(width: 1_100, height: 750)
+        .windowResizability(.contentMinSize)
+        .modelContainer(for: [CachedSession.self, CachedMessage.self])
+        .commands {
+            ARCHermesCommands()
+            SidebarCommands()
+        }
+        #else
         WindowGroup {
-            #if DEBUG
-            ContentView(authManager: authManager)
-                .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
-                // Signs in from `HERMEX_DEV_*` launch environment variables
-                // (`scripts/sim-login`); a no-op when they are absent.
-                .task(id: authManager.state) { await DevAutoLogin.run(authManager: authManager) }
-                .overlay(alignment: .topLeading) {
-                    // `--hitch-meter`: frame-hitch readout for profiling (#870).
-                    if HitchMeter.isEnabled {
-                        HitchMeterOverlay()
-                    }
-                }
-            #else
-            ContentView(authManager: authManager)
-                .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
-            #endif
+            appContent
         }
         .modelContainer(for: [CachedSession.self, CachedMessage.self])
         .commands {
             ARCHermesCommands()
             SidebarCommands()
         }
+        #endif
+    }
+
+    @ViewBuilder
+    private var appContent: some View {
+        #if DEBUG
+        ContentView(authManager: authManager)
+            .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
+            .task(id: authManager.state) { await DevAutoLogin.run(authManager: authManager) }
+            .overlay(alignment: .topLeading) {
+                if HitchMeter.isEnabled { HitchMeterOverlay() }
+            }
+        #else
+        ContentView(authManager: authManager)
+            .preferredColorScheme(AppTheme.storedValue(appThemeRawValue).colorScheme)
+        #endif
     }
 }

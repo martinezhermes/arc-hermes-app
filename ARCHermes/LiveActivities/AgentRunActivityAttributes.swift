@@ -1,7 +1,9 @@
+#if canImport(ActivityKit)
 import ActivityKit
+#endif
 import Foundation
 
-struct AgentRunActivityAttributes: ActivityAttributes {
+struct AgentRunActivityAttributes: Codable {
     struct ContentState: Codable, Hashable {
         var sessionID: String
         var sessionTitle: String
@@ -206,6 +208,10 @@ struct AgentRunActivityAttributes: ActivityAttributes {
         self.requestedPush = requestedPush
     }
 }
+
+#if canImport(ActivityKit)
+extension AgentRunActivityAttributes: ActivityAttributes {}
+#endif
 
 /// One chip in an activity's detail row. The widget renders `updated` as system-drawn
 /// relative time, so the row stays current without the app repainting it.

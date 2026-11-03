@@ -848,7 +848,7 @@ struct SessionListView: View {
         // get the system soft edge instead of a material slab (#21).
         .nativeSoftScrollEdges(.top)
         .background(Color(.systemBackground))
-        .scrollDismissesKeyboard(.interactively)
+        .adaptiveScrollDismissesKeyboard(.interactively)
         // Disclosure subrows are real List rows; drive their fold from the List
         // so insert/remove animates. Value-based so it works with @AppStorage.
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: profilesAreExpanded)

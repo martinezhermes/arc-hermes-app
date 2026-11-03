@@ -1,3 +1,4 @@
+#if !os(visionOS)
 @preconcurrency import AVFoundation
 import Combine
 import SwiftUI
@@ -613,3 +614,4 @@ private final class HermexAttachmentCameraPreviewView: UIView, @unchecked Sendab
         configuredDeviceID = nil
     }
 }
+#endif

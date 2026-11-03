@@ -1,7 +1,9 @@
+#if canImport(ActivityKit)
 import ActivityKit
+import UIKit
+#endif
 import Foundation
 import OSLog
-import UIKit
 
 private let liveActivityReconcilerLogger = Logger(
     subsystem: Bundle.main.bundleIdentifier ?? "ARCHermes",
@@ -10,6 +12,7 @@ private let liveActivityReconcilerLogger = Logger(
 
 /// Taps dismiss only the exact finished card, including a relay-ended card whose
 /// last content still says running. No session-based fallback is safe here.
+#if canImport(ActivityKit)
 enum AgentLiveActivityTapPolicy {
     static func shouldDismiss(requestedID: String?, activityID: String,
                               isFinal: Bool, activityState: ActivityState) -> Bool {
@@ -17,6 +20,7 @@ enum AgentLiveActivityTapPolicy {
         return isFinal || activityState == .ended
     }
 }
+#endif
 
 enum AgentLiveActivityEvent: Equatable {
     case sessionTitle(String)
@@ -180,7 +184,18 @@ extension AgentLiveActivityManaging {
 
 @MainActor
 final class AgentLiveActivityManager: AgentLiveActivityManaging {
+#if canImport(ActivityKit)
     static let shared = AgentLiveActivityManager(pushKeys: LiveActivityPushKeys(defaults: .standard))
+
+    /// The server's webui sessions whose on-device activities are still running.
+    static func runningSessionIDs(on server: URL) -> Set<String> {
+        Set(Activity<AgentRunActivityAttributes>.activities.compactMap { activity in
+            let state = activity.content.state
+            guard activity.attributes.server == server, activity.attributes.bot == nil,
+                  activity.activityState == .active, !state.isFinal, !state.isStale else { return nil }
+            return state.sessionID
+        })
+    }
 
     private let minimumUpdateInterval: TimeInterval
     private var activity: Activity<AgentRunActivityAttributes>?
@@ -599,14 +614,6 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
             )
         }
         return result
-    }
-
-    /// The signed-in Hermes server cold launch checks unpaired Hermes sessions' activities
-    /// against (#1179), and its one `session.active_list` read: the stored keys of the runs it
-    /// lists (`LeftoverLiveActivitySettlement.runningKeys`), or nil when it couldn't be read.
-    struct HermesRunCheck {
-        let server: URL
-        let runningKeys: @MainActor () async -> Set<String>?
     }
 
     /// Settles the activities a previous launch left (`LeftoverLiveActivitySettlement`) without
@@ -1154,6 +1161,27 @@ final class AgentLiveActivityManager: AgentLiveActivityManaging {
         }
 
         reset()
+    }
+#else
+    static let shared = AgentLiveActivityManager()
+
+    // Platforms without ActivityKit keep chat lifecycle calls inert and never
+    // register a relay route or report an activity that cannot be displayed.
+    static func runningSessionIDs(on server: URL) -> Set<String> { [] }
+    func start(sessionID: String, server: URL, sessionTitle: String, streamID: String?, startedAt: Date = Date()) {}
+    func update(_ event: AgentLiveActivityEvent) {}
+    func markStale() {}
+    func end(status: AgentRunActivityStatus, activity: String, errorSummary: String? = nil) {}
+    func settleActivitiesFromPreviousLaunch(checking hermes: HermesRunCheck? = nil) async {}
+    func dismissFinishedActivity(from url: URL) async {}
+#endif
+
+    /// The signed-in Hermes server cold launch checks unpaired Hermes sessions' activities
+    /// against (#1179), and its one `session.active_list` read: the stored keys of the runs it
+    /// lists (`LeftoverLiveActivitySettlement.runningKeys`), or nil when it couldn't be read.
+    struct HermesRunCheck {
+        let server: URL
+        let runningKeys: @MainActor () async -> Set<String>?
     }
 }
 

@@ -21,12 +21,14 @@ enum HapticButtonHaptics {
     }
 
     static func perform(_ style: HapticButtonFeedbackStyle) {
+        #if !os(visionOS)
         switch style {
         case .light:
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case .medium:
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         }
+        #endif
     }
 }
 

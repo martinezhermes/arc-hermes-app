@@ -335,6 +335,11 @@ enum HermexAttachmentImageProcessor {
 enum HermexAttachmentPickerLayoutMetrics {
     static let menuMaximumWidth: CGFloat = 280
     static let menuLeadingPadding: CGFloat = 12
+    #if os(visionOS)
+    static let menuPreferredHeight: CGFloat = 156
+    #else
+    static let menuPreferredHeight: CGFloat = 222
+    #endif
 
     static func menuWidth(containerWidth: CGFloat) -> CGFloat {
         min(menuMaximumWidth, max(1, containerWidth - (menuLeadingPadding * 2)))
@@ -367,7 +372,7 @@ private struct HermexAttachmentPickerLayout {
         let preferredExpandedHeight = max(460, height * 0.66)
         let panelHeight = expanded
             ? min(expandedMaximumHeight, min(preferredExpandedHeight, availableHeight))
-            : min(222, availableHeight)
+            : min(HermexAttachmentPickerLayoutMetrics.menuPreferredHeight, availableHeight)
         return Self(
             panelSize: CGSize(width: panelWidth, height: panelHeight),
             leadingPadding: leadingPadding,
@@ -519,7 +524,9 @@ struct HermexAttachmentPickerView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.scenePhase) private var scenePhase
     @State private var model = HermexAttachmentPickerModel()
+    #if !os(visionOS)
     @StateObject private var cameraController = HermexAttachmentCameraController()
+    #endif
     @State private var mode = HermexAttachmentPickerMode.menu
     @State private var preparationTask: Task<Void, Never>?
     @State private var preparationFence = HermexAttachmentLifecycleFence()
@@ -582,6 +589,7 @@ struct HermexAttachmentPickerView: View {
         ZStack {
             if mode == .menu { menuPanel.transition(.opacity) }
             if mode == .photos { photoPanel.transition(.opacity) }
+            #if !os(visionOS)
             if mode == .camera {
                 HermexAttachmentCameraPanel(
                     controller: cameraController,
@@ -591,6 +599,7 @@ struct HermexAttachmentPickerView: View {
                 )
                 .transition(.opacity)
             }
+            #endif
         }
         .frame(width: size.width, height: size.height)
         .modifier(HermexAttachmentPanelSurface(reduceTransparency: reduceTransparency))
@@ -601,9 +610,11 @@ struct HermexAttachmentPickerView: View {
     private var menuPanel: some View {
         VStack(spacing: 0) {
             menuRow(title: "Files", systemImage: "paperclip", enabled: !isBusy, action: chooseFiles)
+            #if !os(visionOS)
             menuRow(title: "Camera", systemImage: "camera", enabled: imageChoicesAreEnabled) {
                 animate { mode = .camera }
             }
+            #endif
             menuRow(title: "Photos", systemImage: "photo.on.rectangle.angled", enabled: imageChoicesAreEnabled) {
                 animate { mode = .photos }
                 Task { await model.loadLibrary() }
@@ -661,6 +672,9 @@ struct HermexAttachmentPickerView: View {
                     .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: confirmLabel)
                 }
                 .buttonStyle(.plain)
+                #if os(visionOS)
+                .buttonBorderShape(.capsule)
+                #endif
                 .disabled(model.selectionCount == 0 || model.isPreparing || model.libraryStatus == .loading)
             }
             .padding(.horizontal, 25)
@@ -668,6 +682,9 @@ struct HermexAttachmentPickerView: View {
 
             if model.hasLimitedAccess {
                 Button("Manage Access", action: openSettings)
+                    #if os(visionOS)
+                    .buttonBorderShape(.capsule)
+                    #endif
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -739,6 +756,9 @@ struct HermexAttachmentPickerView: View {
                     .foregroundStyle(.secondary)
                 Button("Open Settings", action: openSettings)
                     .buttonStyle(.borderedProminent)
+                    #if os(visionOS)
+                    .buttonBorderShape(.capsule)
+                    #endif
             }
         }
     }
@@ -767,6 +787,9 @@ struct HermexAttachmentPickerView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        #if os(visionOS)
+        .buttonBorderShape(.roundedRectangle(radius: 0))
+        #endif
         .frame(width: side, height: side)
         .accessibilityLabel(photoAccessibilityLabel(for: asset))
         .accessibilityValue(order.map { "Selected, number \($0)" } ?? "Not selected")
@@ -788,6 +811,9 @@ struct HermexAttachmentPickerView: View {
                 .overlay { Circle().stroke(.white.opacity(0.16), lineWidth: 1) }
         }
         .buttonStyle(.plain)
+        #if os(visionOS)
+        .buttonBorderShape(.circle)
+        #endif
         .disabled(!enabled)
         .accessibilityLabel(label)
     }
@@ -1020,5 +1046,8 @@ struct HermexAttachmentMenuRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        #if os(visionOS)
+        .buttonBorderShape(.roundedRectangle(radius: 12))
+        #endif
     }
 }

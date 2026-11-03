@@ -30,7 +30,7 @@ struct ComposerAttachmentStripView: View {
             }
             .frame(height: stripHeight)
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-            .scrollDismissesKeyboard(.never)
+            .adaptiveScrollDismissesKeyboard(.never)
             .sidebarRevealGestureExcluded()
         }
     }
