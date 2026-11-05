@@ -702,9 +702,24 @@ struct HermesChatTranscript: Equatable {
         "hermes|\(engine.connection.id.uuidString)|\(engine.target.profile)|\(engine.storedKey ?? "")"
     }
 
-    /// A reply spoken by the host in this session's Profile's voice, for Listen (#1072).
-    func speech(for text: String) async throws -> Data {
-        try await engine.wire.speech(text: text, profile: engine.target.profile)
+    struct SpeechRequest {
+        let synthesize: @MainActor (String) async throws -> HermesListenAudio
+        let validate: @MainActor () throws -> Void
+    }
+
+    /// Captures the chat's native Profile and the stored session attached when the message
+    /// menu was opened. Runtime handles and lineage roots have different meanings to Hermes.
+    func speechRequest(for sessionID: String?) -> SpeechRequest {
+        let engine = self.engine
+        let profile = engine.target.profile
+        let attempt = engine.generation
+        let validate: @MainActor () throws -> Void = {
+            try engine.check(attempt)
+            guard engine.target.profile == profile, engine.storedKey == sessionID else { throw BotFailure.stale }
+        }
+        return SpeechRequest(synthesize: { text in
+            try await engine.wire.listenSpeech(text: text, profile: profile, sessionID: sessionID, validateDispatch: validate)
+        }, validate: validate)
     }
 
     /// A prompt's answer was lost or unreadable: reattach and rebuild, so the snapshot shows

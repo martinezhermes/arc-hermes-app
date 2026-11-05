@@ -18,12 +18,12 @@ final class ChatMessageActionMenuTests: XCTestCase {
 
     func testCachedResponseRetainsListenButDisablesServerMutations() throws {
         let menu = try makeMenu(role: "assistant", isViewingCachedData: true)
-        XCTAssertEqual(menu.items.filter(\.isEnabled).map(\.kind), [.listen])
+        XCTAssertEqual(menu.items.filter(\.isEnabled).map(\.kind), [.listen, .deviceVoice])
     }
 
     func testPendingResponseMutationsAreDisabled() throws {
         let menu = try makeMenu(role: "assistant", isMutating: true)
-        XCTAssertEqual(menu.items.filter(\.isEnabled).map(\.kind), [.listen])
+        XCTAssertEqual(menu.items.filter(\.isEnabled).map(\.kind), [.listen, .deviceVoice])
     }
 
     private func makeMenu(
@@ -49,7 +49,7 @@ final class ChatMessageActionMenuTests: XCTestCase {
             isRegeneratingMessage: isMutating,
             isEditingMessage: false,
             isForkingMessage: isMutating,
-            onToggleListening: { _ in },
+            onToggleListening: { _, _ in },
             onRegenerate: { _ in },
             onEdit: { _ in },
             onFork: { _ in },

@@ -127,24 +127,89 @@ import Foundation
         return messages
     }
 
-    /// Listen's speech (#1072). The host may install its TTS engine on first use, so this runs
-    /// on the provisioning deadline. Its reply is read bounded, like a download, and decoded off
-    /// the main actor. Plain HTTP, so it needs no attached socket and reaches the host while the
-    /// chat reconnects. A close or reconnect during its sign-in stops the send; the caller drops
-    /// a late result itself.
-    func speech(text: String, profile: String) async throws -> Data {
+    /// Discovers ARC on this authenticated connection. After discovery succeeds, every refusal
+    /// belongs to that session, including a voice or endpoint that disappears before synthesis.
+    func listenSpeech(text: String, profile: String, sessionID: String?,
+                      validateDispatch: @escaping @MainActor () throws -> Void) async throws -> HermesListenAudio {
         let attempt = self.attempt
-        let request = try HermesREST.speak(text: text, profile: profile).request(base: http.connection.address)
-        return try await http.authorized(request, deadline: .provisioning,
-                                         validateDispatch: { try self.checkOwner(attempt) }) { request, session in
-            try Self.speechAudio(fromReply: try await BotArtifactDownload.data(session: session, request: request))
+        func check() throws {
+            try checkOwner(attempt)
+            try validateDispatch()
+        }
+
+        let fits = text.unicodeScalars.count <= HermesREST.maximumSpeechTextLength
+        let arcSessionID: String
+        do {
+            try check()
+            let capabilities = try await http.reply(.arcSpeechCapabilities(profile: profile), validateDispatch: check)
+            try check()
+            if try !ARCListenContract.isAdvertised(capabilities) {
+                let audio = fits ? try? await speech(text: text, profile: profile, validateDispatch: check) : nil
+                try check()
+                return .profile(audio)
+            }
+
+            guard let sessionID else { throw HermesListenFailure.identityUnavailable }
+            let identity = try await http.reply(.arcSpeechIdentity(sessionID: sessionID, profile: profile),
+                                                validateDispatch: check)
+            try check()
+            try ARCListenContract.verifyVoice(identity, sessionID: sessionID)
+            guard fits else { throw HermesListenFailure.replyTooLong }
+            arcSessionID = sessionID
+        } catch {
+            try check()
+            throw Self.listenFailure(error, otherwise: .identityUnavailable)
+        }
+
+        do {
+            return .arc(try await speech(text: text, profile: profile, sessionID: arcSessionID, validateDispatch: check))
+        } catch {
+            try check()
+            throw Self.listenFailure(error, otherwise: .synthesisFailed)
         }
     }
 
+    private static func listenFailure(_ error: Error, otherwise fallback: HermesListenFailure) -> Error {
+        switch error {
+        case is HermesListenFailure, is CancellationError, BotFailure.stale: return error
+        case BotFailure.rejected(401), BotFailure.signInExpired, BotFailure.signInChanged, BotFailure.browserSignIn:
+            return HermesListenFailure.signInRequired
+        case BotFailure.rejected(403): return HermesListenFailure.identityDenied
+        default: return fallback
+        }
+    }
+
+    /// Listen's speech (#1072). The host may install its TTS engine on first use, so this runs
+    /// on the provisioning deadline. Its reply is read bounded, like a download, and decoded off
+    /// the main actor. Plain HTTP, so it needs no attached socket and reaches the host while the
+    /// chat reconnects. Check the conversation again after sign-in and after the body arrives.
+    func speech(text: String, profile: String, sessionID: String? = nil,
+                validateDispatch: (@MainActor () throws -> Void)? = nil) async throws -> Data {
+        let attempt = self.attempt
+        let request = try HermesREST.speak(text: text, profile: profile, sessionID: sessionID)
+            .request(base: http.connection.address)
+        let audio = try await http.authorized(request, deadline: .provisioning, validateDispatch: {
+            try self.checkOwner(attempt)
+            try validateDispatch?()
+        }) { request, session in
+            let body = try await BotArtifactDownload.data(session: session, request: request)
+            return try Self.speechAudio(fromReply: body, requiresARCVoice: sessionID != nil)
+        }
+        try checkOwner(attempt)
+        try validateDispatch?()
+        return audio
+    }
+
     /// The bytes of a speak reply's `data_url`, `data:<mime>;base64,<audio>`.
-    nonisolated static func speechAudio(fromReply body: Data) throws -> Data {
-        guard let url = (try? JSONDecoder().decode(BotJSON.self, from: body))?["data_url"].text,
-              url.hasPrefix("data:"), let comma = url.firstIndex(of: ","), url[..<comma].hasSuffix(";base64"),
+    nonisolated static func speechAudio(fromReply body: Data, requiresARCVoice: Bool = false) throws -> Data {
+        let reply = try JSONDecoder().decode(BotJSON.self, from: body)
+        if requiresARCVoice {
+            guard reply["ok"].flag == true else { throw HermesListenFailure.synthesisFailed }
+            guard reply["provider"].text == "arc" else { throw HermesListenFailure.voiceUnavailable }
+        }
+        guard let url = reply["data_url"].text,
+              url.hasPrefix(requiresARCVoice ? "data:audio/" : "data:"),
+              let comma = url.firstIndex(of: ","), url[..<comma].hasSuffix(";base64"),
               let audio = Data(base64Encoded: String(url[url.index(after: comma)...])), !audio.isEmpty
         else { throw BotFailure.unsupported }
         return audio

@@ -137,9 +137,92 @@ final class APIClientTTSTests: APIClientTestCase {
         }
     }
 
+    func testARCListenKeepsTheNativeBearerProfileAndDeploymentPrefix() async throws {
+        let base = try BotConnection.address("https://hermes.example/gateways/cloud")
+        let saved = BotConnection(id: UUID(), name: "Fixture", address: base, username: "", password: "",
+                                  headers: [CustomHeader(name: "X-Access", value: "fixture")],
+                                  oauth: HermesOAuth(provider: "nous", userID: "u1", refreshToken: "fixture-refresh"))
+        let prefix = base.path
+        let profile = "fixture-profile"
+        let sessionID = ARCSpeechFixture.sessionID
+        let configuration = HermesHostFixture.configuration { request in
+            switch request.url?.path {
+            case prefix + "/api/status":
+                return .json(200, .object(["auth_required": .bool(true), "auth_flows": .array([.string("native_pkce")])]))
+            case prefix + "/auth/native/refresh":
+                return .json(200, .object(["access_token": .string("fixture-access")]))
+            case prefix + "/api/auth/me":
+                return .json(200, .object(["provider": .string("nous"), "user_id": .string("u1")]))
+            case prefix + ARCSpeechFixture.capabilitiesPath: return ARCSpeechFixture.capabilities
+            case prefix + ARCSpeechFixture.identityPath: return ARCSpeechFixture.identity()
+            case prefix + ARCSpeechFixture.speakPath: return ARCSpeechFixture.audio()
+            default:
+                XCTFail("Unexpected request: \(request.url?.path ?? "nil")")
+                return .json(404, .object([:]))
+            }
+        }
+        let client = BotClient(connection: saved, configuration: configuration)
+        defer { client.close() }
+        let result = try await client.listenSpeech(text: "Fixture reply", profile: profile, sessionID: sessionID,
+                                                  validateDispatch: {})
+        guard case .arc(let bytes) = result else { return XCTFail("Expected ARC speech") }
+        XCTAssertEqual(bytes, ARCSpeechFixture.bytes)
+        let speechRequests = Array(HermesHostFixture.requests.suffix(3))
+        XCTAssertEqual(speechRequests.map { $0.url?.path }, [
+            prefix + ARCSpeechFixture.capabilitiesPath, prefix + ARCSpeechFixture.identityPath,
+            prefix + ARCSpeechFixture.speakPath
+        ])
+        XCTAssertEqual(speechRequests.map(\.httpMethod), ["GET", "GET", "POST"])
+        for request in speechRequests {
+            XCTAssertEqual(request.url?.host, base.host)
+            XCTAssertEqual(request.url?.query, "profile=" + profile)
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer fixture-access")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "X-Access"), "fixture")
+        }
+        let body = try XCTUnwrap(speechRequests.last.flatMap(apiTestBodyData))
+        XCTAssertEqual(try JSONDecoder().decode(BotJSON.self, from: body),
+                       .object(["text": .string("Fixture reply"), "session_id": .string(sessionID)]))
+    }
+
     private func connectedClient() async throws -> BotClient {
         let client = BotClient(http: BotSocketHost().connection(record))
         try await client.connect()
         return client
+    }
+}
+
+/// Synthetic metadata follows ARC identity v1. A historical persona and today's voice
+/// selection can come from different Host revisions.
+enum ARCSpeechFixture {
+    static let sessionID = "local-accepted"
+    static let capabilitiesPath = "/api/plugins/arc/v1/capabilities"
+    static let identityPath = "/api/plugins/arc/v1/sessions/\(sessionID)/identity"
+    static let speakPath = "/api/audio/speak"
+    static let bytes = Data([0xFF, 0xF3, 0x18, 0xC4])
+    static let capabilities = HermesHostFixture.Reply.json(200, .object([
+        "api_version": .number(1), "read_only": .bool(true),
+        "session_types": .array([.string("local_dm")]), "speech_context": .string("session_id")
+    ]))
+
+    static func identity(sessionID: String = ARCSpeechFixture.sessionID, state: String = "configured") -> HermesHostFixture.Reply {
+        let selection: BotJSON = state == "configured" ? .object([
+            "binding_revision": .string("7"), "display_name": .string("Fixture Voice"),
+            "selection_host_revision": .number(2), "voice_id": .string("fixture-voice")
+        ]) : .null
+        return .json(200, .object([
+            "session_id": .string(sessionID), "persona_revision": .number(1),
+            "host_id": .string("b6fdbe73-9f57-4c73-9b19-c30867484c34"), "display_name": .string("Fixture Host"),
+            "binding": .object(["installation_id": .string("hermes-install:fixture"), "profile_id": .string("arc-profile:fixture")]),
+            "voice": .object(["state": .string(state), "selection": selection])
+        ]))
+    }
+
+    static func refusal(_ status: Int, _ code: String) -> HermesHostFixture.Reply {
+        .json(status, .object(["detail": .object(["code": .string(code), "message": .string("Fixture refusal")])]))
+    }
+
+    static func audio(provider: String = "arc") -> HermesHostFixture.Reply {
+        .json(200, .object(["ok": .bool(true), "data_url": .string("data:audio/mpeg;base64," + bytes.base64EncodedString()),
+                            "mime_type": .string("audio/mpeg"), "provider": .string(provider)]))
     }
 }

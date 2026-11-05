@@ -125,7 +125,7 @@ final class ChatTranscriptMaterializationTests: XCTestCase {
             onScrollToLatestContent: { _, _ in },
             onPreviewAttachment: { _, _ in },
             onPreviewTranscriptMedia: { _ in },
-            onToggleListening: { _ in },
+            onToggleListening: { _, _ in },
             onRegenerate: { _ in },
             onEdit: { _ in },
             onFork: { _ in },

@@ -1187,6 +1187,7 @@ final class HermesHostFixture: URLProtocol {
                                        "version": .string("0.21.5")]))
         case "/api/auth/me": return .json(200, .object(["provider": .string("basic")]))
         case "/api/auth/ws-ticket": return .json(200, .object(["ticket": .string("ticket")]))
+        case "/api/plugins/arc/v1/capabilities": return .json(404, .object(["detail": .string("Plugin not found")]))
         case let path? where path.hasPrefix("/api/sessions/") && path.hasSuffix("/mutation-snapshot"):
             return .json(404, .object(["detail": .string("No such API endpoint: \(path)")]))
         default: return .json(200, .object(["ok": .bool(true), "path": .string("/profile/images/a.png")]))

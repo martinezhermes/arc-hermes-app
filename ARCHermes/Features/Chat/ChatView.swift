@@ -2077,8 +2077,8 @@ struct ChatView: View {
             onPreviewTranscriptMedia: { reference in
                 presentTranscriptMediaPreview(reference)
             },
-            onToggleListening: { context in
-                viewModel.toggleListening(to: context)
+            onToggleListening: { context, voice in
+                viewModel.toggleListening(to: context, voice: voice)
             },
             onRegenerate: beginRegenerateResponse,
             onEdit: beginEditMessage,

@@ -202,9 +202,8 @@ enum BotConnectionAdvice {
     /// without an offset, else one transcript page from `offset` (#1047). Nil when the host has
     /// no such session (404).
     func sessionMessages(_ key: String, profile: String, offset: Int?) async throws -> [BotJSON]?
-    /// `text` spoken in `profile`'s voice (`HermesREST.speak`): the audio bytes, of a format the
-    /// host's TTS provider chose. Any refusal or unreadable reply throws.
-    func speech(text: String, profile: String) async throws -> Data
+    func listenSpeech(text: String, profile: String, sessionID: String?,
+                      validateDispatch: @escaping @MainActor () throws -> Void) async throws -> HermesListenAudio
     /// One page of `profile`'s sessions for the Sessions list, or with `archived` for the
     /// Archived screen (`HermesREST.sessionList`, #1046, #1048).
     func sessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage
@@ -274,8 +273,10 @@ extension BotTransport {
         throw BotFailure.unsupported
     }
 
-    func speech(text: String, profile: String) async throws -> Data {
-        throw BotFailure.unsupported
+    func listenSpeech(text: String, profile: String, sessionID: String?,
+                      validateDispatch: @escaping @MainActor () throws -> Void) async throws -> HermesListenAudio {
+        try validateDispatch()
+        return .profile(nil)
     }
 
     /// A stored session's latest 500 rows, as a background task's result reads them.

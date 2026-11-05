@@ -11,6 +11,11 @@ enum ListenPlaybackPhase: Equatable {
     case paused
 }
 
+enum ListenVoice {
+    case server
+    case device
+}
+
 enum ListenPlaybackSpeed: Double, CaseIterable, Identifiable {
     case half = 0.5
     case normal = 1
@@ -632,10 +637,9 @@ final class ChatViewModel {
     // (1 s in production). Injectable, and the task readable, so tests await it.
     private let listenSpeedChangeSettleDelay: @Sendable () async throws -> Void
     @ObservationIgnored private(set) var listenNowPlayingRefreshTask: Task<Void, Never>?
-    // A reply's server speech for Listen, or nil to speak it on device: webui's `/api/tts`
-    // with the saved engine and voice, or a Hermes host's voice for the chat's Profile
-    // (#1072). Any throw also falls back on device (#15). Injectable so tests stub the server.
-    private let synthesizeListenAudio: @MainActor (String) async throws -> Data?
+    // WebUI's server speech, or an injected synthesizer in tests. Native Hermes captures
+    // its session separately when Listen starts.
+    private let synthesizeListenAudio: (@MainActor (String) async throws -> Data?)?
     private var listenAudioPlayer: (any ListenAudioPlaying)?
     // Identity of the Listen player currently playing. A stale finish callback from a
     // superseded player (e.g. switching messages mid-playback) must not clear the new
@@ -750,7 +754,7 @@ final class ChatViewModel {
             showsLiveActivityResponseExcerpts: showsLiveActivityResponseExcerpts
         )
         self.streamCoordinator = streamCoordinator
-        let backendSpeech: @MainActor (String) async throws -> Data?
+        let backendSpeech: (@MainActor (String) async throws -> Data?)?
         switch backend {
         case .webui:
             hermesTurn = nil
@@ -759,7 +763,7 @@ final class ChatViewModel {
         case .hermes(let coordinator):
             hermesTurn = coordinator
             turn = coordinator
-            backendSpeech = { try await coordinator.speech(for: $0) }
+            backendSpeech = nil
             currentProfile = coordinator.settings.profile
             selectedProfileName = coordinator.settings.profile
             coordinator.setShowsLiveActivityResponseExcerpts(showsLiveActivityResponseExcerpts)
@@ -2282,7 +2286,8 @@ final class ChatViewModel {
             offersHistoryActions: hermesTurn.map { $0.policy.offersHistoryActions && hermesRewindableMessageIDs.contains(message.id) }
                 ?? true,
             // A Hermes branch counts to a row the host saved (#1051). A Bot Chat offers neither (#1145).
-            offersFork: hermesTurn.map { $0.policy.offersHistoryActions && message.rowID != nil } ?? true
+            offersFork: hermesTurn.map { $0.policy.offersHistoryActions && message.rowID != nil } ?? true,
+            hermesStoredSessionID: hermesTurn?.engine.storedKey
         )
     }
 
@@ -6158,8 +6163,9 @@ final class ChatViewModel {
         messageActionErrorMessage = nil
     }
 
-    func toggleListening(to context: MessageActionContext) {
+    func toggleListening(to context: MessageActionContext, voice: ListenVoice = .server) {
         guard context.role == .assistant else { return }
+        if let hermesTurn, context.hermesStoredSessionID != hermesTurn.engine.storedKey { return }
 
         guard let listenText = context.listenText else {
             messageActionErrorMessage = String(localized: "There is no assistant text to listen to.")
@@ -6168,38 +6174,60 @@ final class ChatViewModel {
 
         // Tapping the message that is already listening — fetching server audio or
         // playing on either engine — toggles it off. Matching on `listeningMessageID`
-        // alone (not `isSpeaking`) also debounces rapid double-taps: the second tap
+        // also debounces rapid double-taps: the second tap
         // stops cleanly instead of firing a second speech request (into webui's ~2 s
         // `/api/tts` rate limit) or stacking audio (#15).
-        if listeningMessageID == context.messageID {
+        if voice == .server, listeningMessageID == context.messageID {
             stopListening()
             return
         }
 
         stopListening()
+        messageActionErrorMessage = nil
         // Fetching or rendering speech must not interrupt other audio. Acquire this
         // operation's audio lease only once playable bytes are ready.
         listeningMessageID = context.messageID
         beginListenPlaybackPreparation(for: context)
 
-        let usesServerSpeech = ServerTTSPolicy.shouldUseServerTTS(for: listenText, onHermes: hermesTurn != nil)
+        let hermesSpeech = voice == .server && synthesizeListenAudio == nil
+            ? hermesTurn?.speechRequest(for: context.hermesStoredSessionID) : nil
+        let usesServerSpeech = voice == .server && synthesizeListenAudio != nil
+            && ServerTTSPolicy.shouldUseServerTTS(for: listenText, onHermes: hermesTurn != nil)
         let requestID = UUID()
         activeListenRequestID = requestID
         listenPreparationTask = Task { [weak self, synthesizeListenAudio, renderOnDeviceSpeech] in
             do {
                 guard !Task.isCancelled else { return }
-                if usesServerSpeech, let audio = try? await synthesizeListenAudio(listenText) {
+                let serverAudio: HermesListenAudio
+                if let hermesSpeech {
+                    serverAudio = try await hermesSpeech.synthesize(listenText)
+                } else {
+                    serverAudio = .profile(usesServerSpeech ? try? await synthesizeListenAudio?(listenText) : nil)
+                }
+                let (audio, requiresHostVoice): (Data?, Bool) = switch serverAudio {
+                case .arc(let audio): (audio, true)
+                case .profile(let audio): (audio, false)
+                }
+                if let audio {
                     guard let self, !Task.isCancelled, self.activeListenRequestID == requestID else { return }
-                    if try await self.startListenAudioPlayback(audio, requestID: requestID) { return }
+                    if try await self.startListenAudioPlayback(audio, requestID: requestID, validate: hermesSpeech?.validate) { return }
+                    if requiresHostVoice { throw HermesListenFailure.playbackFailed }
                 }
                 guard !Task.isCancelled, self?.activeListenRequestID == requestID else { return }
-                let audio = try? await renderOnDeviceSpeech(listenText)
+                try hermesSpeech?.validate()
+                let deviceAudio = try? await renderOnDeviceSpeech(listenText)
                 guard let self, !Task.isCancelled, self.activeListenRequestID == requestID else { return }
-                if let audio, try await self.startListenAudioPlayback(audio, requestID: requestID) { return }
-                self.finishListening()
+                if let deviceAudio {
+                    self.listenPlaybackTitle = String(localized: "Read with Device Voice")
+                    if try await self.startListenAudioPlayback(deviceAudio, requestID: requestID,
+                                                              validate: hermesSpeech?.validate) { return }
+                }
+                throw HermesListenFailure.playbackFailed
             } catch {
                 guard let self, self.activeListenRequestID == requestID else { return }
                 self.finishListening()
+                guard !Task.isCancelled, !(error is CancellationError), error as? BotFailure != .stale else { return }
+                self.messageActionErrorMessage = ((error as? HermesListenFailure) ?? .playbackFailed).localizedDescription
             }
         }
     }
@@ -7353,17 +7381,20 @@ final class ChatViewModel {
 
     /// Plays server or on-device speech through the same controls, acquiring audio only
     /// after decoding succeeds. A stale acquisition cannot start a departed request.
-    private func startListenAudioPlayback(_ audioData: Data, requestID: UUID) async throws -> Bool {
+    private func startListenAudioPlayback(_ audioData: Data, requestID: UUID,
+                                          validate: (@MainActor () throws -> Void)? = nil) async throws -> Bool {
+        try validate?()
         guard let player = try? listenAudioPlayerFactory(audioData) else { return false }
         let playerID = ObjectIdentifier(player)
-        player.onFinish = { [weak self] in
-            self?.handleListenPlayerCompletion(for: playerID)
+        player.onFinish = { [weak self] succeeded in
+            self?.handleListenPlayerCompletion(for: playerID, succeeded: succeeded)
         }
         player.prepareToPlay()
         player.rate = Float(listenPlaybackSpeed.rawValue)
 
         try await listenAudioSession.activate()
         guard !Task.isCancelled, activeListenRequestID == requestID else { return false }
+        try validate?()
         guard player.play() else {
             listenAudioSession.deactivate()
             return false
@@ -7407,9 +7438,7 @@ final class ChatViewModel {
                       self.activeListenPlayerID == playerID else { return }
                 player.rate = Float(self.listenPlaybackSpeed.rawValue)
                 guard player.play() else {
-                    self.listenPlaybackPhase = .paused
-                    self.listenAudioSession.deactivate()
-                    return
+                    throw HermesListenFailure.playbackFailed
                 }
                 self.listenPlaybackPhase = .playing
                 self.startListenPlaybackTicker()
@@ -7419,6 +7448,9 @@ final class ChatViewModel {
                 guard self.activeListenRequestID == requestID else { return }
                 self.listenPlaybackPhase = .paused
                 self.listenAudioSession.deactivate()
+                if !Task.isCancelled {
+                    self.messageActionErrorMessage = HermesListenFailure.playbackFailed.localizedDescription
+                }
             }
         }
     }
@@ -7481,9 +7513,10 @@ final class ChatViewModel {
 
     /// Completion routed from the Listen audio player. A stale callback from a superseded
     /// player must not clear the new listen state or deactivate the session.
-    private func handleListenPlayerCompletion(for playerID: ObjectIdentifier) {
+    private func handleListenPlayerCompletion(for playerID: ObjectIdentifier, succeeded: Bool) {
         guard playerID == activeListenPlayerID else { return }
         finishListening()
+        if !succeeded { messageActionErrorMessage = HermesListenFailure.playbackFailed.localizedDescription }
     }
 
     private func statusTokenLine() -> String {
@@ -8035,6 +8068,8 @@ extension ChatViewModel: HermesChatTurnDelegate {
     /// the chat is scrolled to, once a history read succeeds: until then the empty chat shows
     /// the failure and its retry.
     func hermesBotChatWasReplaced() {
+        stopListening()
+        clearMessageActionError()
         messages = []
         hasOlderMessages = false
         latestRunOutcome = nil
@@ -8394,6 +8429,7 @@ struct MessageActionContext: Equatable, Identifiable {
     let messageID: String
     let copyText: String
     let listenText: String?
+    let hermesStoredSessionID: String?
     /// Regenerate and Edit rewrite the server's history. A Hermes session offers them only
     /// where the host can cut (`ChatViewModel.hermesRewindableMessageIDs`, #1049).
     let offersHistoryActions: Bool
@@ -8401,7 +8437,7 @@ struct MessageActionContext: Equatable, Identifiable {
     let offersFork: Bool
 
     init?(message: ChatMessage, visibleIndex: Int, messagesOffset: Int?, offersHistoryActions: Bool = true,
-          offersFork: Bool = true) {
+          offersFork: Bool = true, hermesStoredSessionID: String? = nil) {
         guard visibleIndex >= 0 else { return nil }
 
         switch message.role {
@@ -8422,6 +8458,7 @@ struct MessageActionContext: Equatable, Identifiable {
         messageID = message.id
         copyText = content
         listenText = role == .assistant ? SpeechTextNormalizer.normalizedAssistantText(content) : nil
+        self.hermesStoredSessionID = hermesStoredSessionID
         self.offersHistoryActions = offersHistoryActions
         self.offersFork = offersFork
     }
@@ -8934,18 +8971,13 @@ enum ServerTTSPolicy {
     /// Server-enforced request cap (`400 text too long` above it); longer text
     /// routes straight to the on-device synthesizer (chunking is a non-goal).
     static let maximumTextLength = 5000
-    /// A Hermes host's ceiling (#1072). The host splits longer text into its provider's
-    /// chunks (Edge 5000, OpenAI 4096, others 4000) and plays only the first without ffmpeg
-    /// to join them, so ARC Hermes sends one chunk's worth and speaks longer replies on device.
-    /// Counted in Unicode scalars, as the host's Python `len` counts them.
-    static let maximumHermesTextLength = 4000
     /// The server's own default voice is `zh-CN-XiaoxiaoNeural`, so the client
     /// must always send an explicit voice. A voice picker is a non-goal of #15;
     /// this is the issue-specified default (verified live 2026-07-02).
     static let defaultVoice = "en-US-AriaNeural"
 
     static func shouldUseServerTTS(for text: String, onHermes: Bool = false) -> Bool {
-        onHermes ? text.unicodeScalars.count <= maximumHermesTextLength : text.count <= maximumTextLength
+        onHermes ? text.unicodeScalars.count <= HermesREST.maximumSpeechTextLength : text.count <= maximumTextLength
     }
 }
 
@@ -8954,9 +8986,9 @@ enum ServerTTSPolicy {
 /// requires decodable audio bytes).
 @MainActor
 protocol ListenAudioPlaying: AnyObject {
-    /// Fired on the main actor when playback finishes naturally.
+    /// Fired on the main actor when playback finishes, with the player's result.
     /// `stop()` must not fire it.
-    var onFinish: (@MainActor () -> Void)? { get set }
+    var onFinish: (@MainActor (Bool) -> Void)? { get set }
     var currentTime: TimeInterval { get set }
     var duration: TimeInterval { get }
     var rate: Float { get set }
@@ -8969,12 +9001,11 @@ protocol ListenAudioPlaying: AnyObject {
 }
 
 /// Production `ListenAudioPlaying`: wraps `AVAudioPlayer` and forwards its finish
-/// delegate onto the main actor. `init` throws when the bytes aren't decodable
-/// audio, which the caller treats as "fall back to the on-device voice".
+/// delegate onto the main actor. `init` throws when the bytes aren't decodable audio.
 @MainActor
 final class ListenAudioPlayer: NSObject, ListenAudioPlaying {
     private let player: AVAudioPlayer
-    var onFinish: (@MainActor () -> Void)?
+    var onFinish: (@MainActor (Bool) -> Void)?
     var currentTime: TimeInterval {
         get { player.currentTime }
         set { player.currentTime = newValue }
@@ -9012,11 +9043,10 @@ final class ListenAudioPlayer: NSObject, ListenAudioPlaying {
 
 extension ListenAudioPlayer: AVAudioPlayerDelegate {
     // `AVAudioPlayer` may call its delegate off the main thread; hop back before
-    // touching main-actor listen state. Finished-with-error still ends playback,
-    // so both flag values route to `onFinish`.
+    // touching main-actor listen state.
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
-            self.onFinish?()
+            self.onFinish?(flag)
         }
     }
 
@@ -9026,7 +9056,7 @@ extension ListenAudioPlayer: AVAudioPlayerDelegate {
     // completion handler drops callbacks from a no-longer-active player.
     nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
         Task { @MainActor in
-            self.onFinish?()
+            self.onFinish?(false)
         }
     }
 }

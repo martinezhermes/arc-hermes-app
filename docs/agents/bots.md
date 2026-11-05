@@ -668,6 +668,15 @@ nothing fails. The host's `{detail}` is the failure Server first falls back on-d
 from. There is no capability probe, because `/api/audio/voice-config` returns provider
 keys.
 
+Listen uses the chat's authenticated connection and native Profile. ARC v1
+discovery reads capabilities and the exact stored session's identity under
+`/api/plugins/arc/v1`. A configured voice permits `POST /api/audio/speak` with
+`text` and the stored `session_id`. Hermes checks the session owner again during
+synthesis. The client requires an ARC provider result and reports synthesis or
+playback failures separately from the identity check. A missing discovery route
+keeps ordinary Profile speech and its device fallback. Read with Device Voice
+uses the local synthesizer directly.
+
 A bot's chat keeps its draft under the `.bot` key: server + connection UUID + Profile.
 After uploads finish, immediately before prompt submission, the client flushes an
 unresolved marker to disk. Upload interruptions never mark a draft ambiguous. An acknowledged

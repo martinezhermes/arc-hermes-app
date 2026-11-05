@@ -41,8 +41,9 @@ import Foundation
 /// answers the folder's entry.
 /// The update routes (#1075) are read at the same pin and checked against `scripts/local-hermes`;
 /// `docs/agents/bots.md` § Updating Hermes has their shapes. `POST /api/audio/speak` (#1072) is
-/// read at the same pin and checked against `scripts/local-hermes`: `{text}` only, spoken by the
+/// read at the same pin and checked against `scripts/local-hermes`: `{text}` is spoken by the
 /// Profile's `tts.provider`, answered `{ok, data_url, mime_type, provider}`, or `{detail}`.
+/// ARC identity v1 qualifies an additional `session_id` on the same native endpoint (#92).
 /// The analytics routes (#1074) are read at the same pin, recorded from `scripts/local-hermes`
 /// (`Fixtures/HermesAgent/analytics.json`) and checked read-only against a live host: `days`
 /// outside 1-365 is a 422, an unknown Profile a 404 `{detail}`, a store the host can't read a
@@ -118,6 +119,10 @@ enum HermesREST: Equatable, Sendable {
     static let sessionSearchLimit = 50
     /// The host's cap on one search, which has no offset to page past it.
     static let sessionSearchMaximum = 100
+
+    /// One native speech chunk (#1072), counted as Python counts Unicode scalars.
+    /// Some providers split longer text and Hermes may return only the first chunk.
+    static let maximumSpeechTextLength = 4000
 
     /// Public, so it reads the host before any credential is sent.
     case status
@@ -305,8 +310,10 @@ enum HermesREST: Equatable, Sendable {
     case profileSoul(name: String)
     /// Replaces the Profile's SOUL.md, atomically; `{ok: true}`.
     case setProfileSoul(name: String, content: String)
-    /// Speaks `text` in `profile`'s voice: the audio as a base64 data URL (`BotClient.speech`).
-    case speak(text: String, profile: String)
+    case arcSpeechCapabilities(profile: String)
+    case arcSpeechIdentity(sessionID: String, profile: String)
+    /// The base64 data URL of text spoken by the Profile or, with a qualified session, its ARC Host.
+    case speak(text: String, profile: String, sessionID: String? = nil)
     /// One Profile's usage over the last `days` (1-365): `{daily, totals, by_model, period_days, …}`,
     /// `daily` holding only days with sessions, by UTC date.
     case analyticsUsage(days: Int, profile: String)
@@ -634,9 +641,17 @@ enum HermesREST: Equatable, Sendable {
         case .setProfileSoul(let name, let content):
             guard Self.isSegment(name) else { throw BotFailure.invalidAddress }
             return try Self.send("PUT", base.appendingPathComponent("api/profiles/\(name)/soul"), ["content": .string(content)])
-        case .speak(let text, let profile):
+        case .arcSpeechCapabilities(let profile):
             guard !profile.isEmpty else { throw BotFailure.invalidAddress }
-            return try Self.send("POST", try Self.url(base, "api/audio/speak", profile: profile), ["text": .string(text)])
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/capabilities", profile: profile))
+        case .arcSpeechIdentity(let sessionID, let profile):
+            guard !profile.isEmpty, Self.isSegment(sessionID) else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/sessions/\(sessionID)/identity", profile: profile))
+        case .speak(let text, let profile, let sessionID):
+            guard !profile.isEmpty, sessionID.map(Self.isSegment) != false else { throw BotFailure.invalidAddress }
+            var body: [String: BotJSON] = ["text": .string(text)]
+            body["session_id"] = sessionID.map(BotJSON.string)
+            return try Self.send("POST", try Self.url(base, "api/audio/speak", profile: profile), body)
         case .analyticsUsage(let days, let profile): return try Self.analytics(base, "usage", days: days, profile: profile)
         case .analyticsModels(let days, let profile): return try Self.analytics(base, "models", days: days, profile: profile)
         case .kanbanConfig: return try Self.kanban(base, ["config"])
