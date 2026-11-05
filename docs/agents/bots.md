@@ -1,10 +1,14 @@
 # Bot Mode
 
-Bots run on the configured server's direct-Hermes connection: on a Hermes server its
-own sign-in, on a webui server an optional one. The connection itself (sign-in, host
-identity, the connect form, Connection Headers, the shared gateway socket, logging, the
-handshake, the pin, the reconnect contract and feature detection) is in
-[hermes-server.md](hermes-server.md). This file covers what the screens do on top of it.
+Bots use the canonical connection of an enrolled ARC Hermes gateway.
+The assigned Host identity is verified during connection setup and applies
+through the native profile/session ownership contract. Bot surfaces share
+the gateway authority used by ordinary chat, identity and Listen.
+[hermes-server.md](hermes-server.md) governs that connection and its acceptance.
+
+The implementation reference below describes native feature behavior.
+Qualify it through the owning gateway protocol. Normal chat on existing and
+new sessions is required before accepting voice in that same client flow.
 
 The disconnected inbox offers one Connect action with the editor's drawn,
 neutral-default playful faces. Motion pauses while covered or inactive and is
