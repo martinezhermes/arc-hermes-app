@@ -331,7 +331,7 @@ For a bot's chat, the title lookup can recover archived history and resume can
 auto-continue unfinished backend work; neither is guaranteed to be read-only.
 
 An attach and every reconnect follow the reconnect contract in
-[hermes-server.md](hermes-server.md#reconnect-contract).
+[hermes-server.md](hermes-server.md#normal-conversation-lifecycle).
 
 Room messages reuse the Sessions transcript's long-press seam.
 `chatMessageContextMenu` supplies the menu from a plain `[ChatMessageActionItem]`, so a
