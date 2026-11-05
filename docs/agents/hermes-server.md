@@ -181,7 +181,9 @@ non-JSON 401 on `/api/status`), a host with no sign-in ARC Hermes can use (`.bro
 a refused gateway upgrade (`.upgradeRefused`), and a gateway's own listener, whose
 `gateway.ready` sets `session_authority` (`.gatewayListener`; its protocol is #1341).
 The authenticated Sessions home handles that handshake with a read-only preview
-of the serving Profile. It uses `GET /api/sessions`, then the exact session detail
+of the serving Profile. If a public listener refuses the upgrade before that
+frame, authenticated ARC v1 capabilities for `profile=current` can verify the same
+native authority. The preview uses `GET /api/sessions`, then the exact session detail
 and up to 100 recent messages with inline images disabled. The preview accepts
 a resolved continuation when its stored local owner matches the selected row.
 Listen uses that owner's canonical `chat_id` on the same connection and Profile.

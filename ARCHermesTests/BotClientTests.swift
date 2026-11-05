@@ -785,7 +785,10 @@ import XCTest
     }
 
     func testARefusedUpgradeFailsTheConnectWithItsFailure() async {
-        BotHTTPFixture.handler = Self.signIn
+        BotHTTPFixture.handler = { request in
+            guard request.url?.path == ARCSpeechFixture.capabilitiesPath else { return Self.signIn(request) }
+            return (404, .object(["detail": .string("Plugin not found")]))
+        }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [BotHTTPFixture.self]
         let client = BotClient(connection: connection(), configuration: configuration) { _ in

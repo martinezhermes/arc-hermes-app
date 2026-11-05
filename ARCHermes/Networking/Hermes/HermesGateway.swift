@@ -264,7 +264,7 @@ import OSLog
     /// and completes the handshake. No screen sends anything until it returns.
     private func handshake(generation owner: Int) async throws {
         func check() throws {
-            guard owner == generation else { throw BotFailure.stale }
+            guard owner == generation, !Task.isCancelled else { throw BotFailure.stale }
         }
         let upgrade = try await http.gatewayUpgrade()
         try check()
@@ -278,8 +278,23 @@ import OSLog
             socket = NativeBotSocket(task: task, label: label)
         }
         self.socket = socket
-        let ready = try await HermesConnectionLog.measure(.gatewayReady, label: label) {
-            try await Self.receive(socket, label: label)
+        let ready: BotJSON
+        do {
+            ready = try await HermesConnectionLog.measure(.gatewayReady, label: label) {
+                try await Self.receive(socket, label: label)
+            }
+        } catch let failure as BotFailure {
+            // A public gateway can refuse the upgrade before gateway.ready. ARC v1
+            // capabilities require the authenticated, in-process session authority.
+            if case .upgradeRefused = failure, !http.connection.hasNoCredentials {
+                try check()
+                let capabilities = try? await http.reply(.arcSpeechCapabilities(profile: "current"), validateDispatch: check)
+                try check()
+                if let capabilities, (try? ARCListenContract.isAdvertised(capabilities)) == true {
+                    throw BotFailure.gatewayListener
+                }
+            }
+            throw failure
         }
         try check()
         guard ready["method"].text == "event", ready["params"]["type"].text == "gateway.ready",

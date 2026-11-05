@@ -68,7 +68,8 @@ enum BotFailure: Error, Equatable, LocalizedError {
     case signInChanged
     /// The address reaches a Hermes gateway's own listener (`hermes gateway run`, 0.22.1+), whose
     /// sessions follow a protocol Hermex doesn't speak yet (#1341): its `gateway.ready` sets
-    /// `session_authority`, or its page withholds the session token from an open sign-in. Permanent.
+    /// `session_authority`, ARC capabilities verify native authority after a refused upgrade,
+    /// or the gateway withholds the session token from an open sign-in. Permanent.
     case gatewayListener
     var errorDescription: String? {
         switch self {

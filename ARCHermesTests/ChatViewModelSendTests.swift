@@ -9739,6 +9739,48 @@ final class ChatViewModelSendTests: XCTestCase {
         }
     }
 
+    func testRefusedUpgradeOnTheAuthenticatedARCOwnerStillOpensHistory() async throws {
+        let socket = BotScriptedSocket()
+        socket.receiveFailure = BotFailure.upgradeRefused(403)
+        let http = connection(socket: socket)
+        let sessions = SessionListViewModel(server: http.connection.address, hermes: HermesSessionListSource(
+            connection: http.connection, profile: nil, makeWire: { _ in BotClient(http: http) }
+        ))
+        await sessions.openHermes()
+
+        XCTAssertEqual(sessions.sessionLoadError as? BotFailure, .gatewayListener)
+        XCTAssertTrue(socket.sentRequests.isEmpty)
+        let probe = try XCTUnwrap(HermesHostFixture.requests.last)
+        XCTAssertEqual(probe.url?.path, prefix + ARCSpeechFixture.capabilitiesPath)
+        XCTAssertEqual(probe.url?.query, "profile=current")
+        XCTAssertEqual(probe.httpMethod, "GET")
+        XCTAssertEqual(probe.value(forHTTPHeaderField: "Authorization"), "Bearer history-fixture")
+
+        let history = HermesGatewayHistory(http: http)
+        let page = try await history.recentSessions()
+        let session = try XCTUnwrap(page.sessions.first)
+        let transcript = try await history.transcript(for: session)
+        XCTAssertEqual(transcript.localConversationID, ARCSpeechFixture.sessionID)
+    }
+
+    func testRefusedUpgradeWithUnavailableNativeContextKeepsTheRefusal() async throws {
+        let socket = BotScriptedSocket()
+        socket.receiveFailure = BotFailure.upgradeRefused(403)
+        let http = connection(socket: socket) { path in
+            path == ARCSpeechFixture.capabilitiesPath ? ARCSpeechFixture.refusal(503, "native_context_unavailable") : nil
+        }
+        let wire = BotClient(http: http)
+        defer { wire.close() }
+
+        do {
+            try await wire.connect()
+            XCTFail("Expected a refused upgrade")
+        } catch {
+            XCTAssertEqual(error as? BotFailure, .upgradeRefused(403))
+        }
+        XCTAssertEqual(HermesHostFixture.count(prefix + "/api/sessions"), 0)
+    }
+
     func testHistoryRefusesWrongProfileAndCrossedContinuation() async throws {
         let scenarios: [(String, HermesHostFixture.Reply)] = [
             ("/api/sessions/" + selectedID, Self.row(id: selectedID, profile: "other")),
