@@ -1,5 +1,16 @@
 import Foundation
 
+@MainActor struct HermesListenRequest {
+    let wire: any BotTransport
+    let profile: String
+    let sessionID: String?
+    let validate: @MainActor () throws -> Void
+
+    func synthesize(_ text: String) async throws -> HermesListenAudio {
+        try await wire.listenSpeech(text: text, profile: profile, sessionID: sessionID, validateDispatch: validate)
+    }
+}
+
 enum HermesListenAudio: Sendable {
     case profile(Data?)
     case arc(Data)

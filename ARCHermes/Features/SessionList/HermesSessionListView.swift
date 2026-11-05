@@ -156,6 +156,16 @@ struct HermesSessionListView: View {
     }
 
     var body: some View {
+        if let home, canPreviewGateway, viewModel.sessionLoadError as? BotFailure == .gatewayListener {
+            HermesGatewayHistoryBrowser(entry: entry, home: home, pendingLink: $pendingLink)
+        } else {
+            interactiveSessions
+        }
+    }
+
+    private var canPreviewGateway: Bool { home != nil && !entry.connection.hasNoCredentials }
+
+    private var interactiveSessions: some View {
         surface
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: projectsAreExpanded)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)
@@ -666,6 +676,10 @@ struct HermesSessionListView: View {
         do {
             try await wire.connect()
             outcome = try await HermesSessionLookup.resolve(link, on: wire)
+        } catch BotFailure.gatewayListener where canPreviewGateway {
+            // The Sessions connection is detecting the same handshake. Its history
+            // preview consumes the link once it has the gateway's serving Profile.
+            return
         } catch {
             if !Task.isCancelled, error as? BotFailure != .rejected(401), pendingLink == link { pendingLink = nil }
             return

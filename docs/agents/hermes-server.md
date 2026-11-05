@@ -179,10 +179,13 @@ a Host-header 400 (`dashboard.public_url`), a webui address, a proxy or Cloudfla
 status, an access proxy's own sign-in (`.blocked`: a redirect to another host or a
 non-JSON 401 on `/api/status`), a host with no sign-in ARC Hermes can use (`.browserSignIn`),
 a refused gateway upgrade (`.upgradeRefused`), and a gateway's own listener, whose
-`gateway.ready` sets `session_authority` (`.gatewayListener`; its protocol is #1341). The
-inbox and chat use the same copy for the messages they show, and none of these retries on
-its own. Adding a server signs in over HTTP only, so a listener with a password is saved
-and refused at its first gateway connect.
+`gateway.ready` sets `session_authority` (`.gatewayListener`; its protocol is #1341).
+The authenticated Sessions home handles that handshake with a read-only preview
+of the serving Profile. It uses `GET /api/sessions`, then the exact session detail
+and up to 100 recent messages with inline images disabled. The preview accepts
+a resolved continuation when its stored local owner matches the selected row.
+Listen uses that owner's canonical `chat_id` on the same connection and Profile.
+The live chat and Bot transports still require their own socket contract.
 A rejected password (`.rejected(401)`) offers "Update sign-in" in place of
 Reconnect in the inbox, a chat and a room: it opens the connection form with the
 password focused, from the inbox, because a chat's or room's client is bound to

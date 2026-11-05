@@ -182,7 +182,7 @@ enum HermesREST: Equatable, Sendable {
     /// task's `bg_<id>` side session, whose last reply is its durable result (#1013). With one,
     /// a transcript page (#1047): `transcriptPageSize` display rows counted back from the newest,
     /// compacted ones included, in chronological order.
-    case sessionMessages(key: String, profile: String, offset: Int? = nil)
+    case sessionMessages(key: String, profile: String, offset: Int? = nil, inlineImages: Bool? = nil)
     /// One page of `profile`'s sessions for the Sessions list (#1046): latest activity first,
     /// without archived, empty or machine-run rows, `sessionPageSize` at a time from `offset`.
     /// Each page also brings every pinned row it missed, archived ones included. `archived`
@@ -454,7 +454,7 @@ enum HermesREST: Equatable, Sendable {
             return Self.get(url)
         case .restartDashboard: return try Self.send("POST", base.appendingPathComponent("api/plugins/hermex-push/restart"), [:])
         case .pluginsHub: return Self.get(base.appendingPathComponent("api/dashboard/plugins/hub"))
-        case .sessionMessages(let key, let profile, let offset):
+        case .sessionMessages(let key, let profile, let offset, let inlineImages):
             guard Self.isSegment(key), !profile.isEmpty, (offset ?? 0) >= 0,
                   var parts = URLComponents(url: try Self.url(base, "api/sessions/\(key)/messages", profile: profile),
                                             resolvingAgainstBaseURL: false)
@@ -468,6 +468,9 @@ enum HermesREST: Equatable, Sendable {
                     URLQueryItem(name: "offset", value: String(offset)),
                     URLQueryItem(name: "include_compacted", value: "true")
                 ]
+            }
+            if let inlineImages {
+                parts.queryItems?.append(URLQueryItem(name: "inline_images", value: String(inlineImages)))
             }
             guard let url = parts.url else { throw BotFailure.invalidAddress }
             return Self.get(url)
