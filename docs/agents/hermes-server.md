@@ -28,11 +28,18 @@ Native authentication establishes the caller. The public `/api/status`
 installation ID identifies the runtime installation. ARC's authenticated v1
 API supplies the assigned Host and accepted binding.
 
-After signing in, read `/api/plugins/arc/v1/capabilities`, the authorized Host
-and its bindings on the same connection. Verify that the native installation
-and selected profile agree with that binding. Keep the accepted Host ID with
-the connection. Missing ARC routes, an empty Host result or a mismatched
-binding is a deployment setup error.
+After signing in, include the selected native `?profile=` selector when
+reading `/capabilities`, `/hosts` and `/hosts/{host_id}/bindings` under
+`/api/plugins/arc/v1` on the same connection. The authenticated binding
+response establishes enrollment for that selector. Compare the binding's
+`installation_id` with the native `/api/status` `install_id` prefixed by
+`hermes-install:`.
+
+Keep the returned opaque `profile_id` with the selected native profile
+selector, accepted Host ID and gateway connection. Verify the binding again
+when the selected profile changes before admitting chat for that profile.
+Treat missing ARC routes, an empty Host result, an unavailable binding or
+an installation mismatch as a deployment setup error.
 
 Use `/api/plugins/arc/v1/sessions/{session_id}/identity` for the exact
 conversation's accepted Host and persona revision. The current approved voice
