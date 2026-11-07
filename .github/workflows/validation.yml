@@ -16,7 +16,7 @@ jobs:
     # Enable the app-specific Temporal Loom registration only after its smoke
     # and full XCTest run pass. External fork PRs retain hosted execution.
     runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'xcode-27' || vars.ARC_APP_MACOS_RUNNER || 'xcode-27' }}
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Record runner identity
