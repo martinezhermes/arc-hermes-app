@@ -95,7 +95,7 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .browserSignIn: return String(localized: "This Hermes host only offers sign-in with a browser, which ARC Hermes doesn't support yet. To connect now, add a dashboard username and password on the host.")
         case .signInExpired: return String(localized: "Your Hermes sign-in expired. Sign in again.")
         case .signInChanged: return String(localized: "This server’s sign-in changed. Sign in again to continue.")
-        case .gatewayListener: return String(localized: "This address is a Hermes gateway’s own listener, which Hermex doesn’t support yet. Connect to hermes dashboard instead.")
+        case .gatewayListener: return String(localized: "A verified ARC Host is required to open chat on this gateway.")
         case .browserSignInFailed: return String(localized: "The browser sign-in didn't finish. Try again.")
         case .upgradeRefused: return String(localized: "Hermes accepted the sign-in, but the live connection was refused. If a proxy or tunnel sits in front of Hermes, turn on WebSocket support and let the Sec-WebSocket-Protocol header through.")
         case .outdated(let version):
@@ -119,6 +119,7 @@ enum BotConnectionAdvice {
     /// client error (a 404 is not a Hermes host). Server errors, rate limits and JSON-RPC faults
     /// other than "method missing" are the retry loop's problem.
     static func isRetryable(_ error: Error) -> Bool {
+        if error is HermesARCIdentityFailure { return false }
         switch error as? BotFailure {
         case .unsupported, .wrongIdentity, .differentHost, .invalidAddress, .notDashboard,
              .blocked, .browserSignIn, .signInExpired, .signInChanged, .upgradeRefused, .outdated,
@@ -174,6 +175,7 @@ enum BotConnectionAdvice {
     var serverVersion: String? { get }
     /// `install_id` from `/api/status` at the last connect; nil when the host omits it.
     var serverInstallID: String? { get }
+    var arcIdentity: HermesARCHostIdentity? { get }
     /// Gateway methods the host answered -32601 (method not found) on this connection,
     /// shared by every screen on it; a new connection starts empty.
     var unavailableMethods: Set<String> { get }
@@ -245,6 +247,7 @@ enum BotConnectionAdvice {
 extension BotTransport {
     var serverVersion: String? { nil }
     var serverInstallID: String? { nil }
+    var arcIdentity: HermesARCHostIdentity? { nil }
     var unavailableMethods: Set<String> { [] }
 
     func uploadImage(data: Data, filename: String, context: BotArtifactContext) async throws -> String {

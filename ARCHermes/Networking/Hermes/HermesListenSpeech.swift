@@ -52,6 +52,10 @@ enum ARCListenContract {
     }
 
     private struct Identity: Decodable {
+        struct Binding: Decodable {
+            let installationId: String?
+            let profileId: String?
+        }
         struct Voice: Decodable {
             struct Selection: Decodable {
                 let voiceId: String?
@@ -62,10 +66,12 @@ enum ARCListenContract {
         }
 
         let sessionId: String?
+        let hostId: String?
+        let binding: Binding?
         let voice: Voice?
     }
 
-    /// Only native route absence during discovery permits ordinary Profile speech.
+    /// Discovery distinguishes an absent contract from an advertised but invalid one.
     static func isAdvertised(_ reply: (body: Data, status: Int)) throws -> Bool {
         if reply.status == 404 {
             let detail = (try? JSONDecoder().decode(BotJSON.self, from: reply.body))?["detail"].text
@@ -82,9 +88,12 @@ enum ARCListenContract {
         return true
     }
 
-    static func verifyVoice(_ reply: (body: Data, status: Int), sessionID: String) throws {
+    static func verifyVoice(_ reply: (body: Data, status: Int), sessionID: String, host: HermesARCHostIdentity) throws {
         try checkStatus(reply)
-        guard let identity = try? decode(Identity.self, from: reply.body), identity.sessionId == sessionID else {
+        guard let identity = try? decode(Identity.self, from: reply.body),
+              identity.sessionId == sessionID, identity.hostId == host.hostID,
+              identity.binding?.installationId == "hermes-install:" + host.installationID,
+              identity.binding?.profileId == host.profileID else {
             throw HermesListenFailure.identityUnavailable
         }
         guard identity.voice?.state == "configured", identity.voice?.selection?.voiceId?.isEmpty == false else {

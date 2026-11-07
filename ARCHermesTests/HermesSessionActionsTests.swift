@@ -429,7 +429,7 @@ import Observation
     func testAConnectTheScreenClosedDuringLeavesNoClient() async throws {
         let host = BotSocketHost()
         let connection = host.connection(record)
-        _ = HermesHostFixture.configuration { $0.url?.path == "/api/auth/ws-ticket" ? .park : nil }
+        _ = HermesHostFixture.configuration { $0.url?.path == "/api/webapp/socket-ticket" ? .park : nil }
         let parked = expectation(description: "connect parked")
         HermesHostFixture.onPark = { parked.fulfill() }
         let archive = ArchivedSessionsViewModel(server: server, hermes: HermesArchiveSource(

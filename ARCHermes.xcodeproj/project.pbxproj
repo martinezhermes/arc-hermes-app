@@ -788,6 +788,7 @@
 				"C8230A000000000000000004",
 				2D426D00832C46B09A905C4F,
 				97171436BD2E4D17A5BBD496,
+				E5F4F9F8A138476B912BDC8E,
 				"E1043000000000000000A002",
 				"E1069000000000000000A002",
 				"E1112000000000000000A002",
@@ -2941,7 +2942,7 @@
 			sourceTree = "<group>";
 		};
 		97171436BD2E4D17A5BBD496 = {
-			path = Hermes/HermesGatewayHistory.swift;
+			path = Hermes/HermesCanonicalSession.swift;
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";
@@ -7444,7 +7445,7 @@
 			sourceTree = "<group>";
 		};
 		E5F4F9F8A138476B912BDC8E = {
-			path = HermesGatewayHistoryBrowser.swift;
+			path = Hermes/HermesARCIdentity.swift;
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";
@@ -7497,7 +7498,6 @@
 				A04300000000000000000012,
 				A04300000000000000000013,
 				E1046000000000000000A004,
-				E5F4F9F8A138476B912BDC8E,
 				C08800000000000000000002,
 				A040C0DE0000000000000002,
 				A048C0DE0000000000000002,

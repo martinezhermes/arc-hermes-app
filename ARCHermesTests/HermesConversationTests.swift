@@ -7,6 +7,96 @@ import Observation
 /// session is created once, a bot's chat is found by its title, frames are held and handed
 /// over in order, and a drop reconnects on a backoff that only reads.
 @MainActor final class HermesConversationTests: XCTestCase {
+    func testCanonicalGatewayRunsExistingAndNewConversationsThroughTheNormalEngine() async throws {
+        for isNew in [false, true] {
+            let id = isNew ? "new-session" : "existing-session"
+            let host = BotSocketHost()
+            func snapshot(running: Bool = false, prompts: [BotJSON] = [], pending: [BotJSON] = []) -> BotJSON {
+                .object([
+                    "session_id": .string(id), "stored_session_id": .string(id),
+                    "messages": .array([]), "message_count": .number(0), "running": .bool(running),
+                    "revision": .number(2), "execution_generation": .number(3),
+                    "replay_epoch": .string("canonical-epoch"), "last_sequence": .number(0),
+                    "subscription_id": .string("subscription"), "open_requests": .array([]),
+                    "pending": .array(pending), "prompts": .array(prompts),
+                    "info": .object(["profile_name": .string("default"), "profile_id": .string("native-default"),
+                                     "desktop_protocol": .string("hermes-gateway-v1")])
+                ])
+            }
+            let prompt: BotJSON = .object(["kind": .string("approval"), "prompt_id": .string("permission"),
+                                           "execution_generation": .number(3),
+                                           "choices": .array([.string("once"), .string("deny")])])
+            host.always("session.create", .init(result: snapshot()))
+            host.always("session.resume", .init(result: snapshot(prompts: [prompt])))
+            host.always("session.events.since", .init(result: .object([
+                "events": .array([]), "latest_seq": .number(0), "epoch": .string("canonical-epoch"),
+                "replay_epoch": .string("canonical-epoch"), "truncated": .bool(false)
+            ])))
+            host.always("approval.respond", .init(result: .object([
+                "status": .string("resolved"), "prompt_id": .string("permission")
+            ])))
+            let client = BotClient(http: host.connection(record, sessionAuthority: true))
+            let target: ConversationTarget = isNew ? .new(profile: "default") : .session(profile: "default", key: id)
+            let (conversation, owner) = attach(client, target)
+            await conversation.activate()
+            XCTAssertEqual(conversation.connectionState, .connected)
+            XCTAssertEqual(conversation.runtime, id)
+            XCTAssertEqual(conversation.storedKey, id)
+
+            let answer = try await conversation.answer(.approval(.once),
+                HermesAnswerAction(generation: conversation.generation, runtime: id, requestID: "permission"),
+                stillCurrent: {})
+            XCTAssertEqual(answer, .answered)
+            let approved = try XCTUnwrap(host.requests.last { $0["method"].text == "approval.respond" })
+            XCTAssertEqual(approved["params"]["prompt_id"], .string("permission"))
+            XCTAssertEqual(approved["params"]["execution_generation"], .number(3))
+
+            host.always("session.resume", .init(result: snapshot(running: true)))
+            let receipt: BotJSON = .object([
+                "admission_id": .string("admission"), "status": .string("started"),
+                "ref": .object(["session_id": .string(id), "profile_id": .string("native-default")])
+            ])
+            host.always("prompt.receipt", .init(result: receipt))
+            let frames: [BotJSON] = ["message.start", "message.delta", "message.complete"].enumerated().map { index, kind in
+                .object(["type": .string(kind), "session_id": .string(id), "seq": .number(Double(index + 1)),
+                         "replay_epoch": .string("canonical-epoch"), "execution_generation": .number(3),
+                         "payload": .object(["text": .string("reply")])])
+            }
+            host.next("prompt.submit", .init(result: receipt, before: frames))
+            let submitted = try await conversation.write(.promptSubmit(sessionID: id, text: "hello"),
+                                                         attempt: conversation.generation, runtime: id)
+            XCTAssertEqual(submitted["status"], .string("streaming"))
+            XCTAssertTrue(owner.log.contains("frame 1"))
+            XCTAssertTrue(owner.log.contains("frame 2"))
+            XCTAssertTrue(owner.log.contains("frame 3"))
+
+            let queued: BotJSON = .object(["admission_id": .string("queued"), "status": .string("queued"),
+                                          "input_id": .string("input"), "text": .string("next")])
+            host.always("session.resume", .init(result: snapshot(running: true, pending: [queued])))
+            host.always("prompt.cancel", .init(result: .object([
+                "admission_id": .string("queued"), "status": .string("terminal"),
+                "ref": .object(["session_id": .string(id), "profile_id": .string("native-default")])
+            ])))
+            host.always("session.interrupt", .init(result: .object([
+                "ref": .object(["session_id": .string(id), "profile_id": .string("native-default")]),
+                "execution_generation": .number(3)
+            ])))
+            _ = try await conversation.write(.sessionInterrupt(sessionID: id),
+                                              attempt: conversation.generation, runtime: id)
+            XCTAssertTrue(host.requests.contains { $0["method"].text == "prompt.cancel" })
+            XCTAssertEqual(host.requests.last { $0["method"].text == "session.interrupt" }?["params"]["execution_generation"],
+                           .number(3))
+            conversation.suspend()
+            host.always("session.resume", .init(result: snapshot()))
+            await conversation.activate()
+            XCTAssertEqual(conversation.connectionState, .connected)
+            XCTAssertEqual(host.requests.filter { $0["method"].text == "session.create" }.count, isNew ? 1 : 0)
+            XCTAssertEqual(host.requests.filter { $0["method"].text == "prompt.submit" }.count, 1)
+            conversation.suspend()
+            HermesHostFixture.reset()
+        }
+    }
+
     /// A stored session resumes its own key with no title lookup, and its frames reach the
     /// owner in order: the replay, then the snapshot, then frames that landed meanwhile.
     func testASessionAttachesByItsKeyAndHandsOverOrderedFrames() async {

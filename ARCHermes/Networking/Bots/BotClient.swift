@@ -15,11 +15,12 @@ import Foundation
     private var attempt = 0
     private var imageUploads: [UUID: Task<String, Error>] = [:]
     private var artifactTasks: [UUID: Task<Data, Error>] = [:]
-    var replayEpoch: String? { gateway.replayEpoch }
+    var replayEpoch: String? { gateway.replayEpoch(for: consumerID) }
     /// `version` from the connection's last `/api/status` read, before the auth gate; nil when omitted.
     var serverVersion: String? { http.serverVersion }
     /// `install_id` from the same read; nil when omitted.
     var serverInstallID: String? { http.serverInstallID }
+    var arcIdentity: HermesARCHostIdentity? { http.arcIdentity }
     var unavailableMethods: Set<String> { http.unavailableMethods }
     var onEvent: ((BotJSON) -> Void)?
     var onDisconnect: ((Error) -> Void)?
@@ -143,17 +144,15 @@ import Foundation
             try check()
             let capabilities = try await http.reply(.arcSpeechCapabilities(profile: profile), validateDispatch: check)
             try check()
-            if try !ARCListenContract.isAdvertised(capabilities) {
-                let audio = fits ? try? await speech(text: text, profile: profile, validateDispatch: check) : nil
-                try check()
-                return .profile(audio)
-            }
+            guard try ARCListenContract.isAdvertised(capabilities) else { throw HermesListenFailure.identityUnavailable }
+            let host = try await http.verifyARCIdentity(profile: profile, validateDispatch: check)
+            try check()
 
             guard let sessionID else { throw HermesListenFailure.identityUnavailable }
             let identity = try await http.reply(.arcSpeechIdentity(sessionID: sessionID, profile: profile),
                                                 validateDispatch: check)
             try check()
-            try ARCListenContract.verifyVoice(identity, sessionID: sessionID)
+            try ARCListenContract.verifyVoice(identity, sessionID: sessionID, host: host)
             guard fits else { throw HermesListenFailure.replyTooLong }
             arcSessionID = sessionID
         } catch {
@@ -172,6 +171,8 @@ import Foundation
     private static func listenFailure(_ error: Error, otherwise fallback: HermesListenFailure) -> Error {
         switch error {
         case is HermesListenFailure, is CancellationError, BotFailure.stale: return error
+        case HermesARCIdentityFailure.bindingMismatch: return HermesListenFailure.identityDenied
+        case is HermesARCIdentityFailure: return HermesListenFailure.identityUnavailable
         case BotFailure.rejected(401), BotFailure.signInExpired, BotFailure.signInChanged, BotFailure.browserSignIn:
             return HermesListenFailure.signInRequired
         case BotFailure.rejected(403): return HermesListenFailure.identityDenied

@@ -508,7 +508,8 @@ extension BotHostStatus {
             let label = name.isEmpty ? (url.host ?? "Hermes") : name
             let expected = replacingHost || saved?.address != url ? nil : saved?.installID
             let wire = makeWire(BotConnection(id: UUID(), name: label, address: url, username: account,
-                                              password: secret, installID: expected, headers: sent))
+                                              password: secret, installID: expected, headers: sent,
+                                              arcIdentity: replacingHost ? nil : saved?.arcIdentity))
             client = wire
             defer { wire.close() }
             try await wire.connect()
@@ -518,7 +519,8 @@ extension BotHostStatus {
             let sameAccount = saved?.address == url && saved?.username == account
             let kept = replacingHost ? nil : (sameInstall || sameAccount ? saved : nil)
             let candidate = BotConnection(id: kept?.id ?? UUID(), name: label, address: url, username: account,
-                password: secret, hermesVersion: wire.serverVersion, installID: live ?? kept?.installID, headers: sent)
+                password: secret, hermesVersion: wire.serverVersion, installID: live ?? kept?.installID, headers: sent,
+                arcIdentity: wire.arcIdentity)
             let result = try await wire.call(.profilesList(includeSessions: true))
             guard attempt == id, !Task.isCancelled else { return false }
             guard result["profiles"].list != nil else { throw BotFailure.unsupported }
@@ -547,8 +549,10 @@ extension BotHostStatus {
             let expected = replacingHost || saved?.address != server ? nil : saved?.installID
             let http = HermesConnection(connection: BotConnection(
                 id: UUID(), name: label, address: server, username: "", password: "",
-                installID: expected, headers: admitted.isEmpty ? nil : admitted), configuration: hermesConfiguration())
+                installID: expected, headers: admitted.isEmpty ? nil : admitted,
+                arcIdentity: replacingHost ? nil : saved?.arcIdentity), configuration: hermesConfiguration())
             try await HermesBrowserSignIn.signIn(http, presenter: browser)
+            _ = try await http.verifyARCIdentity()
             guard attempt == id, !Task.isCancelled else { return false }
             let signedIn = http.connection
             let sameInstall = http.serverInstallID != nil && http.serverInstallID == saved?.installID
@@ -558,7 +562,7 @@ extension BotHostStatus {
             return await commit(BotConnection(
                 id: kept?.id ?? signedIn.id, name: label, address: server, username: signedIn.username, password: "",
                 hermesVersion: http.serverVersion, installID: http.serverInstallID ?? kept?.installID,
-                headers: signedIn.headers, oauth: signedIn.oauth))
+                headers: signedIn.headers, oauth: signedIn.oauth, arcIdentity: signedIn.arcIdentity))
         } catch {
             guard attempt == id, !Task.isCancelled, !(error is CancellationError) else { return false }
             if error as? BotFailure == .differentHost { differentHostAddress = server }

@@ -38,10 +38,12 @@ import UniformTypeIdentifiers
             + "?path=note.mp3&profile=other&session_id=other&token=secret"
         let url = try XCTUnwrap(HermesREST.downloadArtifact(path: reference, profile: "default", sessionID: "voice-check")
             .request(base: base).url)
-        XCTAssertEqual(url.path, "/gateways/cloud/admin/api/fs/download")
+        XCTAssertEqual(url.path, "/gateways/cloud/api/fs/download")
         let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
         XCTAssertEqual(query, [URLQueryItem(name: "path", value: "note.mp3"), URLQueryItem(name: "profile", value: "default"),
                                URLQueryItem(name: "session_id", value: "voice-check")])
+        XCTAssertEqual(try BotArtifactReference.path(
+            "https://bot.example/gateways/cloud/dashboard/admin/api/fs/download?path=old.mp3&token=secret", address: base), "old.mp3")
         for path in ["/api/fs/download", "/gateways/secondary/admin/api/fs/download"] {
             XCTAssertThrowsError(try BotArtifactReference.path("https://bot.example" + path + "?path=note.mp3", address: base))
         }

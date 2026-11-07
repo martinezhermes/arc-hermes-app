@@ -19,15 +19,15 @@ import XCTest
             let path = request.url!.path
             paths.append(path)
             switch path {
-            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "version": .string("0.22.0")]))
+            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "version": .string("0.22.0"), "install_id": .string("fixture")]))
             case "/auth/password-login":
                 XCTAssertEqual(request.httpMethod, "POST")
                 return (200, .object(["ok": .bool(true)]))
             case "/api/auth/me": return (200, .object(["provider": .string("basic"), "future": .array([])]))
-            case "/api/auth/ws-ticket":
+            case "/api/webapp/socket-ticket":
                 tickets += 1
                 return (200, .object(["ticket": .string("ticket-\(tickets)")]))
-            default: XCTFail("Unexpected HTTP endpoint"); return (404, .null)
+            default: return Self.signIn(request)
             }
         }
         let configuration = URLSessionConfiguration.ephemeral
@@ -37,8 +37,9 @@ import XCTest
         let client = BotClient(connection: connection(), configuration: configuration) { upgrade in
             XCTAssertEqual(upgrade.url?.scheme, "wss")
             XCTAssertEqual(upgrade.url?.path, "/api/ws")
-            XCTAssertNil(upgrade.url?.query)
-            protocols.append(upgrade.value(forHTTPHeaderField: "Sec-WebSocket-Protocol") ?? "")
+            protocols.append(upgrade.url?.query ?? "")
+            XCTAssertNil(upgrade.value(forHTTPHeaderField: "Sec-WebSocket-Protocol"))
+            XCTAssertEqual(upgrade.value(forHTTPHeaderField: "Origin"), "https://hermes.example")
             let socket = BotScriptedSocket()
             sockets.append(socket)
             return socket
@@ -55,7 +56,7 @@ import XCTest
             client.close()
         }
         XCTAssertEqual(tickets, 2)
-        XCTAssertEqual(protocols, ["hermes-gateway-v1, hermes-gateway-ticket.ticket-1", "hermes-gateway-v1, hermes-gateway-ticket.ticket-2"])
+        XCTAssertEqual(protocols, ["ticket=ticket-1", "ticket=ticket-2"])
         XCTAssertEqual(paths.filter { $0 == "/api/auth/me" }.count, 1, "The second socket reuses the sign-in")
         XCTAssertEqual(sockets.map { $0.sentTextFrames }, [1, 1])
     }
@@ -69,7 +70,7 @@ import XCTest
         BotHTTPFixture.handler = { request in
             switch request.url!.path {
             case "/auth/password-login": logins += 1; return (200, .object([:]))
-            case "/api/auth/ws-ticket":
+            case "/api/webapp/socket-ticket":
                 if expireNextTicket { expireNextTicket = false; return (401, .object(["error": .string("session_expired")])) }
                 tickets += 1
                 return (200, .object(["ticket": .string("ticket-\(tickets)")]))
@@ -164,13 +165,17 @@ import XCTest
         XCTAssertEqual(disconnects, 0)
     }
 
-    /// A password host's four sign-in replies. Any other HTTP request fails the test.
+    /// Required ARC enrollment and native sign-in replies. Unrelated routes fail the test.
     private static let signIn: (URLRequest) -> (Int, BotJSON) = { request in
         switch request.url!.path {
-        case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
+        case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "install_id": .string("fixture")]))
         case "/auth/password-login": return (200, .object([:]))
         case "/api/auth/me": return (200, .object(["provider": .string("basic")]))
-        case "/api/auth/ws-ticket": return (200, .object(["ticket": .string("ticket")]))
+        case "/api/webapp/socket-ticket": return (200, .object(["ticket": .string("ticket")]))
+        case "/api/profiles/active", ARCSpeechFixture.capabilitiesPath, "/api/plugins/arc/v1/hosts",
+             "/api/plugins/arc/v1/hosts/b6fdbe73-9f57-4c73-9b19-c30867484c34/bindings":
+            if case .json(let status, let body) = HermesHostFixture.ordinary(request) { return (status, body) }
+            fallthrough
         default: XCTFail("Unexpected HTTP endpoint \(request.url!.path)"); return (404, .null)
         }
     }
@@ -337,7 +342,7 @@ import XCTest
             ("dev", "owner", owner)
         ]
         for release in releases {
-            var status: [String: BotJSON] = ["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]
+            var status: [String: BotJSON] = ["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "install_id": .string("fixture")]
             status["version"] = release.version.map(BotJSON.string)
             BotHTTPFixture.handler = { request in
                 request.url!.path == "/api/status" ? (200, .object(status)) : Self.signIn(request)
@@ -688,21 +693,35 @@ import XCTest
         client.close()
     }
 
-    func testAMatchingOrMissingInstallIDConnectsAndReportsTheLiveOne() async throws {
+    func testTheAuthenticatedInstallIDIsRequiredAndReportsTheLiveOwner() async throws {
         let known = String(repeating: "a", count: 32), fresh = String(repeating: "c", count: 32)
-        // (stored, live): the same host, a host omitting it after a read error, and a legacy record.
         for (stored, live) in [(known, known), (known, nil), (nil, fresh)] as [(String?, String?)] {
             var status: [String: BotJSON] = ["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]
             if let live { status["install_id"] = .string(live) }
             BotHTTPFixture.handler = { request in
-                request.url!.path == "/api/status" ? (200, .object(status)) : Self.signIn(request)
+                if request.url?.path == "/api/status" { return (200, .object(status)) }
+                if request.url?.path.hasSuffix("/bindings") == true {
+                    return (200, .object(["bindings": .array([.object([
+                        "installation_id": .string("hermes-install:" + (live ?? "")), "profile_id": .string("arc-profile:fixture")
+                    ])])]))
+                }
+                return Self.signIn(request)
             }
             let configuration = URLSessionConfiguration.ephemeral
             configuration.protocolClasses = [BotHTTPFixture.self]
             var record = connection(); record.installID = stored
-            let client = BotClient(connection: record, configuration: configuration) { _ in BotScriptedSocket() }
-            try await client.connect()
-            XCTAssertEqual(client.serverInstallID, live)
+            var sockets = 0
+            let client = BotClient(connection: record, configuration: configuration) { _ in sockets += 1; return BotScriptedSocket() }
+            if live != nil {
+                try await client.connect()
+                XCTAssertEqual(client.serverInstallID, live)
+                XCTAssertEqual(client.arcIdentity?.installationID, live)
+                XCTAssertEqual(sockets, 1)
+            } else {
+                do { try await client.connect(); XCTFail("Required installation ownership was unavailable") }
+                catch { XCTAssertEqual(error as? HermesARCIdentityFailure, .unavailable) }
+                XCTAssertEqual(sockets, 0)
+            }
             client.close()
         }
     }
@@ -785,10 +804,7 @@ import XCTest
     }
 
     func testARefusedUpgradeFailsTheConnectWithItsFailure() async {
-        BotHTTPFixture.handler = { request in
-            guard request.url?.path == ARCSpeechFixture.capabilitiesPath else { return Self.signIn(request) }
-            return (404, .object(["detail": .string("Plugin not found")]))
-        }
+        BotHTTPFixture.handler = Self.signIn
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [BotHTTPFixture.self]
         let client = BotClient(connection: connection(), configuration: configuration) { _ in
@@ -801,18 +817,16 @@ import XCTest
         client.close()
     }
 
-    /// A gateway's own listener (#1340) signs in, then fails every chat: its `gateway.ready`
-    /// stops the connect before the handshake sends anything.
-    func testAGatewayListenerFailsTheConnectBeforeTheHandshake() async {
+    /// The owning gateway completes the normal capability handshake with native authority.
+    func testAGatewayListenerConnectsThroughTheNormalHandshake() async throws {
         BotHTTPFixture.handler = Self.signIn
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [BotHTTPFixture.self]
         let socket = BotScriptedSocket(ready: #"{"replay_epoch":"epoch","session_authority":true}"#)
         let client = BotClient(connection: connection(), configuration: configuration) { _ in socket }
-        do { try await client.connect(); XCTFail("Expected a gateway listener") }
-        catch { XCTAssertEqual(error as? BotFailure, .gatewayListener) }
-        XCTAssertFalse(BotConnectionAdvice.isRetryable(BotFailure.gatewayListener))
-        XCTAssertEqual(socket.outbound, [])
+        try await client.connect()
+        XCTAssertEqual(socket.outbound.map { $0["method"].text }, ["client.capabilities"])
+        XCTAssertNotNil(client.arcIdentity)
         client.close()
     }
 
@@ -845,7 +859,7 @@ import XCTest
     func testARefusedPasswordStaysASignInFailure() async {
         BotHTTPFixture.handler = { request in
             switch request.url!.path {
-            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
+            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "install_id": .string("fixture")]))
             case "/auth/password-login": return (401, .object(["detail": .string("Invalid credentials")]))
             default: XCTFail("Must stop at the login"); return (500, .null)
             }
@@ -861,7 +875,7 @@ import XCTest
     func testExpiredIdentityStopsBeforeTicket() async {
         BotHTTPFixture.handler = { request in
             switch request.url!.path {
-            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
+            case "/api/status": return (200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]), "install_id": .string("fixture")]))
             case "/auth/password-login": return (200, .object([:]))
             case "/api/auth/me": return (401, .object([:]))
             default: XCTFail("Must not request a ticket"); return (500, .null)

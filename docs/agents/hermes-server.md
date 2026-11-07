@@ -24,8 +24,8 @@ to its owning gateway.
 
 ## Identity and connection admission
 
-Native authentication establishes the caller. The public `/api/status`
-installation ID identifies the runtime installation. ARC's authenticated v1
+Native authentication establishes the caller. The authenticated `/api/status`
+installation ID identifies the runtime installation; its public response may omit that ID. ARC's authenticated v1
 API supplies the assigned Host and accepted binding.
 
 After signing in, include the selected native `?profile=` selector when

@@ -145,6 +145,7 @@ enum HermesREST: Equatable, Sendable {
     case profilesActive
     /// Mints the single-use ticket one gateway socket presents.
     case ticket
+    case gatewayTicket(profile: String)
     /// `DELETE /api/profiles/{name}`, the only Profile removal the host exposes; the
     /// gateway has no `profiles.delete` RPC. `name` is a validated Profile slug.
     case deleteProfile(name: String)
@@ -311,6 +312,8 @@ enum HermesREST: Equatable, Sendable {
     /// Replaces the Profile's SOUL.md, atomically; `{ok: true}`.
     case setProfileSoul(name: String, content: String)
     case arcSpeechCapabilities(profile: String)
+    case arcHosts(profile: String)
+    case arcBindings(hostID: String, profile: String)
     case arcSpeechIdentity(sessionID: String, profile: String)
     /// The base64 data URL of text spoken by the Profile or, with a qualified session, its ARC Host.
     case speak(text: String, profile: String, sessionID: String? = nil)
@@ -401,6 +404,15 @@ enum HermesREST: Equatable, Sendable {
         case .identity: return Self.get(base.appendingPathComponent("api/auth/me"))
         case .profilesActive: return Self.get(base.appendingPathComponent("api/profiles/active"))
         case .ticket: return try Self.send("POST", base.appendingPathComponent("api/auth/ws-ticket"), [:])
+        case .gatewayTicket(let profile):
+            guard !profile.isEmpty else { throw BotFailure.invalidAddress }
+            var parts = URLComponents(url: try Self.url(base, "api/webapp/socket-ticket", profile: profile),
+                                      resolvingAgainstBaseURL: false)
+            parts?.queryItems?.append(URLQueryItem(name: "socket", value: "gateway"))
+            guard let url = parts?.url else { throw BotFailure.invalidAddress }
+            var request = try Self.send("POST", url, [:])
+            request.setValue(Self.gatewayOrigin(base), forHTTPHeaderField: "Origin")
+            return request
         case .deleteProfile(let name):
             var request = URLRequest(url: base.appendingPathComponent("api/profiles").appendingPathComponent(name))
             request.httpMethod = "DELETE"
@@ -647,6 +659,12 @@ enum HermesREST: Equatable, Sendable {
         case .arcSpeechCapabilities(let profile):
             guard !profile.isEmpty else { throw BotFailure.invalidAddress }
             return Self.get(try Self.url(base, "api/plugins/arc/v1/capabilities", profile: profile))
+        case .arcHosts(let profile):
+            guard !profile.isEmpty else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/hosts", profile: profile))
+        case .arcBindings(let hostID, let profile):
+            guard UUID(uuidString: hostID) != nil, !profile.isEmpty else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/hosts/\(hostID)/bindings", profile: profile))
         case .arcSpeechIdentity(let sessionID, let profile):
             guard !profile.isEmpty, Self.isSegment(sessionID) else { throw BotFailure.invalidAddress }
             return Self.get(try Self.url(base, "api/plugins/arc/v1/sessions/\(sessionID)/identity", profile: profile))
@@ -740,6 +758,7 @@ enum HermesREST: Equatable, Sendable {
     enum UpgradePass: Equatable, Sendable {
         /// A single-use ticket minted at `ticket`, for a host with sign-in.
         case ticket(String)
+        case gatewayTicket(String)
         /// An open dashboard's session token (#1314), presented as `?token=`. The host reads
         /// tickets only behind its sign-in, and accepts this one without a subprotocol.
         case pageToken(String)
@@ -752,13 +771,28 @@ enum HermesREST: Equatable, Sendable {
         guard var parts = URLComponents(url: base.appendingPathComponent("api/ws"), resolvingAgainstBaseURL: false)
         else { throw BotFailure.unsupported }
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
-        if case .pageToken(let token) = pass { parts.queryItems = [URLQueryItem(name: "token", value: token)] }
+        switch pass {
+        case .pageToken(let token): parts.queryItems = [URLQueryItem(name: "token", value: token)]
+        case .gatewayTicket(let ticket): parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        case .ticket: break
+        }
         guard let url = parts.url else { throw BotFailure.invalidAddress }
         var request = URLRequest(url: url)
         if case .ticket(let ticket) = pass {
             request.setValue("hermes-gateway-v1, hermes-gateway-ticket." + ticket, forHTTPHeaderField: "Sec-WebSocket-Protocol")
         }
+        if case .gatewayTicket = pass {
+            request.setValue(Self.gatewayOrigin(base), forHTTPHeaderField: "Origin")
+        }
         return request
+    }
+
+    private static func gatewayOrigin(_ base: URL) -> String? {
+        guard var origin = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        origin.path = ""
+        origin.query = nil
+        origin.fragment = nil
+        return origin.string
     }
 
     /// A Board's Kanban event socket (#1045): `/api/plugins/kanban/events` on the `ws`/`wss`
@@ -772,6 +806,7 @@ enum HermesREST: Equatable, Sendable {
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
         let credential = switch pass {
         case .ticket(let ticket): URLQueryItem(name: "ticket", value: ticket)
+        case .gatewayTicket: throw BotFailure.unsupported
         case .pageToken(let token): URLQueryItem(name: "token", value: token)
         }
         parts.queryItems = [URLQueryItem(name: "board", value: board), URLQueryItem(name: "since", value: String(max(0, since))),

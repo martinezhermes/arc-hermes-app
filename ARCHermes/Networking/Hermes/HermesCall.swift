@@ -96,6 +96,8 @@ enum HermesCall: Equatable, Sendable {
     /// Always `queued`: even an idle Send can race Desktop, so a fresh send never
     /// inherits a host setting that converts it into a redirect or steer.
     case promptSubmit(sessionID: String, text: String)
+    case promptReceipt(profile: String, sessionID: String, admissionID: String)
+    case promptCancel(profile: String, sessionID: String, admissionID: String)
     /// Cuts the transcript at one durable prompt row and starts the turn again with
     /// `text`, in one call under the host's history lock. Never `queued`: the host
     /// refuses a cut while busy (4009) instead of queueing or steering it. A Hermes
@@ -302,6 +304,8 @@ enum HermesCall: Equatable, Sendable {
         case .sessionActiveList: return "session.active_list"
         case .sessionMostRecent: return "session.most_recent"
         case .promptSubmit, .promptRewind: return "prompt.submit"
+        case .promptReceipt: return "prompt.receipt"
+        case .promptCancel: return "prompt.cancel"
         case .sessionSteer: return "session.steer"
         case .sessionRedirect: return "session.redirect"
         case .sessionInterrupt: return "session.interrupt"
@@ -406,6 +410,9 @@ enum HermesCall: Equatable, Sendable {
         case .sessionActiveList, .groupsCapabilities: return [:]
         case .promptSubmit(let sessionID, let text):
             return ["session_id": .string(sessionID), "text": .string(text), "queued": .bool(true)]
+        case .promptReceipt(let profile, let sessionID, let admissionID),
+             .promptCancel(let profile, let sessionID, let admissionID):
+            return ["profile": .string(profile), "session_id": .string(sessionID), "admission_id": .string(admissionID)]
         case .promptRewind(let sessionID, let text, let rowID, let deep):
             // `confirm_empty_truncate` too, as Desktop sends whenever it names a row:
             // cutting at the first prompt legitimately empties the transcript.
@@ -605,6 +612,9 @@ enum HermesCall: Equatable, Sendable {
         case .groupsCreate(let room): valid = room.isAdmissible
         case .groupsRename(let roomID, let eventID, let name):
             valid = BotRoomRPC.validID(roomID) && BotRoomRPC.validID(eventID) && BotRoomRPC.validName(name)
+        case .promptReceipt(let profile, let sessionID, let admissionID),
+             .promptCancel(let profile, let sessionID, let admissionID):
+            valid = !profile.isEmpty && !sessionID.isEmpty && !admissionID.isEmpty
         case .profilesList, .profilesGetAsset, .sessionList, .sessionResume, .sessionEventsSince, .sessionActiveList,
              .promptSubmit, .sessionSteer, .sessionRedirect, .sessionInterrupt, .fileAttach, .approvalRespond,
              .requestAnswer, .clarifyLock, .modelOptions, .configuredModelOptions, .sessionCwdSet, .sessionControlRead,

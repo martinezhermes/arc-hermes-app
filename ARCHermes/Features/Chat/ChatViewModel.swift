@@ -6163,8 +6163,7 @@ final class ChatViewModel {
         messageActionErrorMessage = nil
     }
 
-    func toggleListening(to context: MessageActionContext, voice: ListenVoice = .server,
-                         historySpeech: HermesListenRequest? = nil) {
+    func toggleListening(to context: MessageActionContext, voice: ListenVoice = .server) {
         guard context.role == .assistant else { return }
         if let hermesTurn, context.hermesStoredSessionID != hermesTurn.engine.storedKey { return }
 
@@ -6191,7 +6190,7 @@ final class ChatViewModel {
         beginListenPlaybackPreparation(for: context)
 
         let hermesSpeech = voice == .server
-            ? historySpeech ?? (synthesizeListenAudio == nil ? hermesTurn?.speechRequest(for: context.hermesStoredSessionID) : nil)
+            ? (synthesizeListenAudio == nil ? hermesTurn?.speechRequest(for: context.hermesStoredSessionID) : nil)
             : nil
         let usesServerSpeech = voice == .server && synthesizeListenAudio != nil
             && ServerTTSPolicy.shouldUseServerTTS(for: listenText, onHermes: hermesTurn != nil)

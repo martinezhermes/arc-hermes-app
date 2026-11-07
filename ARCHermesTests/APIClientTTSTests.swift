@@ -148,11 +148,15 @@ final class APIClientTTSTests: APIClientTestCase {
         let configuration = HermesHostFixture.configuration { request in
             switch request.url?.path {
             case prefix + "/api/status":
-                return .json(200, .object(["auth_required": .bool(true), "auth_flows": .array([.string("native_pkce")])]))
+                return .json(200, .object(["auth_required": .bool(true), "auth_flows": .array([.string("native_pkce")]), "install_id": .string("fixture")]))
             case prefix + "/auth/native/refresh":
                 return .json(200, .object(["access_token": .string("fixture-access")]))
             case prefix + "/api/auth/me":
                 return .json(200, .object(["provider": .string("nous"), "user_id": .string("u1")]))
+            case prefix + "/api/plugins/arc/v1/hosts", prefix + "/api/plugins/arc/v1/hosts/b6fdbe73-9f57-4c73-9b19-c30867484c34/bindings":
+                var local = request
+                local.url = URL(string: "https://hermes.example" + request.url!.path.dropFirst(prefix.count))
+                return HermesHostFixture.ordinary(local)
             case prefix + ARCSpeechFixture.capabilitiesPath: return ARCSpeechFixture.capabilities
             case prefix + ARCSpeechFixture.identityPath: return ARCSpeechFixture.identity()
             case prefix + ARCSpeechFixture.speakPath: return ARCSpeechFixture.audio()
@@ -167,12 +171,15 @@ final class APIClientTTSTests: APIClientTestCase {
                                                   validateDispatch: {})
         guard case .arc(let bytes) = result else { return XCTFail("Expected ARC speech") }
         XCTAssertEqual(bytes, ARCSpeechFixture.bytes)
-        let speechRequests = Array(HermesHostFixture.requests.suffix(3))
+        let speechPaths = [prefix + ARCSpeechFixture.capabilitiesPath, prefix + ARCSpeechFixture.identityPath,
+                           prefix + ARCSpeechFixture.speakPath]
+        let speechRequests = HermesHostFixture.requests.filter { speechPaths.contains($0.url?.path ?? "") }
+            .filter { $0.url?.path != prefix + ARCSpeechFixture.capabilitiesPath }
+        XCTAssertEqual(HermesHostFixture.requests.filter { $0.url?.path == prefix + ARCSpeechFixture.capabilitiesPath }.count, 2)
         XCTAssertEqual(speechRequests.map { $0.url?.path }, [
-            prefix + ARCSpeechFixture.capabilitiesPath, prefix + ARCSpeechFixture.identityPath,
-            prefix + ARCSpeechFixture.speakPath
+            prefix + ARCSpeechFixture.identityPath, prefix + ARCSpeechFixture.speakPath
         ])
-        XCTAssertEqual(speechRequests.map(\.httpMethod), ["GET", "GET", "POST"])
+        XCTAssertEqual(speechRequests.map(\.httpMethod), ["GET", "POST"])
         for request in speechRequests {
             XCTAssertEqual(request.url?.host, base.host)
             XCTAssertEqual(request.url?.query, "profile=" + profile)

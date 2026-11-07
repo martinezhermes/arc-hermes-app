@@ -479,7 +479,7 @@ final class OnboardingViewModelIdentityTests: XCTestCase {
             AuthStatusResponse(authEnabled: false))), keychain: keychain)
         let form = makeHermesForm(entry: .addServer) { request in
             switch request.url?.path {
-            case "/api/status": return .json(200, .object(["auth_required": .bool(false), "version": .string("0.21.6")]))
+            case "/api/status": return .json(200, .object(["auth_required": .bool(false), "version": .string("0.21.6"), "install_id": .string("fixture")]))
             case "/": return .body(200, Data(#"<script>window.__HERMES_SESSION_TOKEN__="token-1";</script>"#.utf8))
             default: return nil
             }

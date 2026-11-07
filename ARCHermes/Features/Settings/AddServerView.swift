@@ -68,7 +68,7 @@ struct AddServerView: View {
                     }
                     .disabled(form.isConnectionLocked)
 
-                    SettingsCard(title: String(localized: "Identity")) {
+                    SettingsCard(title: String(localized: "Appearance")) {
                         ServerIdentityEditor(
                             displayName: $displayName,
                             initials: $initials,

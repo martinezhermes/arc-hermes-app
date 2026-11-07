@@ -22,6 +22,7 @@ struct SettingsServerPage: View {
     /// The active Hermes server's saved connection, read on appear (#899): its username shows
     /// on the connection row, and Archived Sessions reads through it (#1048).
     @State private var hermesConnection: BotConnection?
+    @State private var verifiedHost: HermesARCHostIdentity?
     @State private var moveRequest: MoveToHermesRequest?
 
     init(
@@ -49,7 +50,12 @@ struct SettingsServerPage: View {
 
     var body: some View {
         let page = List {
-            Section(String(localized: "Identity")) {
+            if let verifiedHost {
+                Section("Identity") {
+                    Label(verifiedHost.displayName, systemImage: "checkmark.shield")
+                }
+            }
+            Section("Appearance") {
                 ServerIdentityEditor(
                     displayName: $displayName,
                     initials: $initials,
@@ -87,6 +93,9 @@ struct SettingsServerPage: View {
             guard let server = activeHermesServer else { return }
             // A Hermes server has no webui to load from, so no webui 401 can sign it out (#899).
             hermesConnection = try? BotConnectionStore().load(server: server)
+            if let hermesConnection {
+                verifiedHost = HermesConnections.shared.connection(for: hermesConnection, server: server).arcIdentity
+            }
             let updates = HermesUpdateModel.for(server: server)
             updates.onUpdated = { version in
                 authManager.hermesServerUpdated(server: server, to: version)

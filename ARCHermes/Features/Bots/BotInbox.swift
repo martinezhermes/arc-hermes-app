@@ -369,7 +369,7 @@ import UIKit
             // The host answered, so the route advice no longer holds, even though the
             // roster and rooms have yet to load.
             routeFailures = 0; routeAdvice = nil
-            recordInstallID(opened.serverInstallID, for: saved)
+            recordIdentity(opened.serverInstallID, host: opened.arcIdentity, for: saved)
             guard await reload(opened) else { return }
             // The status read runs beside rooms and avatars; nothing above waits for it.
             let statuses = statusPollTask
@@ -397,20 +397,19 @@ import UIKit
         }
     }
 
-    /// Trust on first use: stores the host's `install_id` on a record that has none, so
-    /// every later connect can refuse an address that starts reaching another host. The
-    /// record is re-read rather than taken from `opened`, because the connection form may
-    /// have saved a new password or name under the same UUID while this inbox connected.
-    /// The in-memory `connection` gains the id too, because the chats, rooms, creator and
-    /// editor opened from this inbox build their clients from it.
-    private func recordInstallID(_ live: String?, for opened: BotConnection) {
+    /// Backfills verified ownership without overwriting a newer saved account or presentation.
+    private func recordIdentity(_ live: String?, host: HermesARCHostIdentity?, for opened: BotConnection) {
         guard let live else { return }
-        if connection?.id == opened.id, connection?.address == opened.address, connection?.installID == nil {
-            connection?.installID = live
+        if connection?.id == opened.id, connection?.address == opened.address {
+            if connection?.installID == nil { connection?.installID = live }
+            if connection?.arcIdentity == nil, let host { connection?.arcIdentity = host }
         }
         guard var fresh = try? store.load(server: server), fresh.id == opened.id,
-              fresh.address == opened.address, fresh.installID == nil else { return }
+              fresh.address == opened.address, fresh.username == opened.username else { return }
+        guard fresh.installID == nil || fresh.installID == live else { return }
+        guard fresh.arcIdentity == nil || fresh.arcIdentity?.hostID == host?.hostID else { return }
         fresh.installID = live
+        if let host { fresh.arcIdentity = host }
         try? store.save(fresh, server: server)
     }
 
