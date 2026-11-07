@@ -523,7 +523,8 @@ private final class MemoryHost: @unchecked Sendable {
     /// The memory routes the host saw, as method and path.
     func calls() -> [String] {
         HermesHostFixture.requests.compactMap { request in
-            guard let path = request.url?.path, path.hasPrefix("/api/fs") || path.hasPrefix("/api/files")
+            guard let path = request.url?.path, path != "/api/profiles/active",
+                path.hasPrefix("/api/fs") || path.hasPrefix("/api/files")
                 || path.hasPrefix("/api/profiles") else { return nil }
             return "\(request.httpMethod ?? "GET") \(path)"
         }

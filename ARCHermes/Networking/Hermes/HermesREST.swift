@@ -41,8 +41,9 @@ import Foundation
 /// answers the folder's entry.
 /// The update routes (#1075) are read at the same pin and checked against `scripts/local-hermes`;
 /// `docs/agents/bots.md` § Updating Hermes has their shapes. `POST /api/audio/speak` (#1072) is
-/// read at the same pin and checked against `scripts/local-hermes`: `{text}` only, spoken by the
+/// read at the same pin and checked against `scripts/local-hermes`: `{text}` is spoken by the
 /// Profile's `tts.provider`, answered `{ok, data_url, mime_type, provider}`, or `{detail}`.
+/// ARC identity v1 qualifies an additional `session_id` on the same native endpoint (#92).
 /// The analytics routes (#1074) are read at the same pin, recorded from `scripts/local-hermes`
 /// (`Fixtures/HermesAgent/analytics.json`) and checked read-only against a live host: `days`
 /// outside 1-365 is a 422, an unknown Profile a 404 `{detail}`, a store the host can't read a
@@ -119,6 +120,10 @@ enum HermesREST: Equatable, Sendable {
     /// The host's cap on one search, which has no offset to page past it.
     static let sessionSearchMaximum = 100
 
+    /// One native speech chunk (#1072), counted as Python counts Unicode scalars.
+    /// Some providers split longer text and Hermes may return only the first chunk.
+    static let maximumSpeechTextLength = 4000
+
     /// Public, so it reads the host before any credential is sent.
     case status
     /// The dashboard's own page, whose script carries the session token an open dashboard
@@ -140,6 +145,7 @@ enum HermesREST: Equatable, Sendable {
     case profilesActive
     /// Mints the single-use ticket one gateway socket presents.
     case ticket
+    case gatewayTicket(profile: String)
     /// `DELETE /api/profiles/{name}`, the only Profile removal the host exposes; the
     /// gateway has no `profiles.delete` RPC. `name` is a validated Profile slug.
     case deleteProfile(name: String)
@@ -177,7 +183,7 @@ enum HermesREST: Equatable, Sendable {
     /// task's `bg_<id>` side session, whose last reply is its durable result (#1013). With one,
     /// a transcript page (#1047): `transcriptPageSize` display rows counted back from the newest,
     /// compacted ones included, in chronological order.
-    case sessionMessages(key: String, profile: String, offset: Int? = nil)
+    case sessionMessages(key: String, profile: String, offset: Int? = nil, inlineImages: Bool? = nil)
     /// One page of `profile`'s sessions for the Sessions list (#1046): latest activity first,
     /// without archived, empty or machine-run rows, `sessionPageSize` at a time from `offset`.
     /// Each page also brings every pinned row it missed, archived ones included. `archived`
@@ -305,8 +311,12 @@ enum HermesREST: Equatable, Sendable {
     case profileSoul(name: String)
     /// Replaces the Profile's SOUL.md, atomically; `{ok: true}`.
     case setProfileSoul(name: String, content: String)
-    /// Speaks `text` in `profile`'s voice: the audio as a base64 data URL (`BotClient.speech`).
-    case speak(text: String, profile: String)
+    case arcSpeechCapabilities(profile: String)
+    case arcHosts(profile: String)
+    case arcBindings(hostID: String, profile: String)
+    case arcSpeechIdentity(sessionID: String, profile: String)
+    /// The base64 data URL of text spoken by the Profile or, with a qualified session, its ARC Host.
+    case speak(text: String, profile: String, sessionID: String? = nil)
     /// One Profile's usage over the last `days` (1-365): `{daily, totals, by_model, period_days, …}`,
     /// `daily` holding only days with sessions, by UTC date.
     case analyticsUsage(days: Int, profile: String)
@@ -394,6 +404,15 @@ enum HermesREST: Equatable, Sendable {
         case .identity: return Self.get(base.appendingPathComponent("api/auth/me"))
         case .profilesActive: return Self.get(base.appendingPathComponent("api/profiles/active"))
         case .ticket: return try Self.send("POST", base.appendingPathComponent("api/auth/ws-ticket"), [:])
+        case .gatewayTicket(let profile):
+            guard !profile.isEmpty else { throw BotFailure.invalidAddress }
+            var parts = URLComponents(url: try Self.url(base, "api/webapp/socket-ticket", profile: profile),
+                                      resolvingAgainstBaseURL: false)
+            parts?.queryItems?.append(URLQueryItem(name: "socket", value: "gateway"))
+            guard let url = parts?.url else { throw BotFailure.invalidAddress }
+            var request = try Self.send("POST", url, [:])
+            request.setValue(Self.gatewayOrigin(base), forHTTPHeaderField: "Origin")
+            return request
         case .deleteProfile(let name):
             var request = URLRequest(url: base.appendingPathComponent("api/profiles").appendingPathComponent(name))
             request.httpMethod = "DELETE"
@@ -447,7 +466,7 @@ enum HermesREST: Equatable, Sendable {
             return Self.get(url)
         case .restartDashboard: return try Self.send("POST", base.appendingPathComponent("api/plugins/hermex-push/restart"), [:])
         case .pluginsHub: return Self.get(base.appendingPathComponent("api/dashboard/plugins/hub"))
-        case .sessionMessages(let key, let profile, let offset):
+        case .sessionMessages(let key, let profile, let offset, let inlineImages):
             guard Self.isSegment(key), !profile.isEmpty, (offset ?? 0) >= 0,
                   var parts = URLComponents(url: try Self.url(base, "api/sessions/\(key)/messages", profile: profile),
                                             resolvingAgainstBaseURL: false)
@@ -461,6 +480,9 @@ enum HermesREST: Equatable, Sendable {
                     URLQueryItem(name: "offset", value: String(offset)),
                     URLQueryItem(name: "include_compacted", value: "true")
                 ]
+            }
+            if let inlineImages {
+                parts.queryItems?.append(URLQueryItem(name: "inline_images", value: String(inlineImages)))
             }
             guard let url = parts.url else { throw BotFailure.invalidAddress }
             return Self.get(url)
@@ -634,9 +656,23 @@ enum HermesREST: Equatable, Sendable {
         case .setProfileSoul(let name, let content):
             guard Self.isSegment(name) else { throw BotFailure.invalidAddress }
             return try Self.send("PUT", base.appendingPathComponent("api/profiles/\(name)/soul"), ["content": .string(content)])
-        case .speak(let text, let profile):
+        case .arcSpeechCapabilities(let profile):
             guard !profile.isEmpty else { throw BotFailure.invalidAddress }
-            return try Self.send("POST", try Self.url(base, "api/audio/speak", profile: profile), ["text": .string(text)])
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/capabilities", profile: profile))
+        case .arcHosts(let profile):
+            guard !profile.isEmpty else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/hosts", profile: profile))
+        case .arcBindings(let hostID, let profile):
+            guard UUID(uuidString: hostID) != nil, !profile.isEmpty else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/hosts/\(hostID)/bindings", profile: profile))
+        case .arcSpeechIdentity(let sessionID, let profile):
+            guard !profile.isEmpty, Self.isSegment(sessionID) else { throw BotFailure.invalidAddress }
+            return Self.get(try Self.url(base, "api/plugins/arc/v1/sessions/\(sessionID)/identity", profile: profile))
+        case .speak(let text, let profile, let sessionID):
+            guard !profile.isEmpty, sessionID.map(Self.isSegment) != false else { throw BotFailure.invalidAddress }
+            var body: [String: BotJSON] = ["text": .string(text)]
+            body["session_id"] = sessionID.map(BotJSON.string)
+            return try Self.send("POST", try Self.url(base, "api/audio/speak", profile: profile), body)
         case .analyticsUsage(let days, let profile): return try Self.analytics(base, "usage", days: days, profile: profile)
         case .analyticsModels(let days, let profile): return try Self.analytics(base, "models", days: days, profile: profile)
         case .kanbanConfig: return try Self.kanban(base, ["config"])
@@ -722,6 +758,7 @@ enum HermesREST: Equatable, Sendable {
     enum UpgradePass: Equatable, Sendable {
         /// A single-use ticket minted at `ticket`, for a host with sign-in.
         case ticket(String)
+        case gatewayTicket(String)
         /// An open dashboard's session token (#1314), presented as `?token=`. The host reads
         /// tickets only behind its sign-in, and accepts this one without a subprotocol.
         case pageToken(String)
@@ -734,13 +771,28 @@ enum HermesREST: Equatable, Sendable {
         guard var parts = URLComponents(url: base.appendingPathComponent("api/ws"), resolvingAgainstBaseURL: false)
         else { throw BotFailure.unsupported }
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
-        if case .pageToken(let token) = pass { parts.queryItems = [URLQueryItem(name: "token", value: token)] }
+        switch pass {
+        case .pageToken(let token): parts.queryItems = [URLQueryItem(name: "token", value: token)]
+        case .gatewayTicket(let ticket): parts.queryItems = [URLQueryItem(name: "ticket", value: ticket)]
+        case .ticket: break
+        }
         guard let url = parts.url else { throw BotFailure.invalidAddress }
         var request = URLRequest(url: url)
         if case .ticket(let ticket) = pass {
             request.setValue("hermes-gateway-v1, hermes-gateway-ticket." + ticket, forHTTPHeaderField: "Sec-WebSocket-Protocol")
         }
+        if case .gatewayTicket = pass {
+            request.setValue(Self.gatewayOrigin(base), forHTTPHeaderField: "Origin")
+        }
         return request
+    }
+
+    private static func gatewayOrigin(_ base: URL) -> String? {
+        guard var origin = URLComponents(url: base, resolvingAgainstBaseURL: false) else { return nil }
+        origin.path = ""
+        origin.query = nil
+        origin.fragment = nil
+        return origin.string
     }
 
     /// A Board's Kanban event socket (#1045): `/api/plugins/kanban/events` on the `ws`/`wss`
@@ -754,6 +806,7 @@ enum HermesREST: Equatable, Sendable {
         parts.scheme = base.scheme == "https" ? "wss" : "ws"
         let credential = switch pass {
         case .ticket(let ticket): URLQueryItem(name: "ticket", value: ticket)
+        case .gatewayTicket: throw BotFailure.unsupported
         case .pageToken(let token): URLQueryItem(name: "token", value: token)
         }
         parts.queryItems = [URLQueryItem(name: "board", value: board), URLQueryItem(name: "since", value: String(max(0, since))),

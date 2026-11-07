@@ -116,7 +116,8 @@ import XCTest
     /// A 0.21.5 host whose only provider signs in through the browser.
     static let browserStatus = BotJSON.object([
         "auth_required": .bool(true), "auth_providers": .array([.string("nous")]),
-        "auth_flows": .array([.string("cookie"), .string("native_pkce")]), "version": .string("0.21.5")
+        "auth_flows": .array([.string("cookie"), .string("native_pkce")]), "version": .string("0.21.5"),
+        "install_id": .string("fixture")
     ])
 
     static let tokens = BotJSON.object([

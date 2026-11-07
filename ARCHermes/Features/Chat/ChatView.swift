@@ -105,7 +105,7 @@ final class NavigationAppearanceObserverViewController: UIViewController {
     }
 }
 
-private struct ListenPlaybackBar: View {
+struct ListenPlaybackBar: View {
     let phase: ListenPlaybackPhase
     let displayTime: TimeInterval
     let duration: TimeInterval
@@ -115,6 +115,18 @@ private struct ListenPlaybackBar: View {
     let onScrub: (TimeInterval) -> Void
     let onScrubbingChanged: (Bool) -> Void
     let onSpeedChange: (ListenPlaybackSpeed) -> Void
+
+    init(model: ChatViewModel) {
+        phase = model.listenPlaybackPhase
+        displayTime = model.listenPlaybackDisplayTime
+        duration = model.listenPlaybackDuration
+        speed = model.listenPlaybackSpeed
+        onTogglePlayPause = model.toggleListenPlaybackPlayPause
+        onStop = model.stopListening
+        onScrub = model.scrubListenPlayback
+        onScrubbingChanged = model.setListenPlaybackScrubbing
+        onSpeedChange = model.setListenPlaybackSpeed
+    }
 
     private var isReady: Bool {
         phase == .playing || phase == .paused
@@ -1370,27 +1382,7 @@ struct ChatView: View {
     @ViewBuilder
     private var listenPlaybackBar: some View {
         if viewModel.showsListenPlaybackBar {
-            ListenPlaybackBar(
-                phase: viewModel.listenPlaybackPhase,
-                displayTime: viewModel.listenPlaybackDisplayTime,
-                duration: viewModel.listenPlaybackDuration,
-                speed: viewModel.listenPlaybackSpeed,
-                onTogglePlayPause: {
-                    viewModel.toggleListenPlaybackPlayPause()
-                },
-                onStop: {
-                    viewModel.stopListening()
-                },
-                onScrub: { time in
-                    viewModel.scrubListenPlayback(to: time)
-                },
-                onScrubbingChanged: { isScrubbing in
-                    viewModel.setListenPlaybackScrubbing(isScrubbing)
-                },
-                onSpeedChange: { speed in
-                    viewModel.setListenPlaybackSpeed(speed)
-                }
-            )
+            ListenPlaybackBar(model: viewModel)
             .transition(ChatMotion.disclosureTransition(reduceMotion: reduceMotion))
         }
     }
@@ -2077,8 +2069,8 @@ struct ChatView: View {
             onPreviewTranscriptMedia: { reference in
                 presentTranscriptMediaPreview(reference)
             },
-            onToggleListening: { context in
-                viewModel.toggleListening(to: context)
+            onToggleListening: { context, voice in
+                viewModel.toggleListening(to: context, voice: voice)
             },
             onRegenerate: beginRegenerateResponse,
             onEdit: beginEditMessage,

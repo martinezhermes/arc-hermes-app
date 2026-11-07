@@ -28,8 +28,8 @@ import XCTest
         try await provisioning.setPlugin("hermex-push", enabled: false)
         defer { chat.close(); inbox.close() }
 
-        XCTAssertEqual(["/api/status", "/auth/password-login", "/api/auth/me"].map(HermesHostFixture.count), [1, 1, 1])
-        XCTAssertEqual(HermesHostFixture.count("/api/auth/ws-ticket"), 1, "They share one socket and its ticket")
+        XCTAssertEqual(["/api/status", "/auth/password-login", "/api/auth/me"].map(HermesHostFixture.count), [2, 1, 1])
+        XCTAssertEqual(HermesHostFixture.count("/api/webapp/socket-ticket"), 1, "They share one socket and its ticket")
         XCTAssertEqual(HermesHostFixture.count("/api/dashboard/agent-plugins/hermex-push/disable"), 1)
         let jar = try XCTUnwrap(http.session.configuration.httpCookieStorage)
         XCTAssertTrue(http.provisioningSession.configuration.httpCookieStorage === jar)
@@ -94,7 +94,7 @@ import XCTest
         }
         let steps: [(path: String, provisioning: Bool, run: (HermesConnection) async throws -> Void)] = [
             ("/auth/password-login", false, connect),
-            ("/api/auth/ws-ticket", false, connect),
+            ("/api/webapp/socket-ticket", false, connect),
             ("/auth/password-login", true, { try await BotDashboardClient(http: $0).signIn() }),
             ("/api/dashboard/agent-plugins/install", true, { try await BotDashboardClient(http: $0).installPlugin(identifier: "hermex-push") }),
             ("/api/dashboard/agent-plugins/hermex-push/enable", true, { try await BotDashboardClient(http: $0).setPlugin("hermex-push", enabled: true) }),
@@ -451,8 +451,10 @@ import XCTest
         _ = try await dashboard.loadedPluginVersion()
 
         let requests = HermesHostFixture.requests
-        XCTAssertEqual(requests.map { $0.url?.path }, ["/api/status", "/auth/password-login", "/api/auth/me", "/api/auth/ws-ticket",
-                                                       "/api/fs/download", "/api/chat/image-upload", "/api/profiles/old-bot",
+        XCTAssertEqual(requests.map { $0.url?.path }, ["/api/status", "/auth/password-login", "/api/auth/me", "/api/status", "/api/profiles/active",
+                                                       ARCSpeechFixture.capabilitiesPath, "/api/plugins/arc/v1/hosts",
+                                                       "/api/plugins/arc/v1/hosts/b6fdbe73-9f57-4c73-9b19-c30867484c34/bindings",
+                                                       "/api/webapp/socket-ticket", "/api/fs/download", "/api/chat/image-upload", "/api/profiles/old-bot",
                                                        "/api/dashboard/agent-plugins/install",
                                                        "/api/dashboard/agent-plugins/hermex-push/enable",
                                                        "/api/plugins/hermex-push/pairing"])
@@ -463,29 +465,26 @@ import XCTest
         }
         XCTAssertEqual(requests[1].value(forHTTPHeaderField: "Content-Type"), "application/json", "The built-in wins")
         let socket = try XCTUnwrap(upgrade)
-        XCTAssertEqual(socket.url?.absoluteString, "wss://hermes.example/api/ws")
-        XCTAssertEqual(socket.value(forHTTPHeaderField: "Sec-WebSocket-Protocol"), "hermes-gateway-v1, hermes-gateway-ticket.ticket")
+        XCTAssertEqual(socket.url?.absoluteString, "wss://hermes.example/api/ws?ticket=ticket")
+        XCTAssertNil(socket.value(forHTTPHeaderField: "Sec-WebSocket-Protocol"))
+        XCTAssertEqual(socket.value(forHTTPHeaderField: "Origin"), "https://hermes.example")
         XCTAssertEqual(socket.value(forHTTPHeaderField: "Authorization"), cloudflare.value)
         XCTAssertEqual(socket.value(forHTTPHeaderField: "X-Access"), "token")
         XCTAssertNil(socket.value(forHTTPHeaderField: "X-Webui-Token"))
     }
 
     func testNativeSignInSocketAndMediaRequestsKeepTheirDeploymentPrefix() async throws {
-        let prefix = "/gateways/cloud/admin"
-        let address = try BotConnection.address("https://hermes.example" + prefix)
+        let prefix = "/gateways/cloud"
+        let address = try BotConnection.address("https://hermes.example" + prefix + "/admin")
         let saved = BotConnection(id: record.id, name: record.name, address: address,
                                   username: record.username, password: record.password, headers: [access])
         let media = Data([1, 2, 3])
         let configuration = HermesHostFixture.configuration { request in
-            switch request.url?.path {
-            case prefix + "/api/status":
-                return .json(200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")])]))
-            case prefix + "/auth/password-login": return .json(200, .object(["ok": .bool(true)]))
-            case prefix + "/api/auth/me": return .json(200, .object(["provider": .string("basic")]))
-            case prefix + "/api/auth/ws-ticket": return .json(200, .object(["ticket": .string("ticket")]))
-            case prefix + "/api/fs/download": return .body(200, media)
-            default: return .json(404, .object([:]))
-            }
+            guard let path = request.url?.path, path.hasPrefix(prefix + "/") else { return .json(404, .object([:])) }
+            if path == prefix + "/api/fs/download" { return .body(200, media) }
+            var local = request
+            local.url = URL(string: "https://hermes.example" + path.dropFirst(prefix.count))
+            return HermesHostFixture.ordinary(local)
         }
         var upgrade: URLRequest?
         let http = HermesConnection(connection: saved, configuration: configuration,
@@ -497,9 +496,11 @@ import XCTest
         let downloaded = try await wire.artifactData(path: "/server/note.mp3", context: scope)
         XCTAssertEqual(downloaded, media)
         XCTAssertEqual(HermesHostFixture.requests.map { $0.url?.path },
-                       ["/api/status", "/auth/password-login", "/api/auth/me", "/api/auth/ws-ticket", "/api/fs/download"]
-                        .map { prefix + $0 })
-        XCTAssertEqual(upgrade?.url?.absoluteString, "wss://hermes.example" + prefix + "/api/ws")
+                       ["/api/status", "/auth/password-login", "/api/auth/me", "/api/status", "/api/profiles/active",
+                        ARCSpeechFixture.capabilitiesPath, "/api/plugins/arc/v1/hosts",
+                        "/api/plugins/arc/v1/hosts/b6fdbe73-9f57-4c73-9b19-c30867484c34/bindings",
+                        "/api/webapp/socket-ticket", "/api/fs/download"].map { prefix + $0 })
+        XCTAssertEqual(upgrade?.url?.absoluteString, "wss://hermes.example" + prefix + "/api/ws?ticket=ticket")
         for request in HermesHostFixture.requests + [try XCTUnwrap(upgrade)] {
             XCTAssertEqual(request.value(forHTTPHeaderField: "X-Access"), access.value)
         }
@@ -518,7 +519,7 @@ import XCTest
         defer { session.invalidateAndCancel() }
         let task = session.dataTask(with: inside)
         let response = try XCTUnwrap(HTTPURLResponse(url: inside, statusCode: 307, httpVersion: "HTTP/1.1", headerFields: nil))
-        for path in ["/api/status", "/gateways/secondary/admin/api/status", "/gateways/cloud/admin-other/api/status"] {
+        for path in ["/api/status", "/gateways/secondary/admin/api/status", "/gateways/cloud-other/api/status"] {
             let request = URLRequest(url: try XCTUnwrap(URL(string: "https://hermes.example" + path)))
             XCTAssertNil(headers.applied(to: request, origin: base).value(forHTTPHeaderField: "X-Access"), path)
             var followed: URLRequest? = request
@@ -952,8 +953,8 @@ import XCTest
         XCTAssertEqual(HermesHostFixture.count("/"), 2)
     }
 
-    /// The gateway upgrade presents the page token as `?token=` with no subprotocol, and no
-    /// ticket is minted; a token replaced since sign-in is read again before the upgrade.
+    /// Open gateways mint the same native one-use ticket, authenticated with their page token.
+    /// A replaced token is refreshed before the owning gateway admits another socket.
     func testAnOpenDashboardsGatewayUpgradePresentsItsCurrentPageToken() async throws {
         var token = "token-1", upgrade: URLRequest?
         let http = HermesConnection(connection: openRecord, configuration: openHost { token },
@@ -963,12 +964,14 @@ import XCTest
         defer { client.close() }
 
         let socket = try XCTUnwrap(upgrade)
-        XCTAssertEqual(socket.url?.absoluteString, "wss://hermes.example/api/ws?token=token-1")
+        XCTAssertEqual(socket.url?.absoluteString, "wss://hermes.example/api/ws?ticket=ticket")
         XCTAssertNil(socket.value(forHTTPHeaderField: "Sec-WebSocket-Protocol"))
         XCTAssertEqual(HermesHostFixture.count("/api/auth/ws-ticket"), 0)
         HermesHostFixture.script { token = "token-2" }
         let reconnect = try await http.gatewayUpgrade()
-        XCTAssertEqual(reconnect.url?.absoluteString, "wss://hermes.example/api/ws?token=token-2")
+        XCTAssertEqual(reconnect.url?.absoluteString, "wss://hermes.example/api/ws?ticket=ticket")
+        XCTAssertEqual(HermesHostFixture.count("/api/webapp/socket-ticket"), 2)
+        XCTAssertEqual(HermesHostFixture.requests.last { $0.url?.path == "/api/webapp/socket-ticket" }?.value(forHTTPHeaderField: "X-Hermes-Session-Token"), "token-2")
     }
 
     /// A saved sign-in that no longer matches its host reports a refused sign-in, so the server's
@@ -978,7 +981,7 @@ import XCTest
     func testASavedSignInThatNoLongerMatchesTheHostAsksForANewSignIn() async throws {
         let server = URL(string: "https://hermes.example")!
         let open: BotJSON = .object(["auth_required": .bool(false), "auth_providers": .array([]),
-                                     "auth_flows": .array([]), "version": .string("0.21.6")])
+                                     "auth_flows": .array([]), "version": .string("0.21.6"), "install_id": .string("fixture")])
         for (saved, status) in [(openRecord, nil), (openRecord, HermesBrowserSignInTests.browserStatus), (record, open)] {
             HermesHostFixture.reset()
             let connections = HermesConnections(configuration: {
@@ -1044,7 +1047,7 @@ import XCTest
             switch request.url?.path {
             case "/api/status":
                 return .json(200, .object(["auth_required": .bool(false), "auth_providers": .array([]),
-                                           "auth_flows": .array([]), "version": .string("0.21.6")]))
+                                           "auth_flows": .array([]), "version": .string("0.21.6"), "install_id": .string("fixture")]))
             case "/":
                 let page = #"<script>window.__HERMES_SESSION_TOKEN__="\#(token())";window.__HERMES_AUTH_REQUIRED__=false;</script>"#
                 return .body(200, Data(page.utf8))
@@ -1180,13 +1183,26 @@ final class HermesHostFixture: URLProtocol {
 
     /// A 0.21.5 host with the password gate, without the session write fence's snapshot route
     /// (#1300), and a plain success for every other route.
-    private static func ordinary(_ request: URLRequest) -> Reply {
+    static func ordinary(_ request: URLRequest) -> Reply {
         switch request.url?.path {
         case "/api/status":
             return .json(200, .object(["auth_required": .bool(true), "auth_providers": .array([.string("basic")]),
-                                       "version": .string("0.21.5")]))
+                                       "version": .string("0.21.5"), "install_id": .string("fixture")]))
+        case "/api/profiles/active":
+            return .json(200, .object(["active": .string("default"), "current": .string("default")]))
         case "/api/auth/me": return .json(200, .object(["provider": .string("basic")]))
         case "/api/auth/ws-ticket": return .json(200, .object(["ticket": .string("ticket")]))
+        case "/api/webapp/socket-ticket": return .json(200, .object(["ticket": .string("ticket")]))
+        case "/api/plugins/arc/v1/capabilities": return ARCSpeechFixture.capabilities
+        case "/api/plugins/arc/v1/hosts":
+            return .json(200, .object(["hosts": .array([.object([
+                "host_id": .string("b6fdbe73-9f57-4c73-9b19-c30867484c34"),
+                "display_name": .string("Fixture Host"), "latest_revision": .number(2)
+            ])])]))
+        case "/api/plugins/arc/v1/hosts/b6fdbe73-9f57-4c73-9b19-c30867484c34/bindings":
+            return .json(200, .object(["bindings": .array([.object([
+                "installation_id": .string("hermes-install:fixture"), "profile_id": .string("arc-profile:fixture")
+            ])])]))
         case let path? where path.hasPrefix("/api/sessions/") && path.hasSuffix("/mutation-snapshot"):
             return .json(404, .object(["detail": .string("No such API endpoint: \(path)")]))
         default: return .json(200, .object(["ok": .bool(true), "path": .string("/profile/images/a.png")]))

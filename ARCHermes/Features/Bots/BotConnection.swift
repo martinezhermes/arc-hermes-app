@@ -1,10 +1,20 @@
 import Foundation
 import Network
 
+/// Public identity evidence returned by the owning gateway after native sign-in.
+struct HermesARCHostIdentity: Codable, Equatable, Sendable {
+    let hostID: String
+    let displayName: String
+    let revision: Int
+    let installationID: String
+    let profileID: String
+    let profile: String
+}
+
 struct BotConnection: Codable, Equatable, Identifiable {
     let id: UUID
     var name: String
-    let address: URL
+    var address: URL
     let username: String
     var password: String
     /// Release string `/api/status` reported at the last successful connect. Nil for
@@ -24,6 +34,8 @@ struct BotConnection: Codable, Equatable, Identifiable {
     /// password (#708). Its `username` is then the host's user id and its `password` empty.
     /// Nil for a password connection, including records saved before it existed.
     var oauth: HermesOAuth?
+    /// Verified server metadata. Rechecked on connection admission and native profile changes.
+    var arcIdentity: HermesARCHostIdentity? = nil
 
     /// Saved for a dashboard with no sign-in (`HermesSignInMethod.open`, #1314): no username
     /// and no browser sign-in, so anyone who reaches `address` reaches the agent too.
@@ -97,6 +109,11 @@ struct BotConnection: Codable, Equatable, Identifiable {
         if let first = parts.path.split(separator: "/").first, dashboardPaths.contains(first.lowercased()) {
             path = ""
         }
+        let mount = path.split(separator: "/")
+        if mount.count >= 3, mount[0] == "gateways",
+           mount.dropFirst(2).allSatisfy({ ["admin", "dashboard", "webapp"].contains(String($0)) }) {
+            path = "/gateways/" + String(mount[1])
+        }
         if !hasScheme && defaultsToHTTP(plainHost.lowercased()) { parts.scheme = "http" }
         parts.scheme = parts.scheme?.lowercased()
         parts.host = host.lowercased()
@@ -162,7 +179,9 @@ enum BotAddressError: LocalizedError, Equatable {
     var keychain: any KeychainStoring = KeychainStore()
     func load(server: URL) throws -> BotConnection? {
         guard let value = try keychain.load(.botConnection, scope: server.absoluteString) else { return nil }
-        return try JSONDecoder().decode(BotConnection.self, from: Data(value.utf8))
+        var connection = try JSONDecoder().decode(BotConnection.self, from: Data(value.utf8))
+        connection.address = try BotConnection.address(connection.address.absoluteString)
+        return connection
     }
     func save(_ connection: BotConnection, server: URL) throws {
         let value = String(decoding: try JSONEncoder().encode(connection), as: UTF8.self)

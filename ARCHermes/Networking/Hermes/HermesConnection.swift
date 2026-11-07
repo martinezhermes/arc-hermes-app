@@ -43,6 +43,26 @@ import OSLog
     private(set) var serverVersion: String?
     /// `install_id` from the same read; nil when omitted.
     private(set) var serverInstallID: String?
+    private(set) var arcIdentity: HermesARCHostIdentity?
+    private var arcProfiles: [String: HermesARCHostIdentity] = [:]
+
+    func verifiedARCIdentity(profile: String?) -> HermesARCHostIdentity? {
+        guard let profile, profile != "current" else { return arcIdentity }
+        return arcProfiles[profile]
+    }
+
+    func acceptARCIdentity(_ identity: HermesARCHostIdentity) throws {
+        try checkCurrent()
+        try connection.requireSameInstall(identity.installationID)
+        if let accepted = arcIdentity ?? connection.arcIdentity, accepted.hostID != identity.hostID {
+            throw HermesARCIdentityFailure.bindingMismatch
+        }
+        serverInstallID = identity.installationID
+        connection.installID = identity.installationID
+        connection.arcIdentity = identity
+        arcIdentity = identity
+        arcProfiles[identity.profile] = identity
+    }
     /// Gateway methods the host answered -32601 (method not found) on this connection, so
     /// a control one chat found missing stays off in every chat on it. Recorded by
     /// `gateway`; a new connection starts empty.
@@ -113,6 +133,8 @@ import OSLog
     /// `gateway` configures the shared socket; tests script it.
     init(connection: BotConnection, configuration: URLSessionConfiguration = .ephemeral,
          gateway: HermesGateway.Options = HermesGateway.Options()) {
+        var connection = connection
+        if let canonical = try? BotConnection.address(connection.address.absoluteString) { connection.address = canonical }
         self.connection = connection
         headers = HermesHeaders(saved: connection)
         gatewayOptions = gateway
@@ -302,7 +324,7 @@ import OSLog
         let old = connection
         connection = BotConnection(id: old.id, name: old.name, address: old.address, username: user, password: "",
                                    hermesVersion: old.hermesVersion, installID: old.installID, headers: old.headers,
-                                   oauth: HermesOAuth(provider: provider, userID: user, refreshToken: refresh))
+                                   oauth: HermesOAuth(provider: provider, userID: user, refreshToken: refresh), arcIdentity: old.arcIdentity)
         isSignedIn = false
         credential = .accessToken(access)
         try await signIn()
@@ -438,10 +460,13 @@ import OSLog
         }
     }
 
-    /// Returns the gateway upgrade, presenting a single-use ticket minted for it or an open
-    /// dashboard's page token.
+    /// Returns the owning gateway upgrade with a one-use ticket after required Host verification.
     func gatewayUpgrade() async throws -> URLRequest {
-        try await upgrade { try HermesREST.gatewayUpgrade(base: connection.address, pass: $0) }
+        let identity = try await verifyARCIdentity()
+        let response = try await data(.gatewayTicket(profile: identity.profile))
+        let ticket = try JSONDecoder().decode(BotJSON.self, from: response)
+        guard let token = ticket["ticket"].text, !token.isEmpty else { throw BotFailure.unsupported }
+        return prepared(try HermesREST.gatewayUpgrade(base: connection.address, pass: .gatewayTicket(token)))
     }
 
     /// Returns `board`'s Kanban event socket upgrade, with this connection's headers (#1045),
@@ -483,7 +508,8 @@ import OSLog
     /// headers and browser sign-in account, and no conflicting install id. A newly
     /// backfilled install id is taken.
     func adopt(_ saved: BotConnection) -> Bool {
-        guard !isRetired, saved.id == connection.id, saved.address == connection.address,
+        guard !isRetired, saved.id == connection.id,
+              (try? BotConnection.address(saved.address.absoluteString)) == connection.address,
               saved.username == connection.username, saved.password == connection.password,
               (saved.headers ?? []) == (connection.headers ?? []) else { return false }
         if let live = connection.installID, let stored = saved.installID, live != stored { return false }
@@ -492,7 +518,10 @@ import OSLog
         guard saved.oauth?.provider == connection.oauth?.provider, saved.oauth?.userID == connection.oauth?.userID else {
             return false
         }
+        if let current = connection.arcIdentity, let stored = saved.arcIdentity,
+           current.hostID != stored.hostID { return false }
         if connection.installID == nil { connection.installID = saved.installID }
+        if connection.arcIdentity == nil { connection.arcIdentity = saved.arcIdentity }
         return true
     }
 

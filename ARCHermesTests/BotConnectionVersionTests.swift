@@ -164,7 +164,7 @@ final class BotConnectionVersionTests: XCTestCase {
     }
 
     func testDeploymentPrefixSurvivesAddressNormalization() throws {
-        let base = "https://hermes.example/gateways/cloud/admin"
+        let base = "https://hermes.example/gateways/cloud"
         XCTAssertEqual(try BotConnection.address(base + "/?ignored=1#top").absoluteString, base)
         XCTAssertEqual(try BotConnection.address("hermes.example/gateways/cloud/admin").absoluteString, base)
         XCTAssertEqual(try BotConnection.address("wss://hermes.example/gateways/cloud/admin").absoluteString, base)
@@ -250,7 +250,7 @@ final class BotConnectionVersionTests: XCTestCase {
         defer { HermesHostFixture.reset() }
         let hermes = URL(string: "https://hermes.example")!
         let store = BotConnectionStore(keychain: InMemoryKeychainStore())
-        var expired = BotConnection(id: UUID(), name: "Host", address: hermes, username: "u1", password: "", installID: "install-1")
+        var expired = BotConnection(id: UUID(), name: "Host", address: hermes, username: "u1", password: "", installID: "fixture")
         expired.oauth = HermesOAuth(provider: "nous", userID: "u1", refreshToken: "dead")
         try store.save(expired, server: hermes)
         var status = BotHostStatus(HermesBrowserSignInTests.browserStatus)
@@ -282,6 +282,7 @@ final class BotConnectionVersionTests: XCTestCase {
         XCTAssertEqual(record.id, expired.id)
         XCTAssertEqual(record.oauth, HermesOAuth(provider: "nous", userID: "u1", refreshToken: "fresh"))
         XCTAssertEqual(record.password, "")
+        XCTAssertEqual(record.arcIdentity?.installationID, "fixture")
     }
 
     /// A signed-out Hermes server whose status read failed can't tell whether it signs in

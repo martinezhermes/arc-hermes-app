@@ -999,7 +999,15 @@ final class AuthManagerStateTests: XCTestCase {
                                  installID: "install-1", headers: [CustomHeader(name: "CF-Access-Client-Id", value: "id.access")])
         try BotConnectionStore(keychain: keychain).save(side, server: webuiServer)
         func form() -> OnboardingViewModel {
-            makeForm(entry: .addServer) { $0.url?.path == "/api/status" ? .json(200, status) : nil }
+            makeForm(entry: .addServer) { request in
+                if request.url?.path == "/api/status" { return .json(200, status) }
+                if request.url?.path.hasSuffix("/bindings") == true {
+                    return .json(200, .object(["bindings": .array([.object([
+                        "installation_id": .string("hermes-install:install-1"), "profile_id": .string("arc-profile:fixture")
+                    ])])]))
+                }
+                return nil
+            }
         }
 
         let elsewhere = form()
@@ -1180,7 +1188,15 @@ final class AuthManagerStateTests: XCTestCase {
                                      "version": .string("0.21.5"), "install_id": .string("another-install")])
         let keychain = InMemoryKeychainStore()
         let manager = makeFormManager(keychain: keychain)
-        let form = makeForm(entry: .addServer) { $0.url?.path == "/api/status" ? .json(200, status) : nil }
+        let form = makeForm(entry: .addServer) { request in
+                if request.url?.path == "/api/status" { return .json(200, status) }
+                if request.url?.path.hasSuffix("/bindings") == true {
+                    return .json(200, .object(["bindings": .array([.object([
+                        "installation_id": .string("hermes-install:install-1"), "profile_id": .string("arc-profile:fixture")
+                    ])])]))
+                }
+                return nil
+            }
         await manager.configure(serverURLString: webuiServer.absoluteString, password: "")
         let side = BotConnection(id: UUID(), name: "Side", address: hermesServer, username: "me", password: "saved",
                                  installID: "install-1")

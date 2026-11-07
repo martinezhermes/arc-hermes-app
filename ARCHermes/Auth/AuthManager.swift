@@ -357,7 +357,9 @@ final class AuthManager {
     func addHermesServer(_ connection: BotConnection, activating: Bool = true) -> Bool {
         lastErrorMessage = nil
         let server = (try? BotConnection.address(connection.address.absoluteString)) ?? connection.address
-        guard !serverRegistry.servers.contains(where: { $0.id == server.absoluteString }) else {
+        guard !serverRegistry.servers.contains(where: {
+            (try? BotConnection.address($0.urlString)) == server
+        }) else {
             lastErrorMessage = String(localized: "This server is already configured.")
             return false
         }

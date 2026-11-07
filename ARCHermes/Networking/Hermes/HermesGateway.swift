@@ -51,6 +51,12 @@ import OSLog
     private var consumerCount = 0
     private var nextID = 0
     private var pending: [Int: Pending] = [:]
+    private let canonical = HermesCanonicalSession()
+    private var usesSessionAuthority = false
+
+    func replayEpoch(for consumer: Int) -> String? {
+        usesSessionAuthority ? canonical.replayEpoch(for: consumer) ?? replayEpoch : replayEpoch
+    }
 
     private struct Consumer {
         let id: Int
@@ -154,13 +160,69 @@ import OSLog
     /// receive and shapes it for the release the last sign-in read; `validateDispatch`
     /// runs at the actual socket write.
     func send(_ call: HermesCall, for consumer: Int?, validateDispatch: (() throws -> Void)?) async throws -> BotJSON {
-        let params = try call.params(hostVersion: http.serverVersion)
+        let original = try call.params(hostVersion: http.serverVersion)
+        let owner = generation
         guard let socket, !Task.isCancelled, maySend(consumer) else { throw BotFailure.stale }
+        if usesSessionAuthority, let consumer, let profile = original["profile"]?.text {
+            switch call {
+            case .sessionDelete, .sessionWorkspaceMove:
+                guard let key = original["session_key"]?.text ?? original["session_id"]?.text else {
+                    throw BotFailure.wrongIdentity
+                }
+                if !canonical.isAttached(consumer, sessionID: key, profile: profile) {
+                    _ = try await send(.sessionResume(profile: profile, sessionID: key, omitMessages: true),
+                                       for: consumer, validateDispatch: validateDispatch)
+                }
+            default:
+                break
+            }
+        }
+        let profile = usesSessionAuthority ? try canonical.profile(params: original, consumer: consumer) : nil
+        var identity = http.verifiedARCIdentity(profile: profile)
+        if usesSessionAuthority, identity == nil, let profile {
+            identity = try await http.verifyARCIdentity(profile: profile)
+        }
+        let captured: HermesCanonicalSession.Request?
+        if usesSessionAuthority {
+            switch call {
+            case .promptSubmit, .sessionInterrupt, .sessionSteer, .sessionRedirect, .approvalRespond,
+                 .requestAnswer, .sessionTitle, .sessionRename, .sessionCwdSet, .sessionDelete,
+                 .sessionWorkspaceMove, .sessionCompress, .sessionClose:
+                captured = try canonical.prepare(call, consumer: consumer, params: original, identity: identity)
+            default:
+                captured = nil
+            }
+        } else {
+            captured = nil
+        }
+        if usesSessionAuthority {
+            switch call {
+            case .sessionCreate, .sessionNew, .sessionResume, .promptSubmit,
+                 .sessionSteer, .sessionRedirect, .sessionInterrupt, .approvalRespond, .requestAnswer:
+                identity = try await http.verifyARCIdentity(profile: profile)
+            default:
+                break
+            }
+        }
+        guard owner == generation, !Task.isCancelled, maySend(consumer) else { throw BotFailure.stale }
+        if captured != nil, let identity { try canonical.validateIdentity(identity, consumer: consumer) }
+        let request: HermesCanonicalSession.Request
+        if let captured { request = captured }
+        else if usesSessionAuthority {
+            request = try canonical.prepare(call, consumer: consumer, params: original, identity: identity)
+        } else {
+            request = HermesCanonicalSession.Request(method: call.method, params: original)
+        }
+        if usesSessionAuthority, case .sessionInterrupt = call,
+           let settled = try await cancelQueuedForStop(request, consumer: consumer, validateDispatch: validateDispatch) {
+            return settled
+        }
+        guard owner == generation, !Task.isCancelled, maySend(consumer) else { throw BotFailure.stale }
         nextID += 1
-        let id = nextID, owner = generation
+        let id = nextID
         let frame = BotJSON.object([
             "jsonrpc": .string("2.0"), "id": .number(Double(id)),
-            "method": .string(call.method), "params": .object(params)
+            "method": .string(request.method), "params": .object(request.params)
         ])
         let text: String
         if case .fileAttach = call {
@@ -203,7 +265,62 @@ import OSLog
         case .sessionClose(let runtime): http.noteClosed(runtime)
         default: break
         }
-        return reply
+        guard usesSessionAuthority else { return reply }
+        let projected = try canonical.result(reply, call: call, request: request, consumer: consumer, identity: identity)
+        if case .promptSubmit = call, projected["voice_stopped"].flag != true {
+            return try await reconcileAdmission(projected, request: request, consumer: consumer)
+        }
+        return projected
+    }
+
+    /// Native submit acknowledges admission, which may still be waiting for its first claim.
+    /// Reconcile the receipt before projecting the engine's started/follow-up verdict.
+    private func reconcileAdmission(_ result: BotJSON, request: HermesCanonicalSession.Request,
+                                    consumer: Int?) async throws -> BotJSON {
+        guard let profile = request.params["profile"]?.text,
+              let sid = result["session_id"].text, let admission = result["admission_id"].text else {
+            throw BotFailure.wrongIdentity
+        }
+        let state = try await send(.sessionResume(profile: profile, sessionID: sid, omitMessages: true),
+                                   for: consumer, validateDispatch: nil)
+        let receipt = try await send(.promptReceipt(profile: profile, sessionID: sid, admissionID: admission),
+                                     for: consumer, validateDispatch: nil)
+        let status: String
+        switch receipt["status"].text {
+        case "started", "terminal":
+            status = "streaming"
+        case "queued":
+            let first = (state["pending"].list ?? []).first { ["queued", "started"].contains($0["status"].text ?? "") }
+            let waitsForEarlier = first.map { $0["admission_id"].text != admission } ?? false
+            status = state["running"].flag == true || waitsForEarlier ? "queued" : "streaming"
+        case "unknown":
+            status = "unknown"
+        default:
+            throw BotFailure.unsupported
+        }
+        var fields = result.fields ?? [:]
+        fields["admission_status"] = receipt["status"]
+        fields["status"] = .string(status)
+        return .object(fields)
+    }
+
+    /// Stop discards queued work as well as interrupting its displayed turn.
+    /// Capture the generation before these reads so a later turn is never substituted.
+    private func cancelQueuedForStop(_ request: HermesCanonicalSession.Request, consumer: Int?,
+                                     validateDispatch: (() throws -> Void)?) async throws -> BotJSON? {
+        guard let profile = request.params["profile"]?.text,
+              let sid = request.params["session_id"]?.text else { throw BotFailure.wrongIdentity }
+        let state = try await send(.sessionResume(profile: profile, sessionID: sid, omitMessages: true),
+                                   for: consumer, validateDispatch: nil)
+        guard state["execution_generation"] == request.params["execution_generation"] else { throw BotFailure.stale }
+        var cancelled: BotJSON?
+        for row in state["pending"].list ?? [] where row["status"].text == "queued" {
+            guard let admission = row["admission_id"].text else { throw BotFailure.unsupported }
+            cancelled = try await send(.promptCancel(profile: profile, sessionID: sid, admissionID: admission),
+                                       for: consumer, validateDispatch: validateDispatch)
+        }
+        if state["running"].flag != true { return cancelled ?? state }
+        return nil
     }
 
     /// A cancelled read discards its late reply. Any other cancelled call may have reached
@@ -264,7 +381,7 @@ import OSLog
     /// and completes the handshake. No screen sends anything until it returns.
     private func handshake(generation owner: Int) async throws {
         func check() throws {
-            guard owner == generation else { throw BotFailure.stale }
+            guard owner == generation, !Task.isCancelled else { throw BotFailure.stale }
         }
         let upgrade = try await http.gatewayUpgrade()
         try check()
@@ -285,9 +402,8 @@ import OSLog
         guard ready["method"].text == "event", ready["params"]["type"].text == "gateway.ready",
               let epoch = ready["params"]["payload"]["replay_epoch"].text, !epoch.isEmpty
         else { throw BotFailure.unsupported }
-        // A gateway's own listener (0.22.1+) owns its sessions under a protocol Hermex doesn't speak
-        // yet (#1341): signed in, every chat would fail.
-        if ready["params"]["payload"]["session_authority"].flag == true { throw BotFailure.gatewayListener }
+        usesSessionAuthority = ready["params"]["payload"]["session_authority"].flag == true
+        canonical.resetAttachments()
         replayEpoch = epoch
         startReader(socket, generation: owner)
         // Without this the host treats the socket as a build that predates
@@ -408,7 +524,11 @@ import OSLog
             // A callback may close a screen or end the socket; check before each one.
             guard generation == owner else { return }
             guard isAttached(consumer.id), let client = consumer.client else { continue }
-            client.onEvent?(event)
+            let frames = usesSessionAuthority ? canonical.events(event, for: consumer.id) : [event]
+            for frame in frames {
+                guard generation == owner, isAttached(consumer.id) else { return }
+                client.onEvent?(frame)
+            }
         }
     }
 
@@ -459,7 +579,7 @@ private extension HermesCall {
     /// because its outcome is unknown.
     var isCancellationSafe: Bool {
         switch self {
-        case .fileAttach, .completePath, .completeFolder, .completeSlash, .subagentList, .subagentTail,
+        case .promptReceipt, .fileAttach, .completePath, .completeFolder, .completeSlash, .subagentList, .subagentTail,
              .sessionActiveList, .sessionMostRecent, .profilesList, .profileModelOptions, .projectsTree,
              .commitMessage: return true
         default: return false
@@ -472,7 +592,7 @@ private extension HermesCall {
     /// connection; the socket stays for the others.
     var timesOutLocally: Bool {
         switch self {
-        case .subagentList, .subagentTail, .sessionActiveList, .sessionMostRecent, .completeSlash, .slashExec,
+        case .promptReceipt, .subagentList, .subagentTail, .sessionActiveList, .sessionMostRecent, .completeSlash, .slashExec,
              .profileModelOptions, .projectsTree, .completeFolder, .commitMessage: return true
         case .completePath(_, _, _, let timesOutLocally): return timesOutLocally
         default: return false

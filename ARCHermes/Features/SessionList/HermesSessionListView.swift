@@ -156,6 +156,10 @@ struct HermesSessionListView: View {
     }
 
     var body: some View {
+        interactiveSessions
+    }
+
+    private var interactiveSessions: some View {
         surface
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: projectsAreExpanded)
         .animation(SessionListMotion.disclosureAnimation(reduceMotion: reduceMotion), value: scheduledSessionsAreExpanded)

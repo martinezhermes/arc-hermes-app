@@ -41,7 +41,12 @@ enum BotArtifactReference {
             if ["https", "http"].contains(scheme.lowercased()),
                url.scheme == address.scheme, url.host == address.host, url.port == address.port,
                ["api/fs/download", "api/files/download", "api/media", "api/fs/read-data-url"]
-                .contains(where: { address.appendingPathComponent($0).path == url.path }),
+                .contains(where: { route in
+                    guard url.path.hasSuffix("/" + route) else { return false }
+                    var base = url
+                    for _ in route.split(separator: "/") { base.deleteLastPathComponent() }
+                    return (try? BotConnection.address(base.absoluteString)) == address
+                }),
                let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
                let path = parts.queryItems?.first(where: { $0.name == "path" })?.value,
                !path.isEmpty, !path.contains("\0") { return path }

@@ -102,7 +102,7 @@ struct ChatTranscriptView: View {
     let onScrollToLatestContent: (ScrollViewProxy, Bool) -> Void
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
     let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
-    let onToggleListening: (MessageActionContext) -> Void
+    let onToggleListening: (MessageActionContext, ListenVoice) -> Void
     let onRegenerate: (MessageActionContext) -> Void
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void
@@ -679,7 +679,7 @@ struct ChatTranscriptMessageBlock: View, Equatable {
     let shouldRenderMessageRow: (ChatMessage) -> Bool
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
     let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
-    let onToggleListening: (MessageActionContext) -> Void
+    let onToggleListening: (MessageActionContext, ListenVoice) -> Void
     let onRegenerate: (MessageActionContext) -> Void
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void
@@ -894,7 +894,7 @@ private struct ChatTranscriptMessageRow: View {
     let transcriptMediaCacheNamespace: String
     let onPreviewAttachment: (MessageAttachment, Data?) -> Void
     let onPreviewTranscriptMedia: (TranscriptMediaReference) -> Void
-    let onToggleListening: (MessageActionContext) -> Void
+    let onToggleListening: (MessageActionContext, ListenVoice) -> Void
     let onRegenerate: (MessageActionContext) -> Void
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void

@@ -28,13 +28,13 @@ import Observation
                                                             "Use these", "Read them.", "Run it", "Done."])
 
         XCTAssertEqual(try menu(chat, at: 0), [.fork, .copy], "a compacted prompt")
-        XCTAssertEqual(try menu(chat, at: 1), [.listen, .fork], "the compacted reply")
+        XCTAssertEqual(try menu(chat, at: 1), [.listen, .deviceVoice, .fork], "the compacted reply")
         XCTAssertEqual(try menu(chat, at: 2), [.edit, .fork, .copy])
-        XCTAssertEqual(try menu(chat, at: 3), [.listen, .regenerate, .fork])
+        XCTAssertEqual(try menu(chat, at: 3), [.listen, .deviceVoice, .regenerate, .fork])
         XCTAssertEqual(try menu(chat, at: 4), [.fork, .copy], "a prompt with a file")
-        XCTAssertEqual(try menu(chat, at: 5), [.listen, .fork], "the reply to it")
+        XCTAssertEqual(try menu(chat, at: 5), [.listen, .deviceVoice, .fork], "the reply to it")
         XCTAssertEqual(try menu(chat, at: 6), [.copy], "a prompt the host has not saved")
-        XCTAssertEqual(try menu(chat, at: 7), [.listen])
+        XCTAssertEqual(try menu(chat, at: 7), [.listen, .deviceVoice])
     }
 
     /// The discard warning counts the rows after the prompt, so it shows before a cut that
@@ -550,7 +550,7 @@ import Observation
         ChatMessageActionMenu(
             context: try context(chat, at: index), listeningMessageID: nil, isViewingCachedData: false,
             hasActiveStream: false, isRegeneratingMessage: false, isEditingMessage: false, isForkingMessage: false,
-            onToggleListening: { _ in }, onRegenerate: { _ in }, onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }
+            onToggleListening: { _, _ in }, onRegenerate: { _ in }, onEdit: { _ in }, onFork: { _ in }, onCopy: { _ in }
         ).items.map(\.kind)
     }
 

@@ -68,7 +68,8 @@ enum BotFailure: Error, Equatable, LocalizedError {
     case signInChanged
     /// The address reaches a Hermes gateway's own listener (`hermes gateway run`, 0.22.1+), whose
     /// sessions follow a protocol Hermex doesn't speak yet (#1341): its `gateway.ready` sets
-    /// `session_authority`, or its page withholds the session token from an open sign-in. Permanent.
+    /// `session_authority`, ARC capabilities verify native authority after a refused upgrade,
+    /// or the gateway withholds the session token from an open sign-in. Permanent.
     case gatewayListener
     var errorDescription: String? {
         switch self {
@@ -94,7 +95,7 @@ enum BotFailure: Error, Equatable, LocalizedError {
         case .browserSignIn: return String(localized: "This Hermes host only offers sign-in with a browser, which ARC Hermes doesn't support yet. To connect now, add a dashboard username and password on the host.")
         case .signInExpired: return String(localized: "Your Hermes sign-in expired. Sign in again.")
         case .signInChanged: return String(localized: "This server’s sign-in changed. Sign in again to continue.")
-        case .gatewayListener: return String(localized: "This address is a Hermes gateway’s own listener, which Hermex doesn’t support yet. Connect to hermes dashboard instead.")
+        case .gatewayListener: return String(localized: "A verified ARC Host is required to open chat on this gateway.")
         case .browserSignInFailed: return String(localized: "The browser sign-in didn't finish. Try again.")
         case .upgradeRefused: return String(localized: "Hermes accepted the sign-in, but the live connection was refused. If a proxy or tunnel sits in front of Hermes, turn on WebSocket support and let the Sec-WebSocket-Protocol header through.")
         case .outdated(let version):
@@ -118,6 +119,7 @@ enum BotConnectionAdvice {
     /// client error (a 404 is not a Hermes host). Server errors, rate limits and JSON-RPC faults
     /// other than "method missing" are the retry loop's problem.
     static func isRetryable(_ error: Error) -> Bool {
+        if error is HermesARCIdentityFailure { return false }
         switch error as? BotFailure {
         case .unsupported, .wrongIdentity, .differentHost, .invalidAddress, .notDashboard,
              .blocked, .browserSignIn, .signInExpired, .signInChanged, .upgradeRefused, .outdated,
@@ -173,6 +175,7 @@ enum BotConnectionAdvice {
     var serverVersion: String? { get }
     /// `install_id` from `/api/status` at the last connect; nil when the host omits it.
     var serverInstallID: String? { get }
+    var arcIdentity: HermesARCHostIdentity? { get }
     /// Gateway methods the host answered -32601 (method not found) on this connection,
     /// shared by every screen on it; a new connection starts empty.
     var unavailableMethods: Set<String> { get }
@@ -202,9 +205,8 @@ enum BotConnectionAdvice {
     /// without an offset, else one transcript page from `offset` (#1047). Nil when the host has
     /// no such session (404).
     func sessionMessages(_ key: String, profile: String, offset: Int?) async throws -> [BotJSON]?
-    /// `text` spoken in `profile`'s voice (`HermesREST.speak`): the audio bytes, of a format the
-    /// host's TTS provider chose. Any refusal or unreadable reply throws.
-    func speech(text: String, profile: String) async throws -> Data
+    func listenSpeech(text: String, profile: String, sessionID: String?,
+                      validateDispatch: @escaping @MainActor () throws -> Void) async throws -> HermesListenAudio
     /// One page of `profile`'s sessions for the Sessions list, or with `archived` for the
     /// Archived screen (`HermesREST.sessionList`, #1046, #1048).
     func sessionPage(profile: String, offset: Int, archived: Bool) async throws -> HermesSessionPage
@@ -245,6 +247,7 @@ enum BotConnectionAdvice {
 extension BotTransport {
     var serverVersion: String? { nil }
     var serverInstallID: String? { nil }
+    var arcIdentity: HermesARCHostIdentity? { nil }
     var unavailableMethods: Set<String> { [] }
 
     func uploadImage(data: Data, filename: String, context: BotArtifactContext) async throws -> String {
@@ -274,8 +277,10 @@ extension BotTransport {
         throw BotFailure.unsupported
     }
 
-    func speech(text: String, profile: String) async throws -> Data {
-        throw BotFailure.unsupported
+    func listenSpeech(text: String, profile: String, sessionID: String?,
+                      validateDispatch: @escaping @MainActor () throws -> Void) async throws -> HermesListenAudio {
+        try validateDispatch()
+        return .profile(nil)
     }
 
     /// A stored session's latest 500 rows, as a background task's result reads them.

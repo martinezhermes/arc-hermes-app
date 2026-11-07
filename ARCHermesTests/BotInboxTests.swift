@@ -921,6 +921,8 @@ import SwiftUI
         let first = String(repeating: "a", count: 32)
         let connecting = BotInboxFixtureWire(roster: [row("triage")])
         connecting.serverInstallID = first; connecting.holdsConnect = true
+        connecting.arcIdentity = HermesARCHostIdentity(hostID: "b6fdbe73-9f57-4c73-9b19-c30867484c34",
+            displayName: "Fixture Host", revision: 2, installationID: first, profileID: "arc-profile:fixture", profile: "default")
         let omitting = BotInboxFixtureWire(roster: [row("triage")])
         let differing = BotInboxFixtureWire(roster: [row("triage")])
         differing.serverInstallID = String(repeating: "b", count: 32)
@@ -935,6 +937,8 @@ import SwiftUI
         var stored = try XCTUnwrap(store.load(server: server))
         XCTAssertEqual(stored.password, "newer", "The backfill re-reads the record instead of writing its snapshot")
         XCTAssertEqual(stored.installID, first)
+        XCTAssertEqual(stored.arcIdentity, connecting.arcIdentity)
+        XCTAssertEqual(inbox.connection?.arcIdentity, connecting.arcIdentity)
         XCTAssertEqual(inbox.connection?.installID, first, "Chats and rooms opened from this inbox are pinned too")
 
         await inbox.open()
@@ -1303,6 +1307,7 @@ import SwiftUI
 @MainActor final class BotInboxFixtureWire: BotTransport {
     var replayEpoch: String? = "epoch"
     var serverInstallID: String?
+    var arcIdentity: HermesARCHostIdentity?
     var onEvent: ((BotJSON) -> Void)?
     var onDisconnect: ((Error) -> Void)?
     var roster: [BotJSON]

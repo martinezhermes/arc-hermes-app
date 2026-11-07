@@ -567,7 +567,7 @@ final class OnboardingViewModel {
             errorMessage = error.localizedDescription
             return nil
         }
-        let saved = authManager.servers.first { $0.id == address.absoluteString }
+        let saved = authManager.servers.first { (try? BotConnection.address($0.urlString)) == address }
         if let saved, !(replacingWebuiServer && saved.kind == .webui) {
             offersWebuiReplace = saved.kind == .webui && moveSource == nil
             errorMessage = offersWebuiReplace
@@ -579,7 +579,8 @@ final class OnboardingViewModel {
         let candidate = BotConnection(
             id: UUID(), name: address.host ?? "Hermes", address: address,
             username: isOpen ? "" : username.trimmingCharacters(in: .whitespacesAndNewlines), password: isOpen ? "" : password,
-            installID: reusedSignIn?.connection.installID, headers: headers.isEmpty ? nil : headers
+            installID: reusedSignIn?.connection.installID, headers: headers.isEmpty ? nil : headers,
+            arcIdentity: reusedSignIn?.connection.arcIdentity
         )
         let http = HermesConnection(connection: candidate, configuration: hermesConfiguration())
         do {
@@ -588,6 +589,7 @@ final class OnboardingViewModel {
             } else {
                 try await http.signIn()
             }
+            _ = try await http.verifyARCIdentity()
         } catch {
             guard token == operationGeneration, identity == currentConnectionIdentity(),
                   !(error is CancellationError) else { return nil }
@@ -597,6 +599,7 @@ final class OnboardingViewModel {
         // A sheet closed while it signed in adds nothing.
         guard token == operationGeneration, identity == currentConnectionIdentity(), !Task.isCancelled else { return nil }
         var record = http.connection
+        if let host = http.arcIdentity { record.name = host.displayName }
         record.hermesVersion = http.serverVersion
         record.installID = http.serverInstallID ?? candidate.installID
         let added = saved == nil

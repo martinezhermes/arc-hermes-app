@@ -297,8 +297,8 @@ final class ChatTranscriptEnvironmentStabilityTests: XCTestCase {
 
     /// Typing while a reply streams. On iOS 26 with the keyboard up, an `openURL`
     /// re-written by a modifier whose body re-runs each pass re-ran every link reader.
-    func testLinkReadersSkipOwnerPassesWhileTheKeyboardIsUp() throws {
-        let keyboard = try showKeyboard()
+    func testLinkReadersSkipOwnerPassesWhileTheKeyboardIsUp() async throws {
+        let keyboard = try await showKeyboard()
         defer { keyboard.endEditing(true); keyboard.isHidden = true }
         let probe = EnvironmentStabilityProbe()
         let window = host(LinkOwner(probe: probe))
@@ -323,15 +323,18 @@ final class ChatTranscriptEnvironmentStabilityTests: XCTestCase {
     }
 
     /// A focused text view in its own window, returned once the keyboard is up.
-    private func showKeyboard() throws -> UIWindow {
+    private func showKeyboard() async throws -> UIWindow {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
         let field = UITextView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
-        window.addSubview(field)
+        controller.view.addSubview(field)
         window.makeKeyAndVisible()
+        await settle(window)
         let shown = XCTNSNotificationExpectation(name: UIResponder.keyboardDidShowNotification)
-        field.becomeFirstResponder()
-        wait(for: [shown], timeout: 10)
+        XCTAssertTrue(field.becomeFirstResponder())
+        await fulfillment(of: [shown], timeout: 10)
         return window
     }
 

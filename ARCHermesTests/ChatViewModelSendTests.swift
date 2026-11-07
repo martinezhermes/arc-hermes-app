@@ -9360,8 +9360,7 @@ final class ChatViewModelSendTests: XCTestCase {
     }
 }
 
-/// Listen on a Hermes Sessions reply (#1072): the host's voice from `/api/audio/speak` in
-/// the chat's Profile, else the on-device voice, silently, as on webui (#15).
+/// Required ARC session speech through the normal chat playback controls.
 @MainActor final class ListenSynthesisTests: XCTestCase {
     private static let connection = BotConnection(id: UUID(), name: "Mac", address: URL(string: "http://hermes.local:9120")!,
                                                   username: "user", password: "fixture")
@@ -9383,11 +9382,11 @@ final class ChatViewModelSendTests: XCTestCase {
         let model = await openHermesChat(speech: speech) { played.append($0); return player }
         let audio = Data([0xFF, 0xF3, 0x18, 0xC4])
         var sent: [URLRequest] = []
-        _ = HermesHostFixture.configuration { request in
+        installARC { request in
             guard request.url?.path == "/api/audio/speak" else { return nil }
             sent.append(request)
             return .json(200, .object(["ok": .bool(true), "data_url": .string("data:audio/mpeg;base64," + audio.base64EncodedString()),
-                                       "mime_type": .string("audio/mpeg"), "provider": .string("edge")]))
+                                       "mime_type": .string("audio/mpeg"), "provider": .string("arc")]))
         }
 
         model.toggleListening(to: try Self.reply("Hello from the host."))
@@ -9398,7 +9397,7 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.query, "profile=work")
         XCTAssertEqual(try apiTestBodyData(from: request).map { try JSONDecoder().decode(BotJSON.self, from: $0) },
-                       .object(["text": .string("Hello from the host.")]))
+                       .object(["text": .string("Hello from the host."), "session_id": .string(ARCSpeechFixture.sessionID)]))
         XCTAssertEqual(played, [audio])
         XCTAssertEqual(player.playCount, 1)
         XCTAssertEqual(model.listenPlaybackPhase, .playing)
@@ -9407,16 +9406,16 @@ final class ChatViewModelSendTests: XCTestCase {
     }
 
     /// A refusal, a timeout, audio the player can't decode, or a reply over the 4,000-character
-    /// ceiling: the reply is spoken on device, with the playback bar and no alert.
-    func testAHermesReplyTheHostCannotVoiceIsSpokenOnDeviceSilently() async throws {
+    /// ceiling: Listen reports the failure without substituting a different voice.
+    func testAHermesReplyTheHostCannotVoiceReportsFailureWithoutDeviceSubstitution() async throws {
         let ogg = HermesHostFixture.Reply.json(200, .object([
-            "ok": .bool(true), "data_url": .string("data:audio/ogg;base64,T2dnUw=="), "mime_type": .string("audio/ogg")
+            "ok": .bool(true), "data_url": .string("data:audio/ogg;base64,T2dnUw=="), "mime_type": .string("audio/ogg"), "provider": .string("arc")
         ]))
         let scenarios: [(label: String, text: String, reply: HermesHostFixture.Reply, requests: Int, decodes: Int)] = [
             ("refused", "Refused.", .json(400, .object(["detail": .string("Speech synthesis failed")])), 1, 0),
             ("timed out", "Timed out.", .fail(URLError(.timedOut)), 1, 0),
-            ("undecodable", "Ogg.", ogg, 1, 1),
-            ("over the ceiling", String(repeating: "a", count: ServerTTSPolicy.maximumHermesTextLength + 1), ogg, 0, 0)
+            ("undecodable", "Ogg.", ogg, 1, 0),
+            ("over the ceiling", String(repeating: "a", count: HermesREST.maximumSpeechTextLength + 1), ogg, 0, 0)
         ]
         for scenario in scenarios {
             let speech = SpyOnDeviceSpeech()
@@ -9429,7 +9428,7 @@ final class ChatViewModelSendTests: XCTestCase {
                 return SpyListenAudioPlayer()
             }
             var sent = 0
-            _ = HermesHostFixture.configuration { request in
+            installARC { request in
                 guard request.url?.path == "/api/audio/speak" else { return nil }
                 sent += 1
                 return scenario.reply
@@ -9440,10 +9439,10 @@ final class ChatViewModelSendTests: XCTestCase {
 
             XCTAssertEqual(sent, scenario.requests, scenario.label)
             XCTAssertEqual(decodes, scenario.decodes, scenario.label)
-            XCTAssertEqual(speech.spokenStrings, [scenario.text], scenario.label)
-            XCTAssertEqual(model.listeningMessageID, "reply", scenario.label)
-            XCTAssertEqual(model.listenPlaybackPhase, .playing, scenario.label)
-            XCTAssertNil(model.messageActionErrorMessage, scenario.label)
+            XCTAssertEqual(speech.spokenStrings, [], scenario.label)
+            XCTAssertNil(model.listeningMessageID, scenario.label)
+            XCTAssertEqual(model.listenPlaybackPhase, .idle, scenario.label)
+            XCTAssertNotNil(model.messageActionErrorMessage, scenario.label)
             model.stopListening()
         }
     }
@@ -9458,11 +9457,11 @@ final class ChatViewModelSendTests: XCTestCase {
         engine.disconnect(BotFailure.transport)
         XCTAssertTrue(engine.isReconnecting)
         var sent = 0
-        _ = HermesHostFixture.configuration { request in
+        installARC { request in
             guard request.url?.path == "/api/audio/speak" else { return nil }
             sent += 1
             return .json(200, .object(["ok": .bool(true), "data_url": .string("data:audio/mpeg;base64,//MYxA=="),
-                                       "mime_type": .string("audio/mpeg"), "provider": .string("edge")]))
+                                       "mime_type": .string("audio/mpeg"), "provider": .string("arc")]))
         }
 
         model.toggleListening(to: try Self.reply("Hello while reconnecting."))
@@ -9498,20 +9497,209 @@ final class ChatViewModelSendTests: XCTestCase {
         XCTAssertEqual(model.listenPlaybackPhase, .idle)
     }
 
+    func testARCListenUsesTheStoredSessionReturnedByHermes() async throws {
+        for sessionAuthority in [false, true] {
+            let speech = SpyOnDeviceSpeech()
+            let player = SpyListenAudioPlayer()
+            let model = await openHermesChat(speech: speech, sessionAuthority: sessionAuthority) { audio in
+                XCTAssertEqual(audio, ARCSpeechFixture.bytes)
+                return player
+            }
+            installARC()
+            let reply = ChatMessage(role: "assistant", content: "Historical reply.", timestamp: nil, messageId: "history")
+            model.toggleListening(to: try XCTUnwrap(model.actionContext(for: reply, visibleIndex: 0)))
+            await model.listenPreparationTask?.value
+
+            let sent = try XCTUnwrap(HermesHostFixture.requests.last { $0.url?.path == ARCSpeechFixture.speakPath })
+            let body = try XCTUnwrap(apiTestBodyData(from: sent))
+            XCTAssertEqual(try JSONDecoder().decode(BotJSON.self, from: body), .object([
+                "text": .string("Historical reply."), "session_id": .string(ARCSpeechFixture.sessionID)
+            ]))
+            XCTAssertEqual(player.playCount, 1)
+            XCTAssertEqual(speech.spokenStrings, [])
+            player.finishPlayback(succeeded: false)
+            XCTAssertEqual(model.messageActionErrorMessage, HermesListenFailure.playbackFailed.localizedDescription)
+            XCTAssertEqual(model.listenPlaybackPhase, .idle)
+            engine?.suspend()
+            HermesHostFixture.reset()
+        }
+    }
+
+    func testARCListenFailuresDoNotSubstituteAnotherVoice() async throws {
+        typealias Reply = HermesHostFixture.Reply
+        let cases: [(String, Reply, HermesListenFailure, Bool)] = [
+            (ARCSpeechFixture.capabilitiesPath, ARCSpeechFixture.refusal(401, "unauthenticated"), .signInRequired, false),
+            (ARCSpeechFixture.capabilitiesPath, .json(200, .object(["api_version": .number(2)])), .unsupportedContract, false),
+            (ARCSpeechFixture.identityPath, ARCSpeechFixture.refusal(404, "session_unavailable"), .identityDenied, false),
+            (ARCSpeechFixture.identityPath, ARCSpeechFixture.refusal(409, "session_identity_unbound"), .identityUnbound, false),
+            (ARCSpeechFixture.identityPath, ARCSpeechFixture.refusal(503, "native_context_unavailable"), .identityUnavailable, false),
+            (ARCSpeechFixture.identityPath, ARCSpeechFixture.identity(sessionID: "local-other"), .identityUnavailable, false),
+            (ARCSpeechFixture.identityPath, ARCSpeechFixture.identity(state: "activation_pending"), .voiceUnavailable, false),
+            (ARCSpeechFixture.speakPath, .json(403, .object(["detail": .string("Speech conversation is unavailable")])),
+             .identityDenied, true),
+            (ARCSpeechFixture.speakPath, .json(500, .object([:])), .synthesisFailed, true),
+            (ARCSpeechFixture.speakPath, .json(200, .object(["ok": .bool(false)])), .synthesisFailed, true),
+            (ARCSpeechFixture.speakPath, ARCSpeechFixture.audio(provider: "edge"), .voiceUnavailable, true),
+            (ARCSpeechFixture.speakPath, ARCSpeechFixture.audio(), .playbackFailed, true)
+        ]
+        for (path, reply, failure, synthesizes) in cases {
+            HermesHostFixture.reset()
+            let speech = SpyOnDeviceSpeech()
+            let model = await openHermesChat(speech: speech) { _ in
+                if failure != .playbackFailed { XCTFail("An ARC failure must not start playback") }
+                throw URLError(.cannotDecodeContentData)
+            }
+            installARC { $0.url?.path == path ? reply : nil }
+            model.toggleListening(to: try Self.reply("Fixture reply."))
+            await model.listenPreparationTask?.value
+
+            XCTAssertEqual(model.messageActionErrorMessage, failure.localizedDescription, "\(failure)")
+            XCTAssertEqual(model.listenPlaybackPhase, .idle, "\(failure)")
+            XCTAssertEqual(speech.spokenStrings, [], "\(failure)")
+            XCTAssertEqual(HermesHostFixture.count(ARCSpeechFixture.speakPath), synthesizes ? 1 : 0, "\(failure)")
+            engine?.suspend()
+        }
+    }
+
+    func testARCListenKeepsDeviceSpeechAnExplicitLocalAction() async throws {
+        let speech = SpyOnDeviceSpeech()
+        let player = SpyListenAudioPlayer()
+        let model = await openHermesChat(speech: speech) { bytes in
+            XCTAssertEqual(bytes, SpyOnDeviceSpeech.audio)
+            return player
+        }
+        installARC()
+        let requestsBeforeListen = HermesHostFixture.requests.count
+
+        model.toggleListening(to: try Self.reply("Use the device voice."), voice: .device)
+        await model.listenPreparationTask?.value
+
+        XCTAssertEqual(speech.spokenStrings, ["Use the device voice."])
+        XCTAssertEqual(player.playCount, 1)
+        XCTAssertEqual(HermesHostFixture.requests.count, requestsBeforeListen, "Device speech is an explicit local action")
+        XCTAssertEqual(HermesHostFixture.count(ARCSpeechFixture.speakPath), 0)
+        model.stopListening()
+    }
+
+    func testStoredSessionChangeDropsARCIdentityAndSynthesisInFlight() async throws {
+        for path in [ARCSpeechFixture.identityPath, ARCSpeechFixture.speakPath] {
+            HermesHostFixture.reset()
+            let speech = SpyOnDeviceSpeech()
+            let requested = expectation(description: "parked \(path)")
+            let model = await openHermesChat(speech: speech) { _ in
+                XCTFail("A replaced session must not create a player")
+                return SpyListenAudioPlayer()
+            }
+            let engine = try XCTUnwrap(engine)
+            HermesHostFixture.onPark = { requested.fulfill() }
+            installARC { $0.url?.path == path ? .park : nil }
+
+            model.toggleListening(to: try Self.reply("The old session’s reply."))
+            let pending = try XCTUnwrap(model.listenPreparationTask)
+            await fulfillment(of: [requested], timeout: 3)
+            engine.adoptStoredKey("local-replacement")
+            HermesHostFixture.releaseParked(path == ARCSpeechFixture.identityPath ? ARCSpeechFixture.identity() : ARCSpeechFixture.audio(),
+                                           path: path)
+            await pending.value
+
+            XCTAssertEqual(model.listenPlaybackPhase, .idle)
+            XCTAssertNil(model.messageActionErrorMessage)
+            XCTAssertEqual(speech.spokenStrings, [])
+            XCTAssertEqual(HermesHostFixture.count(ARCSpeechFixture.speakPath), path == ARCSpeechFixture.speakPath ? 1 : 0)
+            engine.suspend()
+        }
+    }
+
+    func testListenPlayerCanPrepareTheCloudSpeechCodec() async throws {
+        let audio = try Self.opusTone()
+        let playable = try await ListenAudioDecoding.prepare(audio)
+        let player = try AVAudioPlayer(data: playable)
+        XCTAssertTrue(playable.starts(with: Data("caff".utf8)))
+        XCTAssertEqual(player.format.streamDescription.pointee.mFormatID, kAudioFormatLinearPCM)
+        XCTAssertTrue(player.prepareToPlay(), "Metadata recognition alone did not prepare Opus playback")
+        XCTAssertEqual(player.duration, 0.15, accuracy: 0.02)
+    }
+
+    func testDecodedSpeechHasABoundedSize() async throws {
+        do {
+            _ = try await ListenAudioDecoding.prepare(Self.opusTone(), maximumDecodedBytes: 16_384)
+            XCTFail("Decoded audio exceeded the playback preparation limit")
+        } catch {
+            XCTAssertEqual(error as? ListenAudioDecoding.Failure, .tooLarge)
+        }
+    }
+
+    func testCancelledSpeechPreparationDoesNotDecodeTheReply() async throws {
+        let audio = try Self.opusTone()
+        let started = expectation(description: "preparation task owned")
+        var release: CheckedContinuation<Void, Never>?
+        let preparation = Task {
+            await withCheckedContinuation { release = $0; started.fulfill() }
+            return try await ListenAudioDecoding.prepare(audio)
+        }
+        await fulfillment(of: [started], timeout: 2)
+        preparation.cancel()
+        release?.resume()
+        do { _ = try await preparation.value; XCTFail("Cancelled preparation must not finish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    private static func opusTone() throws -> Data {
+        // A 150 ms synthetic mono tone encoded as Ogg Opus at 48 kHz.
+        let encoded = """
+        T2dnUwACAAAAAAAAAAAeqBIEAAAAABKn2rYBE09wdXNIZWFkAQE4AYC7AAAAAABPZ2dTAAAAAAAAAAAAAB6oEgQBAAAALKXG0AE8
+        T3B1c1RhZ3MMAAAATGF2ZjYzLjEuMTAyAQAAABwAAABlbmNvZGVyPUxhdmM2My4xLjEwMiBsaWJvcHVzT2dnUwAEWB0AAAAAAAAe
+        qBIEAgAAABlEe0kIX0I7ODs+SER4gaddbJ6ZrAAACArgWtURnEQxFQV7PeZ+HLj5DVlZXyHQujqljnU4PBoYH7n68WrZ9dVwkU8L
+        OBr+mEOwtUOq8Flr4vQ1Dg0AZcQNEuHhcmxBjTKROLLISJSA5aXqBHifZwHn/JVNTqoYpxnf5VxZ3/tuoTNl9ailSQ3kV3eHjwpC
+        0JJGkf0f1DtwP/fVl6g4VoJSJXALupY8HA9PQfeJvXiast91nPxLOkV+KFpyh8aDiDscRyoWKBgTRAH/ug+TwrHhddij/JTRbE6B
+        cbbzICOnn/XW5/cs3XwFeJqy33Wc/EXt1zOfE2PfEBPZD+/At6F4vCdouYm/aK/IivDZBzKjyKHp1R4mx9/FDq13b1lLE0x4mrLf
+        dZz8STO/SvclI2imjSABdXab7TvnpSWqEgQ/7uvvRkyWiSBYWH9n91+/ON78Vpf4Kadr9knlBHiajeCSv7u7QCUfYCT1o+DpEBgE
+        5f0REyet/3AXDpXAl262fY/K9kOz6JIkuk3bGzEL+cJBS2rVGwrytRVNeJo6n3Mt0i3vXqAG2hOtIpPR331QLaEIKNqw9AMs6dP6
+        M4ahB0+AlRNxxK5K5qPB9qCIGT7lkMPkDIxPaHW5NjwcD/eJT0EEeJtDUAd1Cx/1noQJcTV2uGpCRRj5opXY4pHcUGSrAknNOwBj
+        HMBQWMu/mhZtcEqU+rFlzO3uePzmrCEXj/gFMoI9LBw=
+        """
+        return try XCTUnwrap(Data(base64Encoded: encoded, options: .ignoreUnknownCharacters))
+    }
+
+    private func installARC(override: @escaping (URLRequest) -> HermesHostFixture.Reply? = { _ in nil }) {
+        _ = HermesHostFixture.configuration { request in
+            if let response = override(request) { return response }
+            switch request.url?.path {
+            case ARCSpeechFixture.capabilitiesPath: return ARCSpeechFixture.capabilities
+            case ARCSpeechFixture.identityPath: return ARCSpeechFixture.identity()
+            case ARCSpeechFixture.speakPath: return ARCSpeechFixture.audio()
+            default: return nil
+            }
+        }
+    }
+
     /// A Hermes chat in Profile `work`, attached over a scripted host. `synthesize` stands in
     /// for the host's speech when set.
     private func openHermesChat(speech: SpyOnDeviceSpeech,
+                                sessionAuthority: Bool = false,
                                 player: @escaping @MainActor (Data) throws -> any ListenAudioPlaying,
                                 synthesize: (@MainActor (String) async throws -> Data?)? = nil) async -> ChatViewModel {
         let host = BotSocketHost()
-        host.always("session.resume", .init(result: .object([
-            "session_id": .string("runtime"), "session_key": .string("tip"), "running": .bool(false),
+        let legacy: BotJSON = .object([
+            "session_id": .string("runtime"), "session_key": .string(ARCSpeechFixture.sessionID), "running": .bool(false),
             "messages": .array([]), "info": .object(["profile_name": .string("work")])
-        ])))
-        host.always("session.events.since", .init(result: BotFixtureWire.replay(latest: 0)))
+        ])
+        let native: BotJSON = .object([
+            "session_id": .string(ARCSpeechFixture.sessionID), "stored_session_id": .string(ARCSpeechFixture.sessionID),
+            "running": .bool(false), "messages": .array([]), "message_count": .number(0),
+            "revision": .number(0), "execution_generation": .number(0),
+            "replay_epoch": .string("canonical-epoch"), "last_sequence": .number(0),
+            "subscription_id": .string("speech-subscription"), "prompts": .array([]),
+            "pending": .array([]), "open_requests": .array([]),
+            "info": .object(["profile_name": .string("work"), "profile_id": .string("native-work"),
+                             "desktop_protocol": .string("hermes-gateway-v1")])
+        ])
+        host.always("session.resume", .init(result: sessionAuthority ? native : legacy))
+        host.always("session.events.since", .init(result: BotFixtureWire.replay(
+            latest: 0, epoch: sessionAuthority ? "canonical-epoch" : "epoch")))
         let engine = HermesConversation(server: URL(string: "https://hermes.example")!, connection: Self.connection,
-                                        target: .session(profile: "work", key: "tip"),
-                                        wire: BotClient(http: host.connection(Self.connection)),
+                                        target: .session(profile: "work", key: sessionAuthority ? ARCSpeechFixture.sessionID : "lineage-root"),
+                                        wire: BotClient(http: host.connection(Self.connection, sessionAuthority: sessionAuthority)),
                                         reconnectDelay: { _ in try await Task.sleep(for: .seconds(3600)) })
         self.engine = engine
         let model = ChatViewModel(
@@ -9531,10 +9719,12 @@ final class ChatViewModelSendTests: XCTestCase {
         try XCTUnwrap(MessageActionContext(
             message: ChatMessage(role: "assistant", content: text, timestamp: 1_770_000_024, messageId: "reply"),
             visibleIndex: 0,
-            messagesOffset: 0
+            messagesOffset: 0,
+            hermesStoredSessionID: ARCSpeechFixture.sessionID
         ))
     }
 }
+
 
 /// A polling `sleep` whose waits are events: `slept` is fulfilled as each poll goes back to
 /// sleep, and `cancelled` as a sleeping poll is cancelled. A wait ends only when cancelled.
@@ -9704,7 +9894,7 @@ private actor RecordingSendDraftAttachmentStore: ChatDraftAttachmentStoring {
 
 @MainActor
 private final class SpyListenAudioPlayer: ListenAudioPlaying {
-    var onFinish: (@MainActor () -> Void)?
+    var onFinish: (@MainActor (Bool) -> Void)?
     var playResult = true
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 75
@@ -9732,8 +9922,8 @@ private final class SpyListenAudioPlayer: ListenAudioPlaying {
     }
 
     /// Simulates the wrapped `AVAudioPlayer` finishing naturally.
-    func finishPlayback() {
-        onFinish?()
+    func finishPlayback(succeeded: Bool = true) {
+        onFinish?(succeeded)
     }
 }
 

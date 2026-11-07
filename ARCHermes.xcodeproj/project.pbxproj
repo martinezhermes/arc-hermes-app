@@ -5,6 +5,16 @@
 	objectVersion = 56;
 	archiveVersion = 1;
 	objects = {
+		7EC33F3B8B2943D084D50B3F = {
+			isa = PBXBuildFile;
+			fileRef = D932B2242F834D8CB06C3216;
+		};
+		D932B2242F834D8CB06C3216 = {
+			isa = PBXFileReference;
+			path = ListenAudioDecoding.swift;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
 		E1318000000000000000A009 = {
 			fileRef = E1318000000000000000A010;
 			isa = PBXBuildFile;
@@ -786,6 +796,9 @@
 				"E1040000000000000000A002",
 				"C8780A000000000000000002",
 				"C8230A000000000000000004",
+				2D426D00832C46B09A905C4F,
+				97171436BD2E4D17A5BBD496,
+				E5F4F9F8A138476B912BDC8E,
 				"E1043000000000000000A002",
 				"E1069000000000000000A002",
 				"E1112000000000000000A002",
@@ -2819,6 +2832,7 @@
 				"C04700000000000000000002",
 				"C04800000000000000000002",
 				"1A2B3C4D5E6F7000000000D5",
+				"D932B2242F834D8CB06C3216",
 				"A710739233F64F4FA4C2B710",
 				"C03250000000000000F104",
 				"1A2B3C4D5E6F70000000121",
@@ -2928,6 +2942,18 @@
 		};
 		C8230A000000000000000004 = {
 			path = Hermes/HermesREST.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		2D426D00832C46B09A905C4F = {
+			path = Hermes/HermesListenSpeech.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		97171436BD2E4D17A5BBD496 = {
+			path = Hermes/HermesCanonicalSession.swift;
 			isa = PBXFileReference;
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";
@@ -5624,6 +5650,8 @@
 				"E1040000000000000000A001",
 				"C8780A000000000000000001",
 				"C8230A000000000000000003",
+				D1091B4ACED745BEA7196D8E,
+				608E2C94AA584BFD8182FDBE,
 				"E1043000000000000000A001",
 				"E1069000000000000000A001",
 				"E1075000000000000000A001",
@@ -5897,6 +5925,7 @@
 				"C04700000000000000000001",
 				"C04800000000000000000001",
 				"1A2B3C4D5E6F7000000000D4",
+				"7EC33F3B8B2943D084D50B3F",
 				"1A2B3C4D5E6F7000000000D6",
 				"C0FF000000000000000000A1",
 				"1A2B3C4D5E6F7000000000D0",
@@ -5907,6 +5936,7 @@
 				"A04300000000000000000002",
 				"A04300000000000000000003",
 				"E1046000000000000000A003",
+				19B98033C34A4EAB89629C9D,
 				"A040C0DE0000000000000001",
 				"A048C0DE0000000000000001",
 				"1A2B3C4D5E6F70000000130",
@@ -7426,6 +7456,16 @@
 			lastKnownFileType = sourcecode.swift;
 			sourceTree = "<group>";
 		};
+		E5F4F9F8A138476B912BDC8E = {
+			path = Hermes/HermesARCIdentity.swift;
+			isa = PBXFileReference;
+			lastKnownFileType = sourcecode.swift;
+			sourceTree = "<group>";
+		};
+		19B98033C34A4EAB89629C9D = {
+			isa = PBXBuildFile;
+			fileRef = E5F4F9F8A138476B912BDC8E;
+		};
 		863000000000000000000001 = {
 			isa = PBXBuildFile;
 			fileRef = 863000000000000000000002;
@@ -7542,6 +7582,14 @@
 		C8230A000000000000000003 = {
 			isa = PBXBuildFile;
 			fileRef = C8230A000000000000000004;
+		};
+		D1091B4ACED745BEA7196D8E = {
+			isa = PBXBuildFile;
+			fileRef = 2D426D00832C46B09A905C4F;
+		};
+		608E2C94AA584BFD8182FDBE = {
+			isa = PBXBuildFile;
+			fileRef = 97171436BD2E4D17A5BBD496;
 		};
 		C03910000000000000000007 = {
 			isa = PBXBuildFile;

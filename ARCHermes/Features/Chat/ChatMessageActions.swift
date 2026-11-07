@@ -20,6 +20,7 @@ struct SelectableTextPresentation: Identifiable, Equatable {
 struct ChatMessageActionItem: Identifiable {
     enum Kind: Hashable {
         case listen
+        case deviceVoice
         case regenerate
         case edit
         case fork
@@ -61,7 +62,7 @@ struct ChatMessageActionMenu: View {
     let isRegeneratingMessage: Bool
     let isEditingMessage: Bool
     let isForkingMessage: Bool
-    let onToggleListening: (MessageActionContext) -> Void
+    let onToggleListening: (MessageActionContext, ListenVoice) -> Void
     let onRegenerate: (MessageActionContext) -> Void
     let onEdit: (MessageActionContext) -> Void
     let onFork: (MessageActionContext) -> Void
@@ -91,7 +92,14 @@ struct ChatMessageActionMenu: View {
                 title: isListening ? String(localized: "Stop Listening") : String(localized: "Listen"),
                 systemImage: isListening ? "speaker.slash" : "speaker.wave.2",
                 isEnabled: true,
-                perform: { onToggleListening(context) }
+                perform: { onToggleListening(context, .server) }
+            ))
+            items.append(ChatMessageActionItem(
+                kind: .deviceVoice,
+                title: String(localized: "Read with Device Voice"),
+                systemImage: "iphone.radiowaves.left.and.right",
+                isEnabled: true,
+                perform: { onToggleListening(context, .device) }
             ))
         }
 

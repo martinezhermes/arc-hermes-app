@@ -449,6 +449,7 @@ import Observation
         let model = ChatViewModel(
             session: SessionSummary(profile: "default"), server: URL(string: "https://hermes.example")!,
             streamingScrollCoalescingDelayNanoseconds: 0,
+            listenRemoteControlCenter: SlashCommandRemoteControls(),
             draftStore: ChatDraftStore(persistence: BotMemoryDrafts(), debounceDuration: .seconds(60)),
             backend: .hermes(turn)
         )
@@ -477,4 +478,14 @@ private extension HermesSlashRoute {
     var appOwnedHandler: SlashCommandHandler? { if case .appOwned(let command) = self { return command.handler }; return nil }
     /// The name of an app-owned command; nil for any other route.
     var appOwnedName: String? { if case .appOwned(let command) = self { return command.name }; return nil }
+}
+
+/// Slash-command tests never own playback or the system Now Playing center.
+@MainActor private final class SlashCommandRemoteControls: ListenRemoteControlControlling {
+    func configure(play: @escaping @MainActor () -> Void,
+                   pause: @escaping @MainActor () -> Void,
+                   togglePlayPause: @escaping @MainActor () -> Void,
+                   changePlaybackPosition: @escaping @MainActor (TimeInterval) -> Void) {}
+    func update(_ snapshot: ListenNowPlayingSnapshot) {}
+    func clear() {}
 }
