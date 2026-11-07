@@ -7385,7 +7385,10 @@ final class ChatViewModel {
     private func startListenAudioPlayback(_ audioData: Data, requestID: UUID,
                                           validate: (@MainActor () throws -> Void)? = nil) async throws -> Bool {
         try validate?()
-        guard let player = try? listenAudioPlayerFactory(audioData) else { return false }
+        let playable = try await ListenAudioDecoding.prepare(audioData)
+        guard !Task.isCancelled, activeListenRequestID == requestID else { return false }
+        try validate?()
+        guard let player = try? listenAudioPlayerFactory(playable) else { return false }
         let playerID = ObjectIdentifier(player)
         player.onFinish = { [weak self] succeeded in
             self?.handleListenPlayerCompletion(for: playerID, succeeded: succeeded)

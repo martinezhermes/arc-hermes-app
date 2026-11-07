@@ -16,7 +16,7 @@ enum HermesARCIdentityFailure: LocalizedError, Equatable {
 
 @MainActor extension HermesConnection {
     /// Authenticate and resolve the required Host for this native profile selector.
-    /// The opaque ARC profile ID is verified against session snapshots, never used as a selector.
+    /// Keep the opaque ARC profile ID separate from native snapshot IDs and selectors.
     func verifyARCIdentity(profile requested: String? = nil,
                            validateDispatch: (@MainActor () throws -> Void)? = nil) async throws -> HermesARCHostIdentity {
         let status = try await requiredARCReply(.status, validateDispatch: validateDispatch)

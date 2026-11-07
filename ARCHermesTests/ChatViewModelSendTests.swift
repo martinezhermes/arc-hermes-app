@@ -9414,7 +9414,7 @@ final class ChatViewModelSendTests: XCTestCase {
         let scenarios: [(label: String, text: String, reply: HermesHostFixture.Reply, requests: Int, decodes: Int)] = [
             ("refused", "Refused.", .json(400, .object(["detail": .string("Speech synthesis failed")])), 1, 0),
             ("timed out", "Timed out.", .fail(URLError(.timedOut)), 1, 0),
-            ("undecodable", "Ogg.", ogg, 1, 1),
+            ("undecodable", "Ogg.", ogg, 1, 0),
             ("over the ceiling", String(repeating: "a", count: HermesREST.maximumSpeechTextLength + 1), ogg, 0, 0)
         ]
         for scenario in scenarios {
@@ -9610,7 +9610,41 @@ final class ChatViewModelSendTests: XCTestCase {
         }
     }
 
-    func testListenPlayerCanOpenTheCloudSpeechCodec() throws {
+    func testListenPlayerCanPrepareTheCloudSpeechCodec() async throws {
+        let audio = try Self.opusTone()
+        let playable = try await ListenAudioDecoding.prepare(audio)
+        let player = try AVAudioPlayer(data: playable)
+        XCTAssertTrue(playable.starts(with: Data("caff".utf8)))
+        XCTAssertEqual(player.format.streamDescription.pointee.mFormatID, kAudioFormatLinearPCM)
+        XCTAssertTrue(player.prepareToPlay(), "Metadata recognition alone did not prepare Opus playback")
+        XCTAssertEqual(player.duration, 0.15, accuracy: 0.02)
+    }
+
+    func testDecodedSpeechHasABoundedSize() async throws {
+        do {
+            _ = try await ListenAudioDecoding.prepare(Self.opusTone(), maximumDecodedBytes: 16_384)
+            XCTFail("Decoded audio exceeded the playback preparation limit")
+        } catch {
+            XCTAssertEqual(error as? ListenAudioDecoding.Failure, .tooLarge)
+        }
+    }
+
+    func testCancelledSpeechPreparationDoesNotDecodeTheReply() async throws {
+        let audio = try Self.opusTone()
+        let started = expectation(description: "preparation task owned")
+        var release: CheckedContinuation<Void, Never>?
+        let preparation = Task {
+            await withCheckedContinuation { release = $0; started.fulfill() }
+            return try await ListenAudioDecoding.prepare(audio)
+        }
+        await fulfillment(of: [started], timeout: 2)
+        preparation.cancel()
+        release?.resume()
+        do { _ = try await preparation.value; XCTFail("Cancelled preparation must not finish") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    private static func opusTone() throws -> Data {
         // A 150 ms synthetic mono tone encoded as Ogg Opus at 48 kHz.
         let encoded = """
         T2dnUwACAAAAAAAAAAAeqBIEAAAAABKn2rYBE09wdXNIZWFkAQE4AYC7AAAAAABPZ2dTAAAAAAAAAAAAAB6oEgQBAAAALKXG0AE8
@@ -9624,10 +9658,7 @@ final class ChatViewModelSendTests: XCTestCase {
         M4ahB0+AlRNxxK5K5qPB9qCIGT7lkMPkDIxPaHW5NjwcD/eJT0EEeJtDUAd1Cx/1noQJcTV2uGpCRRj5opXY4pHcUGSrAknNOwBj
         HMBQWMu/mhZtcEqU+rFlzO3uePzmrCEXj/gFMoI9LBw=
         """
-        let audio = try XCTUnwrap(Data(base64Encoded: encoded, options: .ignoreUnknownCharacters))
-        let player = try ListenAudioPlayer(data: audio)
-        player.prepareToPlay()
-        XCTAssertEqual(player.duration, 0.15, accuracy: 0.02)
+        return try XCTUnwrap(Data(base64Encoded: encoded, options: .ignoreUnknownCharacters))
     }
 
     private func installARC(override: @escaping (URLRequest) -> HermesHostFixture.Reply? = { _ in nil }) {

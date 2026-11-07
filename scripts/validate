@@ -25,7 +25,9 @@ xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermesValidation \
   -configuration Debug -destination "$destination" \
   -derivedDataPath "${ARCHERMES_DERIVED_DATA:-$validation_dir/DerivedData}" \
   -resultBundlePath "$validation_dir/Tests.xcresult" \
-  -parallel-testing-enabled NO test 2>&1 | tee "$validation_dir/xcodebuild.log"
+  -parallel-testing-enabled NO -test-timeouts-enabled YES \
+  -default-test-execution-time-allowance 60 -maximum-test-execution-time-allowance 120 \
+  test 2>&1 | tee "$validation_dir/xcodebuild.log"
 # A successful build must not rewrite the manually maintained catalogs.
 shasum -a 256 "${catalogs[@]}" > "$validation_dir/catalogs.after"
 diff -u "$validation_dir/catalogs.before" "$validation_dir/catalogs.after"
