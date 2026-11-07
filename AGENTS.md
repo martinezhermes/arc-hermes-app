@@ -1,63 +1,53 @@
-# ARCHermes
+# ARC Hermes contributor contract
 
-ARCHermes is a native SwiftUI iPhone app for a self-hosted Hermes agent. It talks directly to the user's `hermes-webui` server over HTTPS and gives them a phone-native control surface: start and steer sessions, watch streaming work, browse the workspace, and recover from wherever they are. The Xcode target and scheme are `ARCHermes`; the on-device display name remains `ARC Hermes`. App Store listing metadata is updated separately at release time.
+ARC Hermes is the native SwiftUI iPhone and iPad client for ARC Hermes Agent.
+The product is the Hermes fork deployed with a required ARC Host identity.
+Each gateway is one installed backend authority with one canonical connection
+for authentication, native sessions, execution, identity and speech. Webapp
+and administration use that same authority.
 
-You can think of ARCHermes as an open source "bring-your-own-server" iPhone client for Hermes. The phone is the control and review plane; the server owns execution, tools, models, and the user's data.
+Connection setup verifies the assigned ARC Host. The normal chat experience
+opens and continues existing sessions, creates new sessions, sends, streams,
+stops, handles approvals and reconnects. Listen is qualified on a reply in that
+same flow. The read-only identity API supplies metadata. Missing ARC capability
+or an inconsistent binding is a deployment error.
 
-## What makes ARCHermes special?
+The app presents the server's accepted identity and voice. Local names, initials
+and colors are presentation preferences. Host definitions and persona revisions
+belong to ARC's authorized management lifecycle. Multiple gateways can serve
+the same Host while retaining their own native session stores and credentials.
 
-ARCHermes is on the App Store and people run it against their own servers every day. It's important we maintain the things they rely on as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
+The Xcode target and scheme are `ARCHermes`, and the device display name is
+`ARC Hermes`. The app, share extension and Live Activity widget route through
+the owning gateway. The phone owns interaction, drafts and credential custody.
+Hermes owns execution and native session state.
 
-### 1. Open at the core
+## Product and terminology authority
 
-ARCHermes is truly open. We share our roadmap (GitHub Issues), we share how we think about things, and of course we share all our code. There is no ARCHermes relay, hosted backend, analytics service, or tracking layer: agent work and data stay on the user's hardware. We work in the open, and should strive to stay that way.
+Hermes Martinez (`martinezhermes`) owns this fork's product decisions.
+ACH9001 authors implementation and evidence. Hermex is the application upstream,
+and Nous Research Hermes Agent is the runtime upstream. Their source and release
+documentation inform compatibility. The reviewed ARC Hermes contracts govern
+this product.
 
-### 2. Performance without compromise
+- **Host** is the stable, verified ARC identity assigned to a deployment.
+- **Gateway** is an installation serving that Host through one backend authority.
+- **Connection** is the app's authenticated route to a gateway's canonical base.
+- **Profile** is native configuration within that gateway's assigned Host.
+- **Session** is a native conversation identified by gateway, profile and session ID.
+- **Presentation preferences** are local labels and appearance.
+- **Tasks** are scheduled cron jobs. Kanban work units are **Cards**.
+- **Slice** is an independently reviewable contribution to a complete user flow.
 
-Lots of apps have gotten bogged down with bad tech decisions and "slop". We have not, and we're proud of the performance of ARCHermes. We regularly audit for performance regressions, often caused by unnecessary view invalidation, unstable identity in lists, eager work in scrolling paths, and animations that ignore Reduce Motion. Make sure all changes are considerate of performance impact.
-
-### 3. Remote ready
-
-ARCHermes connects to servers wherever they live: on the same Mac over `localhost`, across a Tailscale tailnet, or through an HTTPS tunnel such as Cloudflare. Long-lived SSE streams over those hops, reattaching after backgrounding, and multiple configured servers are core to the product. Whether users are on their local network or half a world away from their Mac, we need to make sure new features are properly supported, and that nothing scoped to one server ever shows up under another.
-
-### 4. Multi-surface
-
-ARCHermes has 3 key app surfaces: **the app**, **the share extension**, and **the Live Activity widget**.
-
-**The app** is the main surface. It is a native SwiftUI app, not a web wrapper, and should behave like a first-rate iOS app across navigation, gestures, keyboard input, accessibility, backgrounding, deep links, App Intents, and notifications.
-
-**The share extension** (`ARCHermesShareExtension`) lets users send files and text from other apps into a session. It stages imports through the app group and hands off to the main app.
-
-**The Live Activity widget** (`ARCHermesLiveActivityWidget`) shows streaming progress on the Lock Screen and Dynamic Island and routes taps back into the app. Both extensions are separate Xcode targets with their own membership of shared models and resources.
-
-## A note from Uzair
-
-I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
-
-Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to honor the dev's intent in both a minimal and realistic fashion.
-
-The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here. If a request conflicts with a rule here or with the server contract, stop and ask.
-
-## A small glossary
-
-We need to be on the same page with terminology. When communicating, use this language:
-
-- **you** means the agent reading this file and changing ARCHermes.
-- **we, us, and maintainer** mean Uzair and the people building ARCHermes. These are who you are talking to now.
-- **user** means the person using ARCHermes to direct their Hermes agent.
-- **agent** means the Hermes agent a user runs on their server. Depending on context, that may also include you.
-- **server** means the user-configured `hermes-webui` instance. **upstream** means the `hermes-webui` project itself, whose API can drift.
-- **active server** means the configured server whose auth, identity, cached data, and screens are currently selected.
-- **session** means a server-backed agent conversation. A **stream** is the SSE connection carrying one response's live events.
-- **workspace** means a server-side filesystem location available to a session. A **Profile** is a server-side agent configuration.
-- **Tasks** are scheduled cron jobs. Kanban work units are **Cards**, not tasks. `CONTEXT.md` owns the rest of the canonical Kanban vocabulary.
-- **slice** means one independently testable part of the selected issue.
+`CONTEXT.md` defines the domain vocabulary.
+`docs/agents/hermes-server.md` defines connection and chat acceptance.
+Keep changes small, state ownership explicit and interactions responsive.
 
 ## Start with the current state
 
 1. Inspect `git status` and preserve changes you did not create.
 2. The selected GitHub issue is the scope and the handoff. Read it with its comments (`gh issue view <n> --comments`) before anything else. Implement only the issue the maintainer selected or one labeled `ready-for-agent`; an open issue list is not an instruction to implement everything.
-3. Read only the docs the issue and this file point at. There is no product spec; the issue, the code, and the server contract are the spec.
+3. Read the product and connection contracts linked here, then the selected Issue. Resolve a narrower Issue against the required product flow before implementation.
 4. On "wrap up": verify the build and tests, commit the validated code, and leave the resumable state (what landed, how it was validated, what is next) as a comment on the issue or in the PR body. A push still needs approval.
 
 ## Agent skills and checkout ownership
@@ -102,7 +92,7 @@ closed and all intended changes are committed; preserve and report unique work.
 ## The three ways to hurt yourself
 
 1. **Killing by pattern.** Never `pkill -f`, `pgrep | kill`, or `kill` a PID you found by matching a name, path, or worktree string. Your own agent process has this worktree's path in its argv, and this Mac runs several simulators and agent sessions at once. Kill only a PID you captured at spawn. The same goes for `rm -rf`, `git push --force`, and `simctl shutdown all`: suggest them and let the maintainer run them.
-2. **Touching the live server.** The maintainer's `hermes-webui` runs on another Mac behind a tunnel, holding real sessions and real credentials. Reading from it with `curl` is fine, and the best way to verify a contract (see Working with the server). Never restart it, change its tunnel or Tailscale routes, or run mutations against its sessions. A mutating smoke uses one disposable session you created and cleans up only that session and anything it branched.
+2. **Touching the live server.** The owning ARC Hermes gateways hold real sessions and credentials on cloud and native hosts. Reading from it with `curl` is fine, and the best way to verify a contract (see Working with the server). Never restart it, change its tunnel or Tailscale routes, or run mutations against its sessions. A mutating smoke uses one disposable session you created and cleans up only that session and anything it branched.
 3. **Installing an unsigned build.** `CODE_SIGNING_ALLOWED=NO` is for compile-only checks and CI. It strips entitlements, so Keychain writes fail with `errSecMissingEntitlement` and login silently breaks. Put the app on the simulator via XcodeBuildMCP `build_run_sim` or a plain signed Debug build, and never hand-sign a simulator app: a normal sim build is ad-hoc signed and that is exactly what works.
 
 ## Hit every surface
@@ -120,13 +110,15 @@ The most common defect in this repo is a change that works on the path you teste
 
 ## Working with the server
 
-- There is no in-repo dev server. ARCHermes is developed against a self-hosted `hermes-webui` reachable over real HTTPS; `curl https://<your-server>/health` before debugging the client. For simulator-only work `http://localhost:8787` works when the server runs on the same Mac. Setup options live in `DEVELOPMENT.md`.
-- **Never invent an endpoint, header, SSE event, or JSON shape.** Verify in this precedence order: (a) `curl` a running server, the final arbiter; (b) the official API docs at https://get-hermes.ai/api-docs/ for endpoint intent, the auth contract, and SSE vocabulary (no version pin; tracks the latest release); (c) the pinned upstream copy at `.codex-tmp/hermes-webui/api/routes.py` for exact JSON shapes, which may lag the release the docs describe. Clone it if missing: `git clone https://github.com/nesquena/hermes-webui .codex-tmp/hermes-webui`. It is read-only; refreshing with `git pull` is fine.
-- `UPSTREAM_TESTED_SHA` is the compatibility pin and the only place the pinned commit is written down. To advance it: `curl` the read-only endpoints in `Endpoints.swift` against a live server, run the mutating ones against one disposable session, then edit the file and name the validating commit in the PR. When a contract changes, record the verified handler, shape, and upstream commit in the issue or PR. Validate volatile details just in time instead of copying them into long-lived docs.
-- `HERMES_AGENT_TESTED_SHA` is the same pin for the direct-Hermes Bot connection: line 1 the tested `hermes-agent` commit, line 2 the release `/api/status` reports as `version`. `BotConnection.testedHermesVersion` mirrors line 2 and a test keeps them equal; a host reporting a different release gets a non-blocking note in the Bot connection screen. To advance it: against a live host, `curl` `/api/status`, sign in and hit `/api/auth/me` and `/api/auth/ws-ticket`, run the read-only Bot RPCs (`profiles.list`, `session.list`, and `session.resume` on the disposable test bot), then edit both lines and the constant and name the validating commit in the PR.
-- Every server-facing `Codable` model decodes tolerantly: optionals for fields upstream might add, omit, or rename. Unknown fields never crash the app.
-- No new third-party dependency without approval. The locked list is LDSwiftEventSource, swift-markdown-ui, Splash, Highlightr, KeychainAccess, and SwiftMath; everything else is Apple frameworks (`URLSession`, SwiftData, Keychain, OSLog, XCTest).
-- A bug that also reproduces in the upstream web UI against the same server is a server bug. File it upstream and link it from a ARCHermes issue only if the app still needs a safer fallback.
+- Verify the owning gateway at its canonical HTTPS base, including its deployment prefix. ACH9 cloud uses `https://ach9.hermes.endurance.network/gateways/cloud`.
+- Verify native authentication, ARC capabilities and the accepted Host binding during connection setup. Webapp, administration and mobile clients use the same backend authority.
+- Inspect the deployed fork revision, native handlers and current protocol before changing requests. `HERMES_AGENT_TESTED_SHA` records client compatibility, and deployment receipts identify the runtime under test. Advance the pin only after the normal chat path passes.
+- Qualify the owning gateway's authenticated ticket and WebSocket contract, including its session authority. Fix the client transport when the protocol differs. A separate read-only session browser cannot qualify normal chat.
+- Prove both existing-session continuation and new-session creation, sending, streaming, stop, approvals and reconnect before accepting Listen.
+- Preserve saved conversations, drafts and credential ownership during reviewed connection migration. `UPSTREAM_TESTED_SHA` and the WebUI reference support migration of existing state.
+- Server-facing models decode supported responses tolerantly. Missing required identity or ownership metadata produces an explicit error.
+- Keep credentials, private transcripts and provider configuration in approved custody. Add dependencies only with the maintainer's approval.
+- Source-verified native gaps require a bounded generic change in the fork. ARC identity and PostgreSQL logic belong in the ARC plugin.
 
 ## Test data
 
@@ -180,7 +172,7 @@ Canonical vocabulary: `CONTEXT.md`.
 - `ARCHermesShareExtension/` and `ARCHermesLiveActivityWidget/` - separate targets. Shared files need target-membership checks.
 - `ARCHermesTests/` - the XCTest suite, one target directory. Keep tests near the behavior in name and scope.
 - `Config/`, `ci/`, and `.github/workflows/` - signing, CI, and release configuration. Treat edits there as release-sensitive. App identity resolves through xcconfig and is not grep-able: bundle ID `com.martinezhermes.archermes`, tests `….tests`, Team `ACBA2466CM`, SKU `hermes-mobile-ios`.
-- `.codex-tmp/hermes-webui/` - the gitignored, read-only upstream reference. Prefer its patterns over invented ones. Never edit or import from it; refresh with `git pull` when advancing the pin.
+- `.codex-tmp/hermes-webui/` - the read-only reference for existing WebUI data migration.
 
 ## Taste
 

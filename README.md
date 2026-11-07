@@ -1,164 +1,74 @@
-<div align="center">
+# ARC Hermes
 
-<img src="docs/assets/readme/archermes-icon.png" alt="ARCHermes app icon" width="96" />
+ARC Hermes is the native SwiftUI iPhone and iPad client for
+[ARC Hermes Agent](https://github.com/martinezhermes/arc-hermes-agent).
+It connects to the owner's deployed gateways and presents their verified ARC
+Host identity, conversations and voice.
 
-# ARCHermes
+## Product contract
 
-**Control your self-hosted [Hermes](https://github.com/nesquena/hermes-webui) agent from your iPhone.**
+ARC Hermes Agent includes the Hermes fork, the ARC identity plugin and an
+accepted Host binding. Every gateway exposes one backend authority and one
+canonical connection for authentication, sessions, execution, identity and
+speech. Webapp and administration use that authority.
 
-Your server. Your iPhone. No middleman.
+One Host can operate through several gateways. ACH9 cloud and Temporal Loom
+are separate installations of the same identity. Each keeps its native session
+store, credentials and execution environment. The app lists authorized sessions
+with their owning gateway and routes every action to that owner.
 
-[![iOS 18+](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)](https://apps.apple.com/app/id6816211053)
-[![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)](https://swift.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
-[![Follow on X](https://img.shields.io/badge/Follow-%40uzairansar-000000?logo=x&logoColor=white)](https://x.com/uzairansar)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/callmeuzi)
+The app receives Host identity from the authenticated gateway during connection
+setup. Persona and voice are governed by ARC's accepted definitions and bindings.
+Local names, avatars and colors are presentation preferences.
 
-<a href="https://apps.apple.com/app/id6816211053">
-  <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/en-us" alt="Download on the App Store" height="50" />
-</a>
+## Connect and converse
 
-[Website](https://hermexapp.com) · [App Store](https://apps.apple.com/app/id6816211053) · [Report a bug](https://github.com/martinezhermes/arc-hermes-app/issues) · [Contributing](CONTRIBUTING.md)
+Use the canonical gateway address. ACH9 cloud uses
+`https://ach9.hermes.endurance.network/gateways/cloud`.
+Sign in through native Hermes authentication, then verify the assigned ARC Host.
+Missing identity capability or an inconsistent binding requires deployment repair.
 
-<img src="docs/assets/readme/hero-devices.png" alt="ARCHermes running on two iPhones: a streaming chat session and the home screen with Tasks, Skills, Memory, Insights, and Sessions" width="720" />
+The normal chat flow must open and continue existing conversations, create new
+sessions, send messages, stream work, stop, handle approvals and reconnect.
+Listen uses the selected conversation's accepted Host identity and approved
+server voice in that same chat. Explicitly requested device accessibility
+speech has its own action.
 
-</div>
+The [connection contract](docs/agents/hermes-server.md) defines acceptance.
+GitHub Issues and PR evidence establish which implementations have qualified
+against a selected runtime and physical device.
 
-ARC Hermes is a native SwiftUI iPhone and iPad client for a self-hosted [Hermes Agent](https://github.com/NousResearch/hermes-agent), with legacy [hermes-webui](https://github.com/nesquena/hermes-webui) connections retained for recovery — a mobile cockpit for an AI agent that lives on a machine **you** control. The phone is the control plane, not the compute plane: the agent, its tools, and your data stay on your own hardware.
+## Identity and data ownership
 
-- **Free.** No subscriptions, no in-app purchases.
-- **Private.** No analytics, no tracking, no third-party relay — the app talks only to your server.
-- **Native.** Real SwiftUI, built for iOS 18+ and iPadOS 18+, not a web wrapper.
+ARC PostgreSQL owns Host definitions, revisions and gateway/profile bindings.
+The ARC plugin projects the accepted persona into native `SOUL.md`.
+Hermes owns loading, execution and its SQLite sessions. The app reads identity
+through gateway APIs and keeps credentials in Keychain and drafts in their
+owning connection scope.
 
-## Features
+Existing saved connections, drafts and transcripts are preserved through
+reviewed migration. Connection aliases are reconciled against verified
+installation and Host identities. The product uses one backend connection per
+gateway throughout that migration.
 
-- **Chat with your agent** — send messages with model, reasoning-effort, workspace, and profile options; attach files and images; watch responses stream in real time with thinking and tool-call detail.
-- **Documents in direct-Hermes chats** — tap a PDF or other supported `MEDIA:` document to read it in Quick Look, then save or share it.
-- **Steer or stop a run** mid-flight.
-- **Sessions** — browse, search, and resume every conversation on your server; cached sessions stay readable offline.
-- **Pick your models** — switch between any model or provider your server is configured for, with recents and favorites.
-- **Profiles & projects** — switch agent profiles and organize sessions into projects.
-- **Tasks** — view and edit your agent's scheduled cron jobs from your phone.
-- **Skills** — browse and search the agent's installed skills.
-- **Workspace browser** — explore your server's file system from the app.
-- **Memory & Insights** — read-only panels for agent memory and usage analytics.
+## Development
 
-<div align="center">
-<table>
-  <tr>
-    <td align="center"><img src="docs/assets/readme/screenshot-chat.png" alt="Streaming chat with code blocks and markdown tables" width="240" /><br /><sub><b>Stream responses in real time</b></sub></td>
-    <td align="center"><img src="docs/assets/readme/screenshot-tasks.png" alt="Tasks screen listing scheduled cron jobs" width="240" /><br /><sub><b>Manage scheduled tasks</b></sub></td>
-    <td align="center"><img src="docs/assets/readme/screenshot-skills.png" alt="Skills screen with searchable agent skills" width="240" /><br /><sub><b>Browse agent skills</b></sub></td>
-  </tr>
-</table>
+The Xcode project and app scheme are `ARCHermes`. Follow
+[DEVELOPMENT.md](DEVELOPMENT.md) for the toolchain and signed builds, and
+[TESTFLIGHT.md](TESTFLIGHT.md) for distribution.
 
-More screenshots at [website](https://hermexapp.com).
-</div>
+Run `scripts/validate` before publishing a change. The governing references
+are [AGENTS.md](AGENTS.md), [CONTEXT.md](CONTEXT.md) and the
+[delivery contract](docs/agents/github-control.md).
+[GitHub Issues](https://github.com/martinezhermes/arc-hermes-app/issues) own active
+scope, dependencies and acceptance.
 
-## Getting started
+## Upstream and license
 
-For a direct Agent connection, run a Hermes dashboard on your own host and enter its
-base address in Connect. The form detects Hermes and offers the upstream Bot Mode
-beta opt-in, then uses the dashboard's username/password sign-in. Native Sessions
-and Bots share that connection. Hermes releases below `0.21.3` are refused before
-sending credentials; browser-only sign-in is not supported yet.
+Hermex supplies the native application foundation. Nous Research Hermes Agent
+supplies the runtime and native protocol. ARC Hermes maintains its product
+contract through the owned forks and ARC plugin.
 
-The beta does not yet replace every WebUI feature. Workspace/Git UI and several
-share, App Intent and session-link entry points still require a WebUI connection.
-The separate fork-owned Agent onboarding/session prototype is superseded and is
-not part of this app. ARC icons, themes and identity remain app-owned.
-
-For legacy WebUI recovery:
-
-ARCHermes is a client only — it does not ship with, host, or provision a backend. You bring your own [hermes-webui](https://github.com/nesquena/hermes-webui) server (a third-party, MIT-licensed open-source project) running on a machine you control. Setup takes about 15 minutes:
-
-1. **Run the server.** Install and start `hermes-webui` on macOS, Linux, or Windows/WSL2 (Python 3.11+). Set `HERMES_WEBUI_PASSWORD`.
-2. **Make it reachable from your phone** (see options below).
-3. **Connect.** [Download ARCHermes](https://apps.apple.com/app/id6816211053), enter your server URL (e.g. `https://hermes.yourdomain.com`) and password, and you're in.
-
-**Running a Hermes host instead?** Hermex can also sign in to Hermes's own dashboard (`hermes dashboard`, port 9119). Onboarding's first step gives your agent a prompt that sets it up: username and password sign-in under `dashboard.basic_auth`, a persistent `dashboard.basic_auth.secret` so sign-ins survive a restart, and `dashboard.public_url` set to the address your phone uses, reached through one of the options below. Those examples use the Web UI's port 8787; substitute your dashboard's port (9119 by default) in addresses and forwarding commands. Hermes refuses to serve beyond `127.0.0.1` without that sign-in.
-
-Self-hosting the server, securing it, and keeping it reachable are your responsibility.
-
-### Making the server reachable
-
-- **HTTPS via a tunnel or reverse proxy (recommended).** Expose the server through Cloudflare Tunnel or any reverse proxy that terminates real TLS at a hostname you own. Real HTTPS keeps iOS App Transport Security happy with no exceptions. On a publicly reachable hostname the password is your only app-level defense — set a strong one.
-- **Private HTTPS with Tailscale Serve.** Keep the server password-protected and bound to `127.0.0.1:8787`, inspect existing Serve/Funnel routes, then add `tailscale serve --bg 8787` only when HTTPS port 443 at the root path is free. Install Tailscale on the iPhone and connect with the exact `https://…ts.net` URL reported by `tailscale serve status`. Direct binding to `0.0.0.0` over plain HTTP remains a manual fallback, not the default.
-- **Simulator-only local testing** can use `http://localhost:8787` when the server runs on the same Mac.
-
-### Troubleshooting the connection
-
-If connection testing fails, check these first:
-
-1. The machine hosting `hermes-webui` is awake.
-2. `hermes-webui` is running and serving `/health` (`curl https://<your-server>/health`).
-3. The tunnel, reverse proxy, or Tailscale route is connected.
-4. The server URL and password are correct.
-
-## Building from source
-
-Prefer the [App Store build](https://apps.apple.com/app/id6816211053) unless you're developing. To build yourself you need Xcode 27 or newer (iOS 27 SDK) and an iPhone or iPad on iOS/iPadOS 18+, or a supported simulator.
-
-Clone the repo, open `ARCHermes.xcodeproj`, and run the `ARCHermes` scheme on an iPhone simulator (the Xcode target is `ARCHermes`; the on-device display name remains `ARC Hermes`). Dependencies are resolved automatically via Swift Package Manager.
-
-From the command line:
-
-```zsh
-xcodebuild -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17' build
-```
-
-```zsh
-xcodebuild test -project ARCHermes.xcodeproj -scheme ARCHermes -destination 'platform=iOS Simulator,name=iPhone 17'
-```
-
-If that simulator is not installed, list available devices and choose a nearby iPhone simulator:
-
-```zsh
-xcrun simctl list devices available
-```
-
-Local validation defaults for XcodeBuildMCP users live in `.xcodebuildmcp/config.yaml`; the standard post-change flow is in [`DEVELOPMENT.md`](DEVELOPMENT.md).
-
-## Server compatibility
-
-The app is developed and tested against the `hermes-webui` commit pinned in [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA). Upstream does not yet guarantee API stability (its README declares version skew unsupported pending their stable-API work), so newer or older server versions may break individual features — please include your server version in bug reports. The app decodes tolerantly (unknown fields never crash it) and endpoint shapes are verified against upstream source, never invented.
-
-Bot Mode's direct-Hermes connection has its own pin, [`HERMES_AGENT_TESTED_SHA`](HERMES_AGENT_TESTED_SHA): line 1 is the tested `hermes-agent` commit and line 2 the release string its `/api/status` reports. When a host reports a different release, the Bot connection screen shows a one-line "Untested Hermes version" note. That historical note is informational, but the new native connection also enforces its separate minimum release (`0.21.3`). Imported upstream fixtures are recorded in `ARCHermesTests/Fixtures/HermesAgent/UPSTREAM_TESTED_SHA`; they do not advance ARC’s live-validation pins.
-
-## Documentation map
-
-- [`AGENTS.md`](AGENTS.md): the working agreement — product boundaries, server-contract rules, locked dependencies, verification, and PR flow.
-- [`DEVELOPMENT.md`](DEVELOPMENT.md): local development workflow, server setup notes, and the maintainer release runbook.
-- [`TESTFLIGHT.md`](TESTFLIGHT.md): maintainer-only TestFlight/App Store Connect operations.
-- [`SECURITY.md`](SECURITY.md): how to report a vulnerability.
-- [`docs/agents/`](docs/agents): repo-local agent workflow conventions (issues, triage labels, domain notes).
-- [GitHub Issues](https://github.com/martinezhermes/arc-hermes-app/issues): source of truth for active bugs, polish notes, and feature requests.
-
-## Contributing
-
-Contributions are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to pick up work and open a PR, [`AGENTS.md`](AGENTS.md) for the working agreement coding agents follow in this repo, and the [Code of Conduct](CODE_OF_CONDUCT.md). The short version:
-
-- Do not invent API endpoints or JSON shapes; verify against the upstream server source or a running server.
-- Every `Codable` model decodes tolerantly — never crash on unknown fields.
-- Add no third-party dependencies beyond the locked list in `AGENTS.md` without explicit approval.
-- Do not modify the upstream `hermes-webui` server from this repo.
-
-## Support the project
-
-The links to Uzair below support Hermex, the application upstream.
-
-ARCHermes is free and built in the open. If it's useful to you:
-
-- ⭐ **Star this repo** — it helps others find the project.
-- 🐦 **Follow [@uzairansar on X](https://x.com/uzairansar)** for updates and dev logs.
-- ☕ **[Buy me a coffee](https://buymeacoffee.com/callmeuzi)** to support development.
-
-<a href="https://buymeacoffee.com/callmeuzi"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-callmeuzi-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee" height="40" /></a>
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-
-The file-type icons in the workspace tree are [Pierre](https://pierre.co)'s `@pierre/trees` icons (Apache-2.0) with six additions from [T3 Code](https://github.com/pingdotgg/t3code) (MIT).
-
-ARCHermes is an independent client and is not affiliated with the upstream [hermes-webui](https://github.com/nesquena/hermes-webui) project. Apple, the Apple logo, and App Store are trademarks of Apple Inc.
+The application uses the MIT license. See [LICENSE](LICENSE) and
+[CONTRIBUTING.md](CONTRIBUTING.md). The workspace icons derive from Pierre's
+`@pierre/trees` under Apache-2.0 and T3 Code under MIT.
