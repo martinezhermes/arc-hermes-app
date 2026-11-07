@@ -1,63 +1,38 @@
 # Development
 
-This app is developed against a self-hosted `hermes-webui` server exposed over real HTTPS. See [`README.md`](README.md) for the product overview and [`AGENTS.md`](AGENTS.md) for the working rules.
+Develop ARC Hermes against the canonical backend of an ARC Hermes Agent
+deployment. The product requires a verified ARC Host identity and normal chat.
+See [README.md](README.md), [AGENTS.md](AGENTS.md) and the
+[connection contract](docs/agents/hermes-server.md).
 
-> Sections covering TestFlight and App Store Connect are **maintainer-only ops** — they require the maintainer's Apple Developer account and App Store Connect access. Contributors never need them to build, test, or run the app.
+TestFlight and App Store Connect operations require an explicit maintainer
+publication request and the appropriate Apple account access.
 
-## Primary Test Target
+## Gateway qualification target
 
-Use:
+ACH9 cloud uses `https://ach9.hermes.endurance.network/gateways/cloud`.
+Use native sign-in and keep the deployment prefix on requests. Resolve the
+authorized ARC Host and binding during connection setup.
 
-```text
-https://<your-server>
-```
+Qualification opens and continues an existing conversation, creates a new one,
+sends, streams, stops, handles approvals and reconnects through that same
+backend. Listen follows on a real reply in the normal chat UI.
 
-Point this at your own `hermes-webui` server exposed through an HTTPS tunnel or reverse proxy (e.g. Cloudflare Tunnel). Real HTTPS works from both the iOS simulator and physical devices without an App Transport Security exception. If the server sets `HERMES_WEBUI_PASSWORD`, you need that password to sign in.
+## Native contract and local fixtures
 
-Before debugging the app, verify the server is reachable:
+`HERMES_AGENT_TESTED_SHA` records native client compatibility. Inspect the
+deployed fork revision and its handlers before changing the transport. Qualify
+the owning gateway's ticket, WebSocket and session-authority protocol. Verify
+all identity and chat operations through its canonical connection.
 
-```zsh
-curl https://<your-server>/health
-```
+Local fixtures exercise the same client entry points with synthetic
+identity/session data. Their results are protocol evidence. Authenticated
+deployment qualification and physical playback have their own acceptance.
+Use an isolated profile for local runtime fixtures and scope live mutations
+to an owned test conversation.
 
-## Upstream Contract Pin
-
-The app is tested against the `hermes-webui` commit in the root [`UPSTREAM_TESTED_SHA`](UPSTREAM_TESTED_SHA) file — the only copy of the pin, so it cannot drift. To see its release tag: `git -C .codex-tmp/hermes-webui describe --tags --exact-match $(cat UPSTREAM_TESTED_SHA)`. The advance procedure lives in `AGENTS.md` § Working with the server.
-
-## SSE and Cloudflare Stream Verification
-
-Chat streaming uses `GET /api/chat/stream?stream_id=...` over Server-Sent Events. The stream response uses `Content-Type: text/event-stream; charset=utf-8`, `X-Accel-Buffering: no`, `Connection: keep-alive`, and sends `: heartbeat` comments about every 30 seconds while no app event is ready. If the connection is cut while the upstream stream is still active, returning to the foreground or reconnecting should use `GET /api/chat/stream/status?stream_id=...` and reattach to the same stream instead of resending the user message.
-
-Cloudflare's free-plan idle timeout is roughly 100 seconds, so a gap with no events longer than that cuts the stream and reconnect logic must handle it even with normal heartbeat behavior. The server's CSRF check compares `Origin`/`Referer` against `Host` on POSTs; the native client sends neither header, so the server treats it as curl-equivalent and allows it.
-
-## Local-Only Fallback
-
-For contributors without access to the tunnel:
-
-1. Clone the upstream server:
-
-```zsh
-git clone https://github.com/nesquena/hermes-webui.git
-cd hermes-webui
-```
-
-2. Run it with Docker or directly with Python, following the upstream README.
-
-For simulator-only testing, `http://localhost:8787` can work when the server is running on the same Mac. For physical-device testing, use HTTPS or a Tailscale `100.64.0.0/10` IP; TestFlight builds include a scoped ATS exception for that Tailscale range.
-
-## Example Server Setup (macOS + launchd)
-
-One proven way to run the server natively on macOS is through launchd, for contributors who want a local reference (this is not the maintainer's setup, which runs on a different Mac):
-
-- LaunchAgent: `~/Library/LaunchAgents/com.hermes.webui.plist`
-- Local bind: `127.0.0.1:8787`
-- Tunnel target: `http://127.0.0.1:8787`
-
-```zsh
-launchctl load ~/Library/LaunchAgents/com.hermes.webui.plist
-launchctl unload ~/Library/LaunchAgents/com.hermes.webui.plist
-launchctl kickstart -k gui/$(id -u)/com.hermes.webui
-```
+`UPSTREAM_TESTED_SHA` and the older WebUI adapters support reviewed migration
+of existing saved state. The product connection is the ARC Hermes gateway.
 
 ## One validation command
 
@@ -124,7 +99,7 @@ HERMEX_BOT_ADDRESS=http://127.0.0.1:9199 HERMEX_BOT_USERNAME=hermex HERMEX_BOT_P
   HERMEX_BUNDLE_ID=com.martinezhermes.archermes scripts/sim-login <simulator-udid> --hermes
 ```
 
-That also saves it as your webui server's own Hermes connection if that server has none yet. To point an existing webui server's connection at it instead, open Settings → your server → **Hermes connection**, enter `http://127.0.0.1:9199` and the printed credentials, and save. This replaces that server's saved Hermes connection until you enter the real one again. `scripts/sim-login` never replaces an existing connection, so it won't switch back for you.
+Use fixture connections only for their named synthetic protocol checks. Real ARC Hermes qualification uses the canonical enrolled gateway and the normal chat acceptance above.
 
 ## Launch arguments and profiling
 

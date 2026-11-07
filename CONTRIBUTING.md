@@ -12,11 +12,10 @@ read the [Code of Conduct](CODE_OF_CONDUCT.md).
   `AGENTS.md`; do not add new ones without maintainer approval.
 - Build and run the **`ARCHermes`** scheme on an iPhone simulator
   (`iPhone 17` is the reference device; any recent iPhone simulator works).
-- To actually use the app you need your own
-  [hermes-webui](https://github.com/nesquena/hermes-webui) server — the app is
-  a client only. See the [README](README.md#getting-started) for
-  reachable-server options (Cloudflare Tunnel, reverse proxy, Tailscale, or
-  `http://localhost:8787` for simulator-only testing).
+- Use an ARC Hermes Agent gateway with an accepted Host binding and one
+  canonical backend connection. The [product contract](README.md#product-contract)
+  and [connection contract](docs/agents/hermes-server.md) define normal chat,
+  verified identity and Listen acceptance.
 
 ## Running tests
 
@@ -76,29 +75,26 @@ independently useful, it deserves its own PR.
 
 ## App bug or server bug?
 
-ARCHermes is a thin client over [hermes-webui](https://github.com/nesquena/hermes-webui),
-so a fair share of apparent app bugs are really server bugs. Before filing a
-bug here, reproduce it in the hermes-webui **web UI** against the same server:
-
-- **Breaks in the web UI too** → it's a server bug. File it
-  [upstream](https://github.com/nesquena/hermes-webui/issues); if the app
-  should still handle it more gracefully, open an issue here that links the
-  upstream ticket (we track those with the `upstream-change` label).
-- **Only breaks in the app** → file it here with the bug-report form.
+Reproduce the operation through the same owning ARC Hermes gateway and verify
+the deployed native contract. Compare the native Webapp and iOS behavior with
+their actual authenticated request and session ownership. Record whether the
+failure is in client transport, native execution or ARC identity. Source-verified
+generic runtime defects belong in the fork and its upstream integration path.
+The app Issue links that evidence and owns the client behavior.
 
 ## PR workflow
 
 1. **Start from an issue.** Every change should trace to a GitHub issue —
    comment on it so work isn't duplicated, or open one first (bug/feature
    templates are provided).
-2. **Branch** from `master` as `issue/<number>-<short-slug>` (e.g.
-   `issue/42-fix-session-search`).
+2. **Branch** from current `master`. ACH9 implementation uses
+   `ACH9/issue-<number>-<short-slug>`.
 3. **Make the change**, keeping these repo hard rules (full list in
    [`AGENTS.md`](AGENTS.md)):
-   - **Tolerant decoding:** every `Codable` model uses optionals for fields the
-     server might add or rename — never crash on unknown fields.
+   - **Tolerant decoding:** accept additive fields and explicitly validate
+     required identity and ownership metadata.
    - **Never invent API endpoints or JSON shapes** — verify against the pinned
-     upstream `hermes-webui` source or your own running server.
+     native fork source and the owning gateway under qualification.
    - **No new third-party dependencies** without approval.
 4. **Run the full test suite** (command above) and make sure it passes.
 5. **Open a PR** against `master` using the PR template — link the issue with
