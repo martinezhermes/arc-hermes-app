@@ -197,7 +197,8 @@ final class ChatSidebarLayoutTests: XCTestCase {
                 let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                     window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
                 }
-                let attachment = XCTAttachment(image: image)
+                let png = try XCTUnwrap(image.pngData())
+                let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
                 attachment.name = "sidebar-cover-\(wide ? "wide" : "compact")-\(direction)-\(shown ? "revealed" : "covered")"
                 attachment.lifetime = .keepAlways
                 add(attachment)
